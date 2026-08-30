@@ -1,0 +1,44 @@
+<div class="admin-page">
+  <div class="page-head">
+    <h1>{{ 'audit_title' | translate }}</h1>
+  </div>
+
+  <div class="filters">
+    <input class="field" [ngModel]="filter()" (ngModelChange)="filter.set($event)"
+           (keyup.enter)="load()" [placeholder]="'audit_filter_action' | translate" />
+    <button class="btn btn-primary" (click)="load()">{{ 'common_search' | translate }}</button>
+  </div>
+
+  <div class="card">
+    @if (loading()) {
+      <div class="empty">{{ 'common_loading' | translate }}</div>
+    } @else if (rows().length === 0) {
+      <div class="empty">—</div>
+    } @else {
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>{{ 'col_time' | translate }}</th>
+              <th>{{ 'col_actor' | translate }}</th>
+              <th>{{ 'col_action' | translate }}</th>
+              <th>{{ 'col_entity' | translate }}</th>
+              <th>{{ 'col_ip' | translate }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (r of rows(); track r.id) {
+              <tr>
+                <td class="muted">{{ r.creationDate | date: 'short' }}</td>
+                <td>{{ r.actorName || (r.actorUserId ? '#' + r.actorUserId : '—') }}</td>
+                <td>{{ r.action }}</td>
+                <td class="muted">{{ r.entityType }}{{ r.entityId ? ' #' + r.entityId : '' }}</td>
+                <td class="muted">{{ r.ip || '—' }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  </div>
+</div>

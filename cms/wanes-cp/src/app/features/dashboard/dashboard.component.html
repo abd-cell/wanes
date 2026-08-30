@@ -1,0 +1,261 @@
+<div class="admin-page">
+  <div class="page-head">
+    <h1>{{ 'nav_dashboard' | translate }}</h1>
+  </div>
+
+  <!-- One filter row above everything it scopes: every number below uses this window. -->
+  <div class="range-row">
+    <span class="label">{{ 'dash_range' | translate }}</span>
+    @for (r of ranges; track r) {
+      <button
+        type="button"
+        class="viz-toggle"
+        [attr.aria-pressed]="days() === r"
+        (click)="setRange(r)">
+        {{ ('range_' + r) | translate }}
+      </button>
+    }
+    @if (loading()) { <span class="who">{{ 'common_loading' | translate }}</span> }
+  </div>
+
+  @if (!loaded()) {
+    <div class="card"><p class="empty">{{ 'common_loading' | translate }}</p></div>
+  } @else {
+    <div [class.viz-stale]="loading()">
+
+      <!-- ── headline ── -->
+      <section class="viz-section">
+        <h2>{{ 'dash_sec_overview' | translate }}</h2>
+        <div class="viz-tiles">
+          <app-stat-tile
+            [hero]="true"
+            [label]="'kpi_bookings' | translate"
+            [value]="heroValue()"
+            [delta]="overview()?.bookingsTrend ?? null"
+            [note]="rangeNote()"
+            [spark]="activitySeries()[2]?.values ?? []" />
+
+          <app-stat-tile
+            [label]="'kpi_new_users' | translate"
+            [value]="(overview()?.newUsers ?? 0).toLocaleString()"
+            [delta]="overview()?.usersTrend ?? null"
+            [note]="rangeNote()"
+            [spark]="activitySeries()[0]?.values ?? []" />
+
+          <app-stat-tile
+            [label]="'kpi_new_trips' | translate"
+            [value]="(overview()?.newTrips ?? 0).toLocaleString()"
+            [delta]="overview()?.tripsTrend ?? null"
+            [note]="rangeNote()"
+            [spark]="activitySeries()[1]?.values ?? []" />
+
+          <app-stat-tile
+            [label]="'kpi_new_requests' | translate"
+            [value]="(overview()?.newRequests ?? 0).toLocaleString()"
+            [delta]="overview()?.requestsTrend ?? null"
+            [note]="rangeNote()"
+            [spark]="activitySeries()[3]?.values ?? []" />
+
+          <app-stat-tile
+            [label]="'kpi_active_users' | translate"
+            [value]="(overview()?.activeUsers ?? 0).toLocaleString()"
+            [note]="'kpi_active_users_note' | translate" />
+
+          <app-stat-tile
+            [label]="'kpi_fill_rate' | translate"
+            [value]="fillRateText()"
+            [meter]="overview()?.seatFillRate ?? 0"
+            [note]="'kpi_fill_rate_note' | translate" />
+
+          <app-stat-tile
+            [label]="'kpi_match_rate' | translate"
+            [value]="matchRateText()"
+            [meter]="overview()?.matchRate ?? 0"
+            [note]="'kpi_match_rate_note' | translate" />
+
+          <app-stat-tile
+            [label]="'kpi_cancel_rate' | translate"
+            [value]="cancelRateText()"
+            [meter]="overview()?.bookingCancelRate ?? 0"
+            [note]="'kpi_cancel_rate_note' | translate" />
+
+          <app-stat-tile
+            [label]="'kpi_avg_rating' | translate"
+            [value]="avgRatingText()"
+            [note]="'kpi_avg_rating_note' | translate" />
+
+          <app-stat-tile
+            [label]="'kpi_pending_drivers' | translate"
+            [value]="(overview()?.pendingDrivers ?? 0).toLocaleString()"
+            [note]="'kpi_pending_drivers_note' | translate"
+            [link]="['../drivers']" />
+
+          <app-stat-tile
+            [label]="'kpi_api_errors' | translate"
+            [value]="errorRateText()"
+            [goodWhenUp]="false"
+            [note]="'kpi_api_errors_note' | translate"
+            [link]="['../data', 'api-logs']" />
+        </div>
+      </section>
+
+      <!-- ── every counter the platform keeps ── -->
+      <section class="viz-section">
+        <h2>{{ 'dash_sec_figures' | translate }}</h2>
+        <div class="card">
+          <div class="viz-figures">
+            @for (f of figures(); track f.labelKey) {
+              <div class="fig">
+                <span class="k">{{ f.labelKey | translate }}</span>
+                <span class="v">{{ f.value }}</span>
+              </div>
+            }
+          </div>
+        </div>
+      </section>
+
+      <!-- ── activity over time ── -->
+      <section class="viz-section">
+        <h2>{{ 'dash_sec_activity' | translate }}</h2>
+        <div class="viz-grid-2">
+          <app-chart-card [titleKey]="'chart_daily_activity'" [table]="activityTable()">
+            <app-line-chart
+              [labels]="dayLabels()"
+              [series]="activitySeries()"
+              [title]="'chart_daily_activity' | translate" />
+          </app-chart-card>
+
+          <app-chart-card [titleKey]="'chart_trip_outcomes'" [table]="outcomeTable()">
+            <app-line-chart
+              [labels]="dayLabels()"
+              [series]="outcomeSeries()"
+              [title]="'chart_trip_outcomes' | translate" />
+          </app-chart-card>
+
+          <app-chart-card [titleKey]="'chart_seats_per_day'" [table]="seatsTable()">
+            <app-line-chart
+              [labels]="dayLabels()"
+              [series]="seatsSeries()"
+              [title]="'chart_seats_per_day' | translate" />
+          </app-chart-card>
+
+          <app-chart-card [titleKey]="'chart_logins'" [table]="loginsTable()">
+            <app-line-chart
+              [labels]="dayLabels()"
+              [series]="loginsSeries()"
+              [title]="'chart_logins' | translate" />
+          </app-chart-card>
+        </div>
+      </section>
+
+      <!-- ── supply & demand ── -->
+      <section class="viz-section">
+        <h2>{{ 'dash_sec_supply' | translate }}</h2>
+        <div class="viz-grid-2">
+          <app-chart-card [titleKey]="'chart_demand_hour'" [subtitle]="'chart_demand_hour_sub' | translate"
+            [table]="demandTable()">
+            <app-column-chart
+              [slices]="demandByHour()"
+              [labelEvery]="3"
+              [unitLabel]="'series_requests' | translate"
+              [title]="'chart_demand_hour' | translate" />
+          </app-chart-card>
+
+          <app-chart-card [titleKey]="'chart_trips_weekday'" [table]="weekdayTable()">
+            <app-column-chart
+              [slices]="tripsByWeekday()"
+              [labelEvery]="1"
+              [unitLabel]="'series_trips' | translate"
+              [title]="'chart_trips_weekday' | translate" />
+          </app-chart-card>
+        </div>
+
+        <div class="viz-grid-3" style="margin-top:16px">
+          @for (c of statusCards(); track c.key) {
+            <app-chart-card [titleKey]="c.titleKey" [table]="c.table">
+              <app-donut-chart
+                [slices]="c.slices"
+                [centerLabel]="c.center ?? ''"
+                [title]="c.titleKey | translate"
+                [emptyLabel]="'list_empty' | translate" />
+            </app-chart-card>
+          }
+        </div>
+      </section>
+
+      <!-- ── people & community ── -->
+      <section class="viz-section">
+        <h2>{{ 'dash_sec_community' | translate }}</h2>
+        <div class="viz-grid-2">
+          <app-chart-card [titleKey]="'chart_ratings_dist'" [table]="ratingsTable()">
+            <app-column-chart
+              [slices]="ratingsByStars()"
+              [labelEvery]="1"
+              [unitLabel]="'res_ratings' | translate"
+              [title]="'chart_ratings_dist' | translate" />
+          </app-chart-card>
+
+          @for (c of communityCards(); track c.key) {
+            <app-chart-card [titleKey]="c.titleKey" [table]="c.table">
+              @if (c.kind === 'donut') {
+                <app-donut-chart
+                  [slices]="c.slices"
+                  [centerLabel]="c.center ?? ''"
+                  [title]="c.titleKey | translate"
+                  [emptyLabel]="'list_empty' | translate" />
+              } @else {
+                <app-bar-list [rows]="c.slices" [emptyLabel]="'list_empty' | translate" />
+              }
+            </app-chart-card>
+          }
+        </div>
+      </section>
+
+      <!-- ── platform health ── -->
+      <section class="viz-section">
+        <h2>{{ 'dash_sec_platform' | translate }}</h2>
+        <div class="viz-grid-2">
+          <app-chart-card [titleKey]="'chart_api_classes'" [subtitle]="apiSummary()" [table]="httpTable()">
+            <app-column-chart
+              [slices]="httpClasses()"
+              [labelEvery]="1"
+              [unitLabel]="'series_calls' | translate"
+              [title]="'chart_api_classes' | translate" />
+          </app-chart-card>
+
+          <app-chart-card [titleKey]="'chart_api_traffic'" [table]="trafficTable()">
+            <app-line-chart
+              [labels]="dayLabels()"
+              [series]="trafficSeries()"
+              [title]="'chart_api_traffic' | translate" />
+          </app-chart-card>
+
+          <app-chart-card [titleKey]="'chart_audit_daily'" [table]="auditTable()">
+            <app-line-chart
+              [labels]="dayLabels()"
+              [series]="auditSeries()"
+              [title]="'chart_audit_daily' | translate" />
+          </app-chart-card>
+
+          @for (c of endpointCards(); track c.key) {
+            <app-chart-card [titleKey]="c.titleKey" [table]="c.table">
+              <app-bar-list [rows]="c.slices" [unit]="c.unit ?? ''" [emptyLabel]="'list_empty' | translate" />
+            </app-chart-card>
+          }
+        </div>
+      </section>
+
+      <!-- ── leaderboards ── -->
+      <section class="viz-section">
+        <h2>{{ 'dash_sec_leaders' | translate }}</h2>
+        <div class="viz-grid-3">
+          @for (c of leaderCards(); track c.key) {
+            <app-chart-card [titleKey]="c.titleKey" [table]="c.table">
+              <app-bar-list [rows]="c.slices" [emptyLabel]="'list_empty' | translate" />
+            </app-chart-card>
+          }
+        </div>
+      </section>
+    </div>
+  }
+</div>

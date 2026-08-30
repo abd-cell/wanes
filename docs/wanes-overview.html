@@ -1,0 +1,363 @@
+<title>Wanes</title>
+<style>
+  :root {
+    --bg: #f5f7fa;
+    --surface: #ffffff;
+    --surface-2: #eef1f6;
+    --ink: #0e1726;
+    --ink-soft: #46536a;
+    --line: #dbe1ea;
+    --route: #0fae9e;      /* the moving route line — "go" */
+    --route-deep: #0b8478;
+    --ping: #ff7a2f;       /* pickup / signal ping */
+    --ping-soft: #fff0e6;
+    --route-soft: #e2f6f3;
+  }
+  :root:not([data-theme="light"]) {
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0a111d;
+      --surface: #111b2b;
+      --surface-2: #16223500;
+      --surface-2: #172336;
+      --ink: #e7edf7;
+      --ink-soft: #93a1b8;
+      --line: #223047;
+      --route: #2ad0bf;
+      --route-deep: #1fb6a6;
+      --ping: #ff8c4d;
+      --ping-soft: #2a1c12;
+      --route-soft: #0f2a2a;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0a111d;
+    --surface: #111b2b;
+    --surface-2: #172336;
+    --ink: #e7edf7;
+    --ink-soft: #93a1b8;
+    --line: #223047;
+    --route: #2ad0bf;
+    --route-deep: #1fb6a6;
+    --ping: #ff8c4d;
+    --ping-soft: #2a1c12;
+    --route-soft: #0f2a2a;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 0 24px; }
+
+  .mono {
+    font-family: "Cascadia Code", ui-monospace, "SF Mono", Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+  .eyebrow {
+    font-family: "Cascadia Code", ui-monospace, Consolas, monospace;
+    font-size: 12px;
+    letter-spacing: .22em;
+    text-transform: uppercase;
+    color: var(--route-deep);
+    margin: 0 0 14px;
+  }
+  @media (prefers-color-scheme: dark) { .eyebrow { color: var(--route); } }
+  :root[data-theme="dark"] .eyebrow { color: var(--route); }
+
+  h1, h2, h3 { text-wrap: balance; line-height: 1.12; margin: 0; }
+
+  /* ---------- HERO ---------- */
+  .hero {
+    padding: 74px 0 48px;
+    border-bottom: 1px solid var(--line);
+    position: relative;
+    overflow: hidden;
+  }
+  .brand {
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: 40px;
+  }
+  .brand .dot {
+    width: 13px; height: 13px; border-radius: 50%;
+    background: var(--route);
+    box-shadow: 0 0 0 4px var(--route-soft);
+  }
+  .brand .name {
+    font-weight: 700; letter-spacing: .04em; font-size: 15px;
+  }
+  .brand .tag {
+    margin-left: auto; font-size: 12px; color: var(--ink-soft);
+    letter-spacing: .12em; text-transform: uppercase;
+  }
+  .hero h1 {
+    font-size: clamp(38px, 7vw, 68px);
+    font-weight: 800;
+    letter-spacing: -0.025em;
+  }
+  .hero h1 .from { color: var(--ink); }
+  .hero h1 .arrow { color: var(--route); }
+  .hero h1 .to { color: var(--ping); }
+  .hero p.lead {
+    font-size: clamp(17px, 2.3vw, 21px);
+    color: var(--ink-soft);
+    max-width: 60ch;
+    margin: 22px 0 0;
+  }
+
+  /* two-mode thesis strip */
+  .modes {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+    margin-top: 40px;
+  }
+  @media (max-width: 640px) { .modes { grid-template-columns: 1fr; } }
+  .mode {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 22px 22px 24px;
+    position: relative;
+  }
+  .mode .k {
+    font-family: "Cascadia Code", ui-monospace, Consolas, monospace;
+    font-size: 11px; letter-spacing: .18em; text-transform: uppercase;
+    color: var(--ink-soft);
+  }
+  .mode h3 { font-size: 20px; margin: 10px 0 8px; font-weight: 700; }
+  .mode p { margin: 0; font-size: 14.5px; color: var(--ink-soft); }
+  .mode.show { border-top: 3px solid var(--route); }
+  .mode.notify { border-top: 3px solid var(--ping); }
+  .mode .badge {
+    display: inline-block; font-size: 11px; font-weight: 600;
+    padding: 3px 9px; border-radius: 999px; margin-bottom: 4px;
+  }
+  .mode.show .badge { background: var(--route-soft); color: var(--route-deep); }
+  .mode.notify .badge { background: var(--ping-soft); color: var(--ping); }
+  @media (prefers-color-scheme: dark) {
+    .mode.show .badge { color: var(--route); }
+  }
+
+  /* ---------- ROUTE-RAIL SECTIONS ---------- */
+  section.route { padding: 56px 0; border-bottom: 1px solid var(--line); }
+  .rail {
+    position: relative;
+    padding-left: 38px;
+  }
+  .rail::before {
+    content: "";
+    position: absolute; left: 5px; top: 8px; bottom: 8px;
+    width: 2px;
+    background: linear-gradient(var(--route), var(--route) 60%, var(--ping));
+    opacity: .5;
+  }
+  .rail .stop { position: relative; }
+  .rail .stop::before {
+    content: "";
+    position: absolute; left: -38px; top: 6px;
+    width: 12px; height: 12px; border-radius: 50%;
+    background: var(--bg);
+    border: 2.5px solid var(--route);
+  }
+
+  h2.sec { font-size: 15px; font-weight: 700; letter-spacing: .02em; }
+
+  /* flow steps */
+  .steps { display: grid; gap: 12px; margin-top: 8px; }
+  .step {
+    display: grid; grid-template-columns: 30px 1fr; gap: 14px;
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 12px; padding: 16px 18px;
+  }
+  .step .n {
+    font-family: "Cascadia Code", ui-monospace, Consolas, monospace;
+    font-weight: 700; color: var(--route-deep); font-size: 15px;
+  }
+  @media (prefers-color-scheme: dark) { .step .n { color: var(--route); } }
+  :root[data-theme="dark"] .step .n { color: var(--route); }
+  .step b { font-weight: 700; }
+  .step p { margin: 4px 0 0; font-size: 14px; color: var(--ink-soft); }
+
+  /* score formula */
+  .formula {
+    background: var(--surface-2); border: 1px solid var(--line);
+    border-radius: 12px; padding: 20px 22px; margin-top: 14px;
+    font-size: 13.5px; overflow-x: auto;
+  }
+  .formula .row { display: flex; gap: 10px; align-items: baseline; padding: 3px 0; white-space: nowrap; }
+  .formula .w { color: var(--ping); font-weight: 700; }
+  .formula .f { color: var(--ink); }
+  .formula .c { color: var(--ink-soft); margin-left: auto; padding-left: 24px; }
+
+  /* stack table */
+  .stack { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
+  @media (max-width: 640px) { .stack { grid-template-columns: 1fr; } }
+  .chip {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 10px; padding: 13px 16px;
+  }
+  .chip .l {
+    font-family: "Cascadia Code", ui-monospace, Consolas, monospace;
+    font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--ink-soft);
+  }
+  .chip .v { font-weight: 600; font-size: 14.5px; margin-top: 3px; }
+  .chip .v small { font-weight: 400; color: var(--ink-soft); font-size: 12.5px; }
+
+  /* roadmap */
+  .phases { display: grid; gap: 10px; margin-top: 8px; }
+  .phase {
+    display: grid; grid-template-columns: auto 1fr; gap: 16px; align-items: start;
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 12px; padding: 15px 18px;
+  }
+  .phase .p {
+    font-family: "Cascadia Code", ui-monospace, Consolas, monospace;
+    font-size: 11px; font-weight: 700; letter-spacing: .1em;
+    color: #fff; background: var(--route-deep);
+    padding: 4px 10px; border-radius: 999px; white-space: nowrap;
+    margin-top: 2px;
+  }
+  .phase.demo .p { background: var(--ping); }
+  .phase h3 { font-size: 15.5px; font-weight: 700; }
+  .phase p { margin: 3px 0 0; font-size: 14px; color: var(--ink-soft); }
+  .phase .flag {
+    display: inline-block; margin-top: 7px; font-size: 11.5px; font-weight: 600;
+    color: var(--ping); letter-spacing: .04em;
+  }
+
+  footer {
+    padding: 40px 0 60px; color: var(--ink-soft); font-size: 13px;
+  }
+  footer .q { color: var(--ink); font-weight: 600; margin-bottom: 6px; }
+  footer ul { margin: 8px 0 0; padding-left: 18px; }
+  footer li { margin: 3px 0; }
+</style>
+
+<div class="hero">
+  <div class="wrap">
+    <div class="brand">
+      <span class="dot"></span>
+      <span class="name mono">WANES</span>
+      <span class="tag">ride-matching platform</span>
+    </div>
+    <h1><span class="from">From</span> <span class="arrow">→</span> <span class="to">To</span>.<br>A ride, either way.</h1>
+    <p class="lead">A rider asks for a trip between two addresses. Wanes instantly shows trips drivers already posted along that route — and when nothing fits, it pings nearby drivers to come get them.</p>
+
+    <div class="modes">
+      <div class="mode show">
+        <span class="badge">instant</span>
+        <div class="k">Mode 1 · Carpool</div>
+        <h3>Show posted trips</h3>
+        <p>Match the rider to trips drivers already planned along the same route and time window. Like BlaBlaCar — browse, pick, book a seat.</p>
+      </div>
+      <div class="mode notify">
+        <span class="badge">on-demand</span>
+        <div class="k">Mode 2 · Hail</div>
+        <h3>Notify nearby drivers</h3>
+        <p>No match? Open a ride request and push it to online drivers within radius. First to accept wins — like inDrive / Uber.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<section class="route">
+  <div class="wrap">
+    <p class="eyebrow">How a search works</p>
+    <div class="rail">
+      <div class="stop">
+        <h2 class="sec">One search, two possible outcomes</h2>
+        <div class="steps">
+          <div class="step"><span class="n mono">1</span><div><b>Rider enters</b> From → To, when, and seats.<p>Both addresses are geocoded to coordinates.</p></div></div>
+          <div class="step"><span class="n mono">2</span><div><b>Match engine filters</b> driver trips near the route within the time window, with seats free.<p>PostGIS finds trips whose route passes close to both pickup and drop-off, in the right direction.</p></div></div>
+          <div class="step"><span class="n mono">3a</span><div><b>Matches found →</b> ranked list, rider picks and books a seat.</div></div>
+          <div class="step"><span class="n mono">3b</span><div><b>No match →</b> a ride request is opened and pushed to nearby drivers; radius widens until someone accepts.</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="route">
+  <div class="wrap">
+    <p class="eyebrow">The match engine · core IP</p>
+    <div class="rail">
+      <div class="stop">
+        <h2 class="sec">Candidates are filtered cheaply, then scored</h2>
+        <p style="color:var(--ink-soft); font-size:15px; max-width:62ch; margin-top:10px;">Step one throws away everything impossible using indexed geo + time filters. Step two ranks what survives so the rider sees the best rides first.</p>
+        <div class="formula mono">
+          <div class="row"><span class="f">score =</span></div>
+          <div class="row"><span class="w">w₁</span><span class="f">· 1 / detour_distance</span><span class="c">how little the driver detours</span></div>
+          <div class="row"><span class="w">w₂</span><span class="f">· 1 / pickup_distance</span><span class="c">how near the route passes pickup</span></div>
+          <div class="row"><span class="w">w₃</span><span class="f">· 1 / time_gap</span><span class="c">closeness to requested time</span></div>
+          <div class="row"><span class="w">w₄</span><span class="f">· driver_rating</span><span class="c">trust</span></div>
+          <div class="row"><span class="w">− w₅</span><span class="f">· price_per_seat</span><span class="c">cheaper ranks higher</span></div>
+        </div>
+        <p class="flag mono" style="color:var(--ping); font-size:12.5px; margin-top:12px;">▸ MVP ships straight-line + time-window matching first, then upgrades to true route geometry.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="route">
+  <div class="wrap">
+    <p class="eyebrow">Proposed stack</p>
+    <div class="rail">
+      <div class="stop">
+        <h2 class="sec">Built on geo-native, real-time-ready foundations</h2>
+        <div class="stack">
+          <div class="chip"><div class="l">Backend</div><div class="v">Node + TypeScript <small>· NestJS</small></div></div>
+          <div class="chip"><div class="l">Database</div><div class="v">PostgreSQL + PostGIS <small>· geo queries</small></div></div>
+          <div class="chip"><div class="l">Maps</div><div class="v">Mapbox / Google <small>· geocode + routes</small></div></div>
+          <div class="chip"><div class="l">Realtime</div><div class="v">WebSockets + Redis <small>· live drivers</small></div></div>
+          <div class="chip"><div class="l">Push</div><div class="v">Firebase Cloud Messaging</div></div>
+          <div class="chip"><div class="l">Auth</div><div class="v">JWT + phone OTP <small>· Twilio</small></div></div>
+          <div class="chip"><div class="l">Web client</div><div class="v">React + Vite + Tailwind</div></div>
+          <div class="chip"><div class="l">Mobile · later</div><div class="v">React Native / Flutter</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="route">
+  <div class="wrap">
+    <p class="eyebrow">Roadmap</p>
+    <div class="rail">
+      <div class="stop">
+        <h2 class="sec">Ship a demoable product by Phase 1</h2>
+        <div class="phases">
+          <div class="phase"><span class="p">Phase 0</span><div><h3>Foundations + profile</h3><p>Repo, Docker (Postgres + PostGIS + Redis), API skeleton, users, auth & full profile.</p></div></div>
+          <div class="phase demo"><span class="p">Phase 1</span><div><h3>Posted trips + search</h3><p>Drivers post trips; riders search and book a seat. Simple straight-line matching.</p><span class="flag">◆ First demoable product</span></div></div>
+          <div class="phase"><span class="p">Phase 2</span><div><h3>On-demand fallback</h3><p>Ride requests, live driver location, notify-nearby + accept flow.</p></div></div>
+          <div class="phase"><span class="p">Phase 3</span><div><h3>Route-aware matching</h3><p>PostGIS route geometry, detour scoring, real ranking.</p></div></div>
+          <div class="phase"><span class="p">Phase 4</span><div><h3>Polish & scale</h3><p>Ratings, driver verification, admin dashboard, mobile app. <em>Payments deferred — not now.</em></p></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="q">Decisions to lock before we scaffold:</div>
+    <ul>
+      <li>Maps provider — Mapbox (cheaper) vs Google (coverage)?</li>
+      <li>First city / country — affects maps, regulation.</li>
+      <li>Show a driver-set price as info only, or hide price for now?</li>
+      <li>Driver verification — manual admin review or automated?</li>
+      <li>Language — Arabic + English / RTL?</li>
+    </ul>
+    <p style="margin-top:16px; font-size:12.5px; color:var(--ink-soft);"><strong style="color:var(--ink);">Note:</strong> Payments are deferred — no wallet or gateway in the current scope. Trips are arranged in-app; any settlement is offline/cash for now.</p>
+    <ul style="display:none;">
+    </ul>
+  </div>
+</footer>

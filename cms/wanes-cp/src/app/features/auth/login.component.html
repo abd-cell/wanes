@@ -1,0 +1,27 @@
+<div class="auth-wrap">
+  <div class="auth-card card">
+    <div class="brand">
+      <span class="dot"></span>
+      <span class="name">WANES</span>
+    </div>
+    <h1>{{ 'login_title' | translate }}</h1>
+    <p class="sub">{{ 'login_subtitle' | translate }}</p>
+
+    <label class="lbl">{{ 'login_phone' | translate }}</label>
+    <input class="field" type="tel" [ngModel]="phone()" (ngModelChange)="phone.set($event)"
+           [disabled]="codeSent()" placeholder="+9627…" />
+
+    @if (!codeSent()) {
+      <button class="btn btn-primary block" [disabled]="busy()" (click)="sendCode()">
+        {{ 'login_send_code' | translate }}
+      </button>
+    } @else {
+      <label class="lbl">{{ 'login_code' | translate }}</label>
+      <input class="field" type="text" inputmode="numeric" [ngModel]="code()"
+             (ngModelChange)="code.set($event)" placeholder="1234" />
+      <button class="btn btn-primary block" [disabled]="busy()" (click)="verify()">
+        {{ 'login_verify' | translate }}
+      </button>
+    }
+  </div>
+</div>

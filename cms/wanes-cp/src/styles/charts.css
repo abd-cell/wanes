@@ -1,0 +1,142 @@
+/* Wanes CP — data-visualisation tokens + chart chrome.
+ *
+ * The categorical slots are assigned in a FIXED order and never cycled: a series
+ * keeps its hue when a filter removes its neighbours. Both columns were checked
+ * with the data-viz validator against this app's own surfaces (#ffffff light,
+ * #111b2b dark) — lightness band, chroma floor, adjacent-pair CVD separation,
+ * normal-vision separation and 3:1 contrast all pass in both modes.
+ * Light: worst adjacent CVD dE 11.6, normal-vision dE 25.7.
+ * Dark:  worst adjacent CVD dE  8.0, normal-vision dE 26.1.
+ *
+ * Dark values sit under [data-theme='dark'] only — matching the rest of the app,
+ * which does not follow the OS colour scheme.
+ */
+:root {
+  --viz-surface: var(--app-surface);
+
+  /* categorical — fixed order, slot 1 is the brand teal */
+  --viz-1: #0d9c8c;
+  --viz-2: #e2661c;
+  --viz-3: #2a78d6;
+  --viz-4: #c94f7c;
+  --viz-5: #008300;
+  --viz-6: #4a3aa7;
+
+  /* status — reserved, never used as a series colour */
+  --viz-good: #0ca30c;
+  --viz-warning: #fab219;
+  --viz-serious: #ec835a;
+  --viz-critical: #d03b3b;
+
+  /* chrome */
+  --viz-grid: #e8ecf2;
+  --viz-axis: #cbd3df;
+  --viz-muted: #6b7688;
+  --viz-track: #eef1f6;
+}
+
+[data-theme='dark'] {
+  --viz-1: #16a595;
+  --viz-2: #e26a2c;
+  --viz-3: #3987e5;
+  --viz-4: #d55181;
+  --viz-5: #2f9139;
+  --viz-6: #8074d8;
+
+  --viz-grid: #1d2b40;
+  --viz-axis: #2c3d57;
+  --viz-muted: #93a1b8;
+  --viz-track: #172336;
+}
+
+/* ── layout ── */
+.viz-grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 16px; }
+.viz-grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.viz-section { margin-top: 28px; }
+.viz-section > h2 {
+  font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--app-ink-soft); margin: 0 0 12px;
+}
+
+/* ── card ── */
+.viz-card { padding: 18px 20px 16px; display: flex; flex-direction: column; overflow: visible; }
+.viz-card-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; }
+.viz-card-head h3 { margin: 0; font-size: 15px; font-weight: 700; }
+.viz-card-head .sub { font-size: 12.5px; color: var(--app-ink-soft); }
+.viz-card-head .spacer { margin-inline-start: auto; }
+.viz-toggle {
+  background: transparent; border: 1px solid var(--app-line); color: var(--app-ink-soft);
+  border-radius: 8px; padding: 3px 10px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.viz-toggle:hover { background: var(--app-surface-2); }
+.viz-toggle[aria-pressed='true'] { border-color: var(--app-primary); color: var(--app-primary-deep); }
+
+/* ── plot ── */
+.viz-plot { position: relative; }
+.viz-plot > svg { display: block; width: 100%; overflow: visible; }
+.viz-plot.donut > svg { width: auto; }
+.viz-plot text { fill: var(--viz-muted); font-size: 11px; }
+.viz-plot .grid { stroke: var(--viz-grid); stroke-width: 1; }
+.viz-plot .axis { stroke: var(--viz-axis); stroke-width: 1; }
+.viz-plot .label-strong { fill: var(--app-ink); font-weight: 700; }
+
+/* ── legend ── */
+.viz-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 12px; }
+.viz-legend .item { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--app-ink-soft); }
+.viz-legend .swatch { width: 11px; height: 11px; border-radius: 3px; flex: none; }
+.viz-legend .key-line { width: 14px; height: 2px; border-radius: 2px; flex: none; }
+
+/* ── tooltip ── */
+.viz-tip {
+  position: absolute; pointer-events: none; z-index: 5; min-width: 120px;
+  background: var(--app-surface); border: 1px solid var(--app-line);
+  border-radius: 10px; box-shadow: var(--app-shadow); padding: 9px 11px;
+  font-size: 12.5px; transform: translateX(-50%);
+}
+.viz-tip .tip-head { color: var(--app-ink-soft); margin-bottom: 5px; font-size: 11.5px; }
+.viz-tip .tip-row { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.viz-tip .tip-row + .tip-row { margin-top: 3px; }
+.viz-tip .tip-key { width: 12px; height: 2px; border-radius: 2px; flex: none; }
+.viz-tip .tip-val { font-weight: 700; color: var(--app-ink); font-variant-numeric: tabular-nums; }
+.viz-tip .tip-name { color: var(--app-ink-soft); }
+
+/* ── table view (every chart has one) ── */
+.viz-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.viz-table th, .viz-table td {
+  text-align: start; padding: 7px 10px; border-bottom: 1px solid var(--app-line); white-space: nowrap;
+}
+.viz-table th { color: var(--app-ink-soft); font-weight: 600; font-size: 12px; }
+.viz-table td.num { text-align: end; font-variant-numeric: tabular-nums; }
+.viz-table-wrap { max-height: 300px; overflow: auto; }
+
+/* ── stat tiles ── */
+.viz-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }
+.viz-tile {
+  background: var(--app-surface); border: 1px solid var(--app-line);
+  border-radius: var(--app-radius); padding: 16px 18px; display: block;
+}
+.viz-tile .tile-label { font-size: 12.5px; color: var(--app-ink-soft); }
+.viz-tile .tile-value { font-size: 26px; font-weight: 700; line-height: 1.25; margin-top: 2px; }
+.viz-tile .tile-foot { display: flex; align-items: center; gap: 8px; margin-top: 6px; min-height: 20px; }
+.viz-tile .tile-delta { font-size: 12.5px; font-weight: 700; }
+.viz-tile .tile-delta.up { color: var(--viz-good); }
+.viz-tile .tile-delta.down { color: var(--viz-critical); }
+.viz-tile .tile-delta.flat { color: var(--app-ink-soft); }
+.viz-tile .tile-note { font-size: 12px; color: var(--app-ink-soft); }
+.viz-tile.hero { grid-column: span 2; }
+.viz-tile.hero .tile-value { font-size: 48px; letter-spacing: -.02em; }
+a.viz-tile { transition: border-color .15s; }
+a.viz-tile:hover { border-color: var(--app-primary); }
+
+/* ── meter ── */
+.viz-meter { height: 8px; border-radius: 999px; background: var(--viz-track); overflow: hidden; margin-top: 8px; }
+.viz-meter > span { display: block; height: 100%; border-radius: 999px; background: var(--viz-1); }
+
+/* ── numbers strip ── */
+.viz-figures { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 2px; }
+.viz-figures .fig { padding: 12px 16px; border-inline-start: 2px solid var(--app-line); }
+.viz-figures .fig .k { font-size: 12px; color: var(--app-ink-soft); display: block; }
+.viz-figures .fig .v { font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* refetch holds the previous render instead of flashing a skeleton */
+.viz-stale { opacity: .45; transition: opacity .15s; }

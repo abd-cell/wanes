@@ -1,0 +1,66 @@
+/* Shared admin UI classes (kept global so component CSS stays tiny). */
+
+.admin-page { padding: 24px 28px; max-width: 1200px; margin-inline: auto; }
+
+.page-head { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; }
+.page-head h1 { font-size: 22px; font-weight: 700; margin: 0; }
+.page-head .spacer { margin-inline-start: auto; }
+
+.card {
+  background: var(--app-surface);
+  border: 1px solid var(--app-line);
+  border-radius: var(--app-radius);
+  box-shadow: var(--app-shadow);
+  overflow: hidden;
+}
+
+.filters { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+.field {
+  padding: 10px 14px;
+  border: 1px solid var(--app-line);
+  border-radius: 10px;
+  background: var(--app-surface);
+  color: var(--app-ink);
+  font: inherit;
+  min-width: 220px;
+}
+.field:focus { outline: 2px solid var(--app-primary); outline-offset: 1px; }
+
+.table-wrap { overflow-x: auto; }
+.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.data-table th, .data-table td {
+  text-align: start;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--app-line);
+  white-space: nowrap;
+}
+.data-table th { color: var(--app-ink-soft); font-weight: 600; font-size: 12.5px; text-transform: uppercase; letter-spacing: .04em; }
+.data-table tbody tr:hover { background: var(--app-surface-2); }
+.data-table .muted { color: var(--app-ink-soft); }
+
+.badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+.badge-pending { background: color-mix(in srgb, var(--app-accent) 18%, transparent); color: var(--app-accent); }
+.badge-verified { background: color-mix(in srgb, var(--app-success) 18%, transparent); color: var(--app-success); }
+.badge-rejected { background: color-mix(in srgb, var(--app-danger) 18%, transparent); color: var(--app-danger); }
+
+.btn {
+  padding: 9px 16px; border-radius: 10px; border: 1px solid transparent;
+  font: inherit; font-weight: 600; cursor: pointer; transition: filter .15s, background .15s;
+}
+.btn:focus-visible { outline: 2px solid var(--app-primary); outline-offset: 2px; }
+.btn-primary { background: var(--app-primary); color: #04231f; }
+.btn-primary:hover { filter: brightness(1.05); }
+.btn-ghost { background: transparent; border-color: var(--app-line); color: var(--app-ink); }
+.btn-ghost:hover { background: var(--app-surface-2); }
+.btn-danger { background: transparent; border-color: color-mix(in srgb, var(--app-danger) 45%, transparent); color: var(--app-danger); }
+.btn-danger:hover { background: color-mix(in srgb, var(--app-danger) 10%, transparent); }
+.btn-sm { padding: 6px 12px; font-size: 13px; }
+.row-actions { display: flex; gap: 8px; }
+
+.empty { padding: 48px; text-align: center; color: var(--app-ink-soft); }
+
+/* toasts */
+.toast-host { position: fixed; inset-block-end: 20px; inset-inline-end: 20px; display: flex; flex-direction: column; gap: 10px; z-index: 50; }
+.toast { padding: 12px 18px; border-radius: 10px; color: #fff; box-shadow: var(--app-shadow); font-weight: 600; }
+.toast.success { background: var(--app-success); }
+.toast.error { background: var(--app-danger); }

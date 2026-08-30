@@ -1,0 +1,250 @@
+<title>مخطط تدفق البيانات — وينس</title>
+<style>
+  :root {
+    --bg: #f5f7fa;
+    --surface: #ffffff;
+    --ink: #0e1726;
+    --ink-soft: #46536a;
+    --line: #dbe1ea;
+    --route: #0fae9e;
+    --route-deep: #0b8478;
+    --ping: #ff7a2f;
+    --paper: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0a111d;
+      --surface: #111b2b;
+      --ink: #e7edf7;
+      --ink-soft: #93a1b8;
+      --line: #223047;
+      --route: #2ad0bf;
+      --route-deep: #1fb6a6;
+      --ping: #ff8c4d;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0a111d; --surface: #111b2b; --ink: #e7edf7;
+    --ink-soft: #93a1b8; --line: #223047; --route: #2ad0bf;
+    --route-deep: #1fb6a6; --ping: #ff8c4d;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: "Segoe UI", Tahoma, system-ui, sans-serif;
+    line-height: 1.7; direction: rtl;
+  }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 40px 22px 70px; }
+  .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 26px; }
+  .brand .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--route);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--route) 22%, transparent); }
+  .brand .name { font-weight: 700; letter-spacing: .06em; font-size: 15px;
+    font-family: ui-monospace, Consolas, monospace; }
+  .brand .tag { margin-inline-start: auto; font-size: 12px; color: var(--ink-soft); }
+  h1 { font-size: clamp(26px, 5vw, 40px); font-weight: 800; letter-spacing: -0.01em;
+    margin: 0 0 8px; text-wrap: balance; }
+  .sub { color: var(--ink-soft); font-size: 16px; max-width: 62ch; margin: 0 0 28px; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 12px; margin: 0 0 30px; }
+  .lg { display: flex; align-items: center; gap: 8px; font-size: 13.5px;
+    background: var(--surface); border: 1px solid var(--line);
+    padding: 8px 14px; border-radius: 999px; }
+  .sw { width: 26px; height: 16px; border-radius: 4px; flex: none; }
+  .sw.entity { background: #0e1726; border: 1px solid #0e1726; }
+  .sw.proc { background: #0fae9e; }
+  .sw.store { background: #fff3e9; border: 1px solid #ff7a2f; border-radius: 4px 4px 9px 9px; }
+
+  .panel { background: var(--surface); border: 1px solid var(--line);
+    border-radius: 16px; padding: 22px; margin-bottom: 30px; }
+  .panel h2 { margin: 0 0 4px; font-size: 20px; font-weight: 700; }
+  .panel .lvl { font-family: ui-monospace, Consolas, monospace; font-size: 12px;
+    letter-spacing: .16em; color: var(--route-deep); margin: 0 0 14px; }
+  @media (prefers-color-scheme: dark) { .panel .lvl { color: var(--route); } }
+
+  /* diagrams sit on an always-light "paper" so mermaid stays readable in both themes */
+  .paper { background: var(--paper); border-radius: 12px; padding: 14px;
+    overflow-x: auto; border: 1px solid #e6e9ef; }
+  .mermaid { display: flex; justify-content: center; }
+
+  table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 14px; }
+  th, td { text-align: right; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+  th { color: var(--ink-soft); font-weight: 600; font-size: 12.5px; }
+  td code { font-family: ui-monospace, Consolas, monospace; color: var(--route-deep);
+    background: color-mix(in srgb, var(--route) 12%, transparent); padding: 1px 7px;
+    border-radius: 6px; }
+  @media (prefers-color-scheme: dark) { td code { color: var(--route); } }
+</style>
+
+<div class="wrap">
+  <div class="brand">
+    <span class="dot"></span>
+    <span class="name">WANES · وينس</span>
+    <span class="tag">مخطط تدفق البيانات</span>
+  </div>
+
+  <h1>مخطط تدفق البيانات لتطبيق وينس</h1>
+  <p class="sub">يوضّح كيف تنتقل البيانات بين المستخدمين (الراكب والسائق)، وعمليات النظام، ومخازن البيانات — من طلب الرحلة حتى الحجز والتقييم، مع إدارة كاملة للملف الشخصي وسجل تدقيق يتتبّع كل الأحداث. <strong>لا يوجد دفع في هذه المرحلة.</strong></p>
+
+  <div class="legend">
+    <span class="lg"><span class="sw entity"></span> كيان خارجي (مستخدم / خدمة)</span>
+    <span class="lg"><span class="sw proc"></span> عملية (Process)</span>
+    <span class="lg"><span class="sw store"></span> مخزن بيانات (Data Store)</span>
+  </div>
+
+  <!-- ============ LEVEL 0 ============ -->
+  <div class="panel">
+    <p class="lvl">LEVEL 0 · المخطط السياقي</p>
+    <h2>نظرة عامة — النظام ككل</h2>
+    <div class="paper">
+      <pre class="mermaid">
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'Segoe UI, Tahoma, sans-serif','fontSize':'15px'},'flowchart':{'curve':'basis','nodeSpacing':55,'rankSpacing':60}}}%%
+flowchart TD
+  R["الراكب"]
+  Dr["السائق"]
+  MAP["خدمة الخرائط"]
+  SYS(["0 · نظام وينس"])
+
+  R -->|"طلب رحلة: من ← إلى، الوقت، المقاعد"| SYS
+  SYS -->|"رحلات مطابقة + تأكيد الحجز"| R
+  Dr -->|"نشر رحلة / قبول طلب"| SYS
+  SYS -->|"إشعار بطلب قريب"| Dr
+  SYS -->|"عنوان للتحويل"| MAP
+  MAP -->|"إحداثيات ومسار"| SYS
+
+  classDef entity fill:#0e1726,stroke:#0b1220,color:#ffffff,rx:6,ry:6;
+  classDef proc fill:#0fae9e,stroke:#0b8478,color:#04231f;
+  class R,Dr,MAP entity;
+  class SYS proc;
+      </pre>
+    </div>
+  </div>
+
+  <!-- ============ LEVEL 1 ============ -->
+  <div class="panel">
+    <p class="lvl">LEVEL 1 · العمليات التفصيلية</p>
+    <h2>تفصيل عمليات النظام</h2>
+    <div class="paper">
+      <pre class="mermaid">
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'Segoe UI, Tahoma, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','nodeSpacing':45,'rankSpacing':55}}}%%
+flowchart TD
+  R["الراكب"]
+  Dr["السائق"]
+  MAP["خدمة الخرائط"]
+
+  P1(["1 · المصادقة وتسجيل الدخول"])
+  P2(["2 · نشر رحلة"])
+  P3(["3 · البحث والمطابقة"])
+  P4(["4 · إشعار السائقين القريبين"])
+  P5(["5 · الحجز"])
+  P6(["6 · التقييم"])
+  P7(["7 · إدارة الملف الشخصي"])
+
+  D1[("D1 · المستخدمون")]
+  D2[("D2 · الرحلات")]
+  D3[("D3 · طلبات الركوب")]
+  D4[("D4 · الحجوزات")]
+  D5[("D5 · التقييمات")]
+  D6[("D6 · الأماكن المحفوظة")]
+
+  R -->|"بيانات الدخول"| P1
+  Dr -->|"بيانات الدخول"| P1
+  P1 -->|"تحقّق وحفظ"| D1
+
+  Dr -->|"تفاصيل الرحلة"| P2
+  P2 -->|"حفظ رحلة"| D2
+
+  R -->|"طلب: من ← إلى"| P3
+  D6 -->|"أماكن محفوظة"| P3
+  D2 -->|"الرحلات المتاحة"| P3
+  P3 -->|"عنوان"| MAP
+  MAP -->|"إحداثيات ومسار"| P3
+  P3 -->|"قائمة مطابقة"| R
+  P3 -->|"طلب جديد عند عدم التطابق"| D3
+  P3 -->|"طلب مفتوح"| P4
+
+  D1 -->|"سائقون قريبون"| P4
+  P4 -->|"إشعار بطلب"| Dr
+  Dr -->|"قبول الطلب"| P4
+  P4 -->|"تحديث حالة الطلب"| D3
+
+  R -->|"حجز مقعد"| P5
+  P5 -->|"إنشاء حجز"| D4
+  P5 -->|"تحديث المقاعد"| D2
+  P5 -->|"تأكيد"| R
+  P5 -->|"تأكيد"| Dr
+
+  R -->|"تقييم"| P6
+  Dr -->|"تقييم"| P6
+  P6 -->|"حفظ التقييم"| D5
+
+  R -->|"تعديل الملف الشخصي"| P7
+  Dr -->|"مستندات التوثيق + المركبة"| P7
+  P7 -->|"تحديث بيانات المستخدم"| D1
+  P7 -->|"حفظ الأماكن"| D6
+
+  classDef entity fill:#0e1726,stroke:#0b1220,color:#ffffff;
+  classDef proc fill:#0fae9e,stroke:#0b8478,color:#04231f;
+  classDef store fill:#fff3e9,stroke:#ff7a2f,color:#7a3410;
+  class R,Dr,MAP entity;
+  class P1,P2,P3,P4,P5,P6,P7 proc;
+  class D1,D2,D3,D4,D5,D6 store;
+      </pre>
+    </div>
+  </div>
+
+  <!-- ============ AUDIT LAYER ============ -->
+  <div class="panel">
+    <p class="lvl">CROSS-CUTTING · طبقة التدقيق</p>
+    <h2>سجل التدقيق — تتبّع كل الأحداث</h2>
+    <p style="color:var(--ink-soft); font-size:15px; max-width:64ch; margin:6px 0 4px;">كل عملية تكتب أثرًا في سجل التدقيق (من قام بالإجراء، ماذا تغيّر، ومتى). السجل غير قابل للتعديل أو الحذف، وتراجعه الإدارة.</p>
+    <div class="paper">
+      <pre class="mermaid">
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'Segoe UI, Tahoma, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','nodeSpacing':50,'rankSpacing':55}}}%%
+flowchart LR
+  ALL(["كل العمليات · P1 … P7"])
+  D7[("D7 · سجل التدقيق")]
+  ADMIN["الإدارة"]
+
+  ALL -->|"من · ماذا · متى · قبل/بعد"| D7
+  D7 -->|"مراجعة النشاط والنزاعات"| ADMIN
+  D7 -->|"نشاطي"| ALL
+
+  classDef entity fill:#0e1726,stroke:#0b1220,color:#ffffff;
+  classDef proc fill:#0fae9e,stroke:#0b8478,color:#04231f;
+  classDef store fill:#fff3e9,stroke:#ff7a2f,color:#7a3410;
+  class ADMIN entity;
+  class ALL proc;
+  class D7 store;
+      </pre>
+    </div>
+  </div>
+
+  <!-- ============ TABLES ============ -->
+  <div class="panel">
+    <h2 style="margin-bottom:14px;">جدول العمليات ومخازن البيانات</h2>
+    <table>
+      <thead><tr><th>الرمز</th><th>العملية</th><th>الوصف</th></tr></thead>
+      <tbody>
+        <tr><td><code>P1</code></td><td>المصادقة</td><td>تسجيل الدخول عبر رقم الهاتف (OTP) وإدارة الحسابات.</td></tr>
+        <tr><td><code>P2</code></td><td>نشر رحلة</td><td>يُدخل السائق: من ← إلى، وقت المغادرة، المقاعد، السعر.</td></tr>
+        <tr><td><code>P3</code></td><td>البحث والمطابقة</td><td>محرّك المطابقة: يعرض الرحلات على المسار أو يفتح طلبًا جديدًا.</td></tr>
+        <tr><td><code>P4</code></td><td>إشعار السائقين</td><td>عند عدم التطابق، يُشعر السائقين القريبين وأول من يقبل يفوز.</td></tr>
+        <tr><td><code>P5</code></td><td>الحجز</td><td>حجز مقعد، تحديث المقاعد المتاحة، تأكيد الطرفين.</td></tr>
+        <tr><td><code>P6</code></td><td>التقييم</td><td>تقييم الطرفين بالنجوم بعد اكتمال الرحلة. (لا دفع حاليًا)</td></tr>
+        <tr><td><code>P7</code></td><td>إدارة الملف الشخصي</td><td>تعديل البيانات، الأدوار، توثيق السائق والمركبات، الأماكن المحفوظة، التفضيلات.</td></tr>
+      </tbody>
+    </table>
+    <table style="margin-top:20px;">
+      <thead><tr><th>الرمز</th><th>مخزن البيانات</th><th>المحتوى</th></tr></thead>
+      <tbody>
+        <tr><td><code>D1</code></td><td>المستخدمون</td><td>الحسابات، الأدوار (راكب/سائق)، المركبات، التقييم.</td></tr>
+        <tr><td><code>D2</code></td><td>الرحلات</td><td>رحلات السائقين: المسار، الوقت، المقاعد، السعر، الحالة.</td></tr>
+        <tr><td><code>D3</code></td><td>طلبات الركوب</td><td>طلبات الركّاب المفتوحة عند عدم وجود رحلة مطابقة.</td></tr>
+        <tr><td><code>D4</code></td><td>الحجوزات</td><td>الربط بين الراكب والرحلة: المقاعد، السعر، الحالة.</td></tr>
+        <tr><td><code>D5</code></td><td>التقييمات</td><td>تقييمات الطرفين بعد اكتمال الرحلة.</td></tr>
+        <tr><td><code>D6</code></td><td>الأماكن المحفوظة</td><td>المنزل، العمل، والأماكن المفضّلة لتسريع البحث.</td></tr>
+        <tr><td><code>D7</code></td><td>سجل التدقيق</td><td>أثر غير قابل للتعديل لكل إجراء: الفاعل، الحدث، قبل/بعد، الوقت.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>

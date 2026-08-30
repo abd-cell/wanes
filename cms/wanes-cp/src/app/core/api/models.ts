@@ -1,0 +1,301 @@
+// ── Response envelope (mirrors backend BaseResponse<T>) ──
+export interface AppResponse<T = unknown> {
+  success: boolean;
+  data?: T;
+  errorCode: number;
+  message?: string;
+  errors?: string[];
+}
+
+/** Paged admin list payload (matches backend PageOutput<T>). */
+export interface AdminPage<T> {
+  data: T[];
+  totalRows: number;
+}
+
+export interface PageQuery {
+  pageNumber: number;
+  pageSize: number;
+  search?: string;
+}
+
+/** A generic admin row / form model — the admin screens are config-driven. */
+export type ResourceRecord = Record<string, unknown>;
+
+/**
+ * One option in a reference picker (matches backend LookupRow). `label` is what
+ * the admin reads — a name, a route — and `description` is the secondary line
+ * that tells two similar records apart. `id` is the foreign key we actually send.
+ */
+export interface LookupOption {
+  id: number;
+  label: string;
+  description?: string;
+}
+
+// ── Enums (kept in sync with the backend) ──
+export enum Roles {
+  User = 1,
+  Admin = 2,
+}
+
+export enum DriverStatus {
+  None = 0,
+  Pending = 1,
+  Verified = 2,
+  Rejected = 3,
+  Suspended = 4,
+}
+
+export enum DeviceType {
+  Web = 1,
+  Ios = 2,
+  Android = 3,
+}
+
+export enum Gender {
+  Unspecified = 0,
+  Male = 1,
+  Female = 2,
+}
+
+export enum ActiveRole {
+  Rider = 1,
+  Driver = 2,
+}
+
+export enum Language {
+  En = 1,
+  Ar = 2,
+}
+
+export enum TripStatus {
+  Posted = 1,
+  Full = 2,
+  Active = 3,
+  Completed = 4,
+  Cancelled = 5,
+}
+
+export enum BookingStatus {
+  Pending = 1,
+  Confirmed = 2,
+  InProgress = 3,
+  Completed = 4,
+  Cancelled = 5,
+}
+
+export enum RideRequestStatus {
+  Open = 1,
+  Matched = 2,
+  Expired = 3,
+  Cancelled = 4,
+}
+
+export enum RatingDirection {
+  RiderToDriver = 1,
+  DriverToRider = 2,
+}
+
+export enum NotificationType {
+  RideRequestNearby = 1,
+  BookingConfirmed = 2,
+  TripCancelled = 3,
+  DriverAccepted = 4,
+  TripCompleted = 5,
+  General = 100,
+}
+
+export enum SavedPlaceLabel {
+  Home = 1,
+  Work = 2,
+  Custom = 3,
+}
+
+// ── DTOs ──
+export interface AuthResult {
+  token: string;
+  isNewUser: boolean;
+  profile: Profile;
+}
+
+export interface Profile {
+  id: number;
+  phone: string;
+  firstName: string;
+  lastName: string;
+  displayName?: string;
+  avatarUrl?: string;
+  driverStatus: DriverStatus;
+  ratingAvg: number;
+  /** Roles held by the account — the CMS requires Roles.Admin. */
+  roles?: Roles[];
+}
+
+export interface DriverRow {
+  id: number;
+  phone: string;
+  name: string;
+  driverStatus: DriverStatus;
+  licenseNumber?: string;
+}
+
+export interface AuditRow {
+  id: number;
+  actorUserId?: number;
+  actorName?: string;
+  action: string;
+  entityType?: string;
+  entityId?: number;
+  ip?: string;
+  creationDate: string;
+}
+
+// ── Analytics (mirrors Areas/Services/Management/Models/Analytics) ──
+
+/** One day of a daily series. The backend zero-fills gaps. */
+export interface SeriesPoint {
+  date: string;
+  value: number;
+}
+
+/** One slice of a categorical breakdown. `key` is the enum value. */
+export interface MetricPoint {
+  key: number;
+  label: string;
+  value: number;
+}
+
+export interface LeaderRow {
+  id?: number;
+  label: string;
+  sublabel?: string;
+  value: number;
+  secondary?: number;
+}
+
+export interface EndpointStat {
+  method: string;
+  path: string;
+  calls: number;
+  avgDurationMs: number;
+  maxDurationMs: number;
+  errors: number;
+}
+
+export interface AnalyticsOverview {
+  rangeDays: number;
+  from: string;
+  to: string;
+
+  users: number;
+  newUsers: number;
+  activeUsers: number;
+  riders: number;
+  drivers: number;
+  verifiedDrivers: number;
+  pendingDrivers: number;
+  onlineDrivers: number;
+  disabledUsers: number;
+
+  vehicles: number;
+  vehicleSeats: number;
+
+  trips: number;
+  newTrips: number;
+  activeTrips: number;
+  completedTrips: number;
+  cancelledTrips: number;
+  seatsOffered: number;
+  seatsTaken: number;
+  seatFillRate: number;
+
+  bookings: number;
+  newBookings: number;
+  completedBookings: number;
+  cancelledBookings: number;
+  bookingCancelRate: number;
+  requests: number;
+  newRequests: number;
+  openRequests: number;
+  matchedRequests: number;
+  expiredRequests: number;
+  matchRate: number;
+  avgSeatsPerBooking: number;
+
+  ratings: number;
+  avgRating: number;
+  lowRatings: number;
+
+  notifications: number;
+  unreadNotifications: number;
+  savedPlaces: number;
+  activeSessions: number;
+  newLogins: number;
+
+  apiCalls: number;
+  apiErrors: number;
+  apiErrorRate: number;
+  avgResponseMs: number;
+  auditEvents: number;
+
+  usersTrend: number | null;
+  tripsTrend: number | null;
+  bookingsTrend: number | null;
+  requestsTrend: number | null;
+}
+
+export interface AnalyticsTimeSeries {
+  from: string;
+  to: string;
+  newUsers: SeriesPoint[];
+  newTrips: SeriesPoint[];
+  newBookings: SeriesPoint[];
+  newRequests: SeriesPoint[];
+  completedTrips: SeriesPoint[];
+  cancelledTrips: SeriesPoint[];
+  logins: SeriesPoint[];
+  seatsBooked: SeriesPoint[];
+}
+
+export interface AnalyticsBreakdowns {
+  tripsByStatus: MetricPoint[];
+  bookingsByStatus: MetricPoint[];
+  requestsByStatus: MetricPoint[];
+  usersByDriverStatus: MetricPoint[];
+  usersByLanguage: MetricPoint[];
+  usersByGender: MetricPoint[];
+  ratingsByStars: MetricPoint[];
+  notificationsByType: MetricPoint[];
+  sessionsByDevice: MetricPoint[];
+  placesByLabel: MetricPoint[];
+  demandByHour: MetricPoint[];
+  tripsByWeekday: MetricPoint[];
+}
+
+export interface AnalyticsOperations {
+  totalCalls: number;
+  ok2xx: number;
+  redirect3xx: number;
+  clientError4xx: number;
+  serverError5xx: number;
+  avgDurationMs: number;
+  maxDurationMs: number;
+  slowCalls: number;
+  unauthenticatedCalls: number;
+  callsByDay: SeriesPoint[];
+  errorsByDay: SeriesPoint[];
+  topEndpoints: EndpointStat[];
+  slowestEndpoints: EndpointStat[];
+  topAuditActions: LeaderRow[];
+  auditByDay: SeriesPoint[];
+}
+
+export interface AnalyticsLeaderboards {
+  topDrivers: LeaderRow[];
+  topRiders: LeaderRow[];
+  topRoutes: LeaderRow[];
+  topOrigins: LeaderRow[];
+  topDestinations: LeaderRow[];
+  topRatedDrivers: LeaderRow[];
+}

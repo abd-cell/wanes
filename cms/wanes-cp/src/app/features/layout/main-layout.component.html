@@ -1,0 +1,23 @@
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="dot"></span>
+      <span class="name">WANES</span>
+    </div>
+    <nav class="nav">
+      <a routerLink="dashboard" routerLinkActive="active">{{ 'nav_dashboard' | translate }}</a>
+      <a routerLink="drivers" routerLinkActive="active">{{ 'nav_drivers' | translate }}</a>
+      @for (r of resources; track r.key) {
+        <a [routerLink]="['data', r.key]" routerLinkActive="active">{{ r.titleKey | translate }}</a>
+      }
+      <a routerLink="audit" routerLinkActive="active">{{ 'nav_audit' | translate }}</a>
+    </nav>
+    <div class="side-foot">
+      <button class="btn btn-ghost btn-sm" (click)="toggleLang()">{{ lang === 'en' ? 'العربية' : 'English' }}</button>
+      <button class="btn btn-ghost btn-sm" (click)="logout()">{{ 'nav_logout' | translate }}</button>
+    </div>
+  </aside>
+  <main class="content">
+    <router-outlet />
+  </main>
+</div>

@@ -1,0 +1,28 @@
+# Visual Studio
+.vs/
+**/.vs/
+
+# .NET
+**/bin/
+**/obj/
+
+# User-specific files
+*.user
+*.suo
+
+# Flutter
+**/.dart_tool/
+**/build/
+
+# Android
+**/android/.gradle/
+**/android/local.properties/
+
+# iOS
+**/ios/Pods/
+**/ios/.symlinks/
+
+# Environment
+.env
+.env.*
+!.env.example

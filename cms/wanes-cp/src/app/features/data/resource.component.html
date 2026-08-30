@@ -1,0 +1,170 @@
+@if (config(); as cfg) {
+  <div class="admin-page">
+    <div class="page-head">
+      <h1>{{ cfg.titleKey | translate }}</h1>
+      <span class="spacer"></span>
+    </div>
+
+    <!-- toolbar: search + filters + new -->
+    <div class="toolbar">
+      @if (cfg.searchable) {
+        <input class="field" [ngModel]="search()" (ngModelChange)="search.set($event)"
+               (keyup.enter)="applySearch()" [placeholder]="'common_search' | translate" />
+        <button class="btn btn-ghost btn-sm" (click)="applySearch()">{{ 'common_search' | translate }}</button>
+      }
+      @for (f of cfg.filters ?? []; track f.name) {
+        <select class="field" [ngModel]="filters()[f.name] ?? ''"
+                (ngModelChange)="setFilter(f.name, $event)">
+          <option value="">{{ 'filter_all' | translate }} · {{ f.labelKey | translate }}</option>
+          @for (o of f.enum; track o.value) {
+            <option [value]="o.value">{{ o.labelKey | translate }}</option>
+          }
+        </select>
+      }
+      <span class="spacer"></span>
+      @if (cfg.canCreate) {
+        <button class="btn btn-primary btn-sm" (click)="openCreate()">{{ 'action_new' | translate }}</button>
+      }
+    </div>
+
+    <!-- create / edit form -->
+    @if (formOpen()) {
+      <div class="card" style="padding:22px; margin-bottom:16px">
+        <h2 style="margin:0 0 16px; font-size:18px">
+          {{ (editingId() === null ? 'form_create' : 'form_edit') | translate }} · {{ cfg.titleKey | translate }}
+        </h2>
+        <div class="form-grid">
+          @for (fld of cfg.fields; track fld.name) {
+            @switch (fld.type) {
+              @case ('checkbox') {
+                <div class="form-row check">
+                  <input type="checkbox" [id]="'f_' + fld.name"
+                         [ngModel]="!!model()[fld.name]" (ngModelChange)="setField(fld.name, $event)" />
+                  <label [for]="'f_' + fld.name">{{ fld.labelKey | translate }}</label>
+                </div>
+              }
+              @case ('select') {
+                <div class="form-row">
+                  <label>{{ fld.labelKey | translate }}</label>
+                  <select class="field" [ngModel]="model()[fld.name]"
+                          (ngModelChange)="setField(fld.name, +$event)">
+                    @for (o of fld.enum; track o.value) {
+                      <option [value]="o.value">{{ o.labelKey | translate }}</option>
+                    }
+                  </select>
+                </div>
+              }
+              @case ('textarea') {
+                <div class="form-row" style="grid-column:1/-1">
+                  <label>{{ fld.labelKey | translate }}</label>
+                  <textarea class="field" rows="2" [ngModel]="model()[fld.name]"
+                            (ngModelChange)="setField(fld.name, $event)"></textarea>
+                </div>
+              }
+              @case ('reference') {
+                <div class="form-row">
+                  <label>{{ fld.labelKey | translate }}</label>
+                  <app-lookup-picker [type]="fld.lookup ?? 'users'"
+                                     [value]="refValue(fld.name)"
+                                     (valueChange)="setField(fld.name, $event)" />
+                </div>
+              }
+              @case ('number') {
+                <div class="form-row">
+                  <label>{{ fld.labelKey | translate }}</label>
+                  <input class="field" type="number" [step]="fld.step ?? '1'"
+                         [ngModel]="model()[fld.name]"
+                         (ngModelChange)="setField(fld.name, $event === '' || $event === null ? null : +$event)" />
+                </div>
+              }
+              @case ('datetime') {
+                <div class="form-row">
+                  <label>{{ fld.labelKey | translate }}</label>
+                  <input class="field" type="datetime-local" [ngModel]="model()[fld.name]"
+                         (ngModelChange)="setField(fld.name, $event)" />
+                </div>
+              }
+              @default {
+                <div class="form-row">
+                  <label>{{ fld.labelKey | translate }}</label>
+                  <input class="field" type="text" [ngModel]="model()[fld.name]"
+                         (ngModelChange)="setField(fld.name, $event)" />
+                </div>
+              }
+            }
+          }
+        </div>
+
+        @if (cfg.manageRoles && editingId() !== null) {
+          <div class="section-label">{{ 'roles_title' | translate }}</div>
+          <div class="roles-row">
+            @for (r of roleOptions; track r.value) {
+              <label>
+                <input type="checkbox" [checked]="hasRole(r.value)" (change)="toggleRole(r.value)" />
+                {{ r.labelKey | translate }}
+              </label>
+            }
+          </div>
+        }
+
+        <div class="form-foot">
+          <button class="btn btn-primary" (click)="save()">{{ 'action_save' | translate }}</button>
+          <button class="btn btn-ghost" (click)="closeForm()">{{ 'action_cancel' | translate }}</button>
+        </div>
+      </div>
+    }
+
+    <!-- data table -->
+    <div class="card">
+      @if (loading()) {
+        <div class="empty">{{ 'common_loading' | translate }}</div>
+      } @else if (rows().length === 0) {
+        <div class="empty">{{ 'list_empty' | translate }}</div>
+      } @else {
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                @for (col of cfg.columns; track col.field) {
+                  <th>{{ col.labelKey | translate }}</th>
+                }
+                @if (cfg.canEdit || cfg.canDelete) { <th>{{ 'col_actions' | translate }}</th> }
+              </tr>
+            </thead>
+            <tbody>
+              @for (row of rows(); track row['id']) {
+                <tr>
+                  @for (col of cfg.columns; track col.field) {
+                    @if (isDate(col)) {
+                      <td class="muted">{{ row[col.field] ? ($any(row[col.field]) | date: 'short') : '—' }}</td>
+                    } @else {
+                      <td>{{ cell(col, row) }}</td>
+                    }
+                  }
+                  @if (cfg.canEdit || cfg.canDelete) {
+                    <td>
+                      <div class="row-actions">
+                        @if (cfg.canEdit) {
+                          <button class="btn btn-ghost btn-sm" (click)="openEdit(row)">{{ 'action_edit' | translate }}</button>
+                        }
+                        @if (cfg.canDelete) {
+                          <button class="btn btn-danger btn-sm" (click)="remove(row)">{{ 'action_delete' | translate }}</button>
+                        }
+                      </div>
+                    </td>
+                  }
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+    </div>
+
+    <div class="pager">
+      <button class="btn btn-ghost btn-sm" [disabled]="pageNumber() <= 1" (click)="go(-1)">‹</button>
+      <span class="muted">{{ pageNumber() }} / {{ pageCount() }} · {{ total() }}</span>
+      <button class="btn btn-ghost btn-sm" [disabled]="pageNumber() >= pageCount()" (click)="go(1)">›</button>
+    </div>
+  </div>
+}

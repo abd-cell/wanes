@@ -1,0 +1,47 @@
+<div class="admin-page">
+  <div class="page-head">
+    <h1>{{ 'drivers_title' | translate }}</h1>
+    <span class="spacer"></span>
+    <button class="btn btn-ghost btn-sm" (click)="load()">{{ 'common_search' | translate }}</button>
+  </div>
+
+  <div class="card">
+    @if (loading()) {
+      <div class="empty">{{ 'common_loading' | translate }}</div>
+    } @else if (rows().length === 0) {
+      <div class="empty">{{ 'drivers_empty' | translate }}</div>
+    } @else {
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>{{ 'col_id' | translate }}</th>
+              <th>{{ 'col_name' | translate }}</th>
+              <th>{{ 'col_phone' | translate }}</th>
+              <th>{{ 'col_license' | translate }}</th>
+              <th>{{ 'col_status' | translate }}</th>
+              <th>{{ 'col_actions' | translate }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (r of rows(); track r.id) {
+              <tr>
+                <td class="muted">{{ r.id }}</td>
+                <td>{{ r.name || '—' }}</td>
+                <td>{{ r.phone }}</td>
+                <td class="muted">{{ r.licenseNumber || '—' }}</td>
+                <td><span class="badge badge-pending">{{ 'status_pending' | translate }}</span></td>
+                <td>
+                  <div class="row-actions">
+                    <button class="btn btn-primary btn-sm" (click)="decide(r, true)">{{ 'action_approve' | translate }}</button>
+                    <button class="btn btn-danger btn-sm" (click)="decide(r, false)">{{ 'action_reject' | translate }}</button>
+                  </div>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  </div>
+</div>

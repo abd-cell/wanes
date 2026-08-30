@@ -1,0 +1,45 @@
+/* Wanes CP — design tokens + base. Light/dark via [data-theme]; RTL via [dir]. */
+:root {
+  --app-bg: #f5f7fa;
+  --app-surface: #ffffff;
+  --app-surface-2: #eef1f6;
+  --app-ink: #0e1726;
+  --app-ink-soft: #5b6678;
+  --app-line: #dbe1ea;
+  --app-primary: #0fae9e;
+  --app-primary-deep: #0b8478;
+  --app-accent: #ff7a2f;
+  --app-success: #1a9d6d;
+  --app-danger: #e5484d;
+  --app-radius: 12px;
+  --app-shadow: 0 6px 24px -12px rgba(14, 23, 38, .25);
+}
+
+[data-theme='dark'] {
+  --app-bg: #0a111d;
+  --app-surface: #111b2b;
+  --app-surface-2: #172336;
+  --app-ink: #e7edf7;
+  --app-ink-soft: #93a1b8;
+  --app-line: #223047;
+  --app-primary: #2ad0bf;
+  --app-primary-deep: #1fb6a6;
+  --app-accent: #ff8c4d;
+  --app-shadow: 0 8px 28px -14px rgba(0, 0, 0, .6);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+  background: var(--app-bg);
+  color: var(--app-ink);
+  font-family: 'Segoe UI', Tahoma, system-ui, -apple-system, sans-serif;
+  line-height: 1.6;
+}
+
+[dir='rtl'] body { font-family: 'Cairo', 'Segoe UI', Tahoma, sans-serif; }
+
+a { color: inherit; text-decoration: none; }
