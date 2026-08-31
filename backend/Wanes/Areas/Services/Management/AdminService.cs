@@ -4,12 +4,14 @@ using Wanes.Areas.Domain.Users;
 using Wanes.Areas.Domain.Vehicles;
 using Wanes.Areas.Services.Audit;
 using Wanes.Areas.Services.Management.Models;
+using Wanes.Areas.Services.Notifications;
 using Wanes.DataAccess.Repositories;
 using Wanes.DataAccess.UnitOfWorks;
 using Wanes.Shareds.Constants;
 using Wanes.Shareds.Enums;
 using Wanes.Shareds.Extensions;
 using Wanes.Shareds.Models;
+using Wanes.Shareds.Notifications;
 
 namespace Wanes.Areas.Services.Management;
 
@@ -17,6 +19,7 @@ public class AdminService : IAdminService
 {
     private readonly IUnitOfWork unitOfWork;
     private readonly IAuditService auditService;
+    private readonly INotificationService notificationService;
     private readonly IRepository<User> userRepository;
     private readonly IRepository<Vehicle> vehicleRepository;
     private readonly IRepository<AuditLog> auditLogRepository;
@@ -24,12 +27,14 @@ public class AdminService : IAdminService
     public AdminService(
         IUnitOfWork unitOfWork,
         IAuditService auditService,
+        INotificationService notificationService,
         IRepository<User> userRepository,
         IRepository<Vehicle> vehicleRepository,
         IRepository<AuditLog> auditLogRepository)
     {
         this.unitOfWork = unitOfWork;
         this.auditService = auditService;
+        this.notificationService = notificationService;
         this.userRepository = userRepository;
         this.vehicleRepository = vehicleRepository;
         this.auditLogRepository = auditLogRepository;
@@ -68,6 +73,16 @@ public class AdminService : IAdminService
         await unitOfWork.SaveAsync();
         await auditService.LogAsync(input.Approve ? AuditActions.AdminDriverVerified : AuditActions.AdminDriverRejected,
             nameof(User), userId);
+
+        // The decision is worthless to the driver if nobody tells them: until
+        // this ran, an approved driver had to keep re-opening the app to find out.
+        if (input.Approve)
+            await notificationService.Notify(userId, NotificationTemplate.DriverVerified,
+                data: new { driverStatus = DriverStatus.Verified.ToString() });
+        else
+            await notificationService.Notify(userId, NotificationTemplate.DriverRejected,
+                data: new { driverStatus = DriverStatus.Rejected.ToString() });
+
         return new BaseResponse();
     }
 

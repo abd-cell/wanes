@@ -1,0 +1,338 @@
+<div class="admin-page">
+  <div class="page-head">
+    <h1>{{ 'notif_title' | translate }}</h1>
+    <span class="spacer"></span>
+    @if (loading()) { <span class="muted">{{ 'common_loading' | translate }}</span> }
+    <button class="btn btn-ghost btn-sm" (click)="refreshAll()">{{ 'action_refresh' | translate }}</button>
+    <button class="btn btn-primary btn-sm" (click)="openComposer()">{{ 'notif_compose' | translate }}</button>
+  </div>
+
+  <!-- headline counts: the whole table, not the page on screen -->
+  @if (stats(); as s) {
+    <div class="stat-grid">
+      <div class="stat">
+        <span class="stat-label">{{ 'notif_stat_total' | translate }}</span>
+        <span class="stat-value">{{ s.total.toLocaleString() }}</span>
+        <span class="stat-note">{{ 'notif_stat_total_note' | translate }}</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">{{ 'notif_stat_unread' | translate }}</span>
+        <span class="stat-value">{{ s.unread.toLocaleString() }}</span>
+        <span class="stat-note">{{ unreadPct() }}% {{ 'notif_stat_share_note' | translate }}</span>
+        <span class="stat-meter"><span [style.width.%]="unreadPct()"></span></span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">{{ 'notif_stat_read' | translate }}</span>
+        <span class="stat-value">{{ s.read.toLocaleString() }}</span>
+        <span class="stat-note">{{ readPct() }}% {{ 'notif_stat_share_note' | translate }}</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">{{ 'notif_stat_24h' | translate }}</span>
+        <span class="stat-value">{{ s.last24Hours.toLocaleString() }}</span>
+        <span class="stat-note">{{ 'notif_stat_24h_note' | translate }}</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">{{ 'notif_stat_recipients' | translate }}</span>
+        <span class="stat-value">{{ s.recipients.toLocaleString() }}</span>
+        <span class="stat-note">{{ 'notif_stat_recipients_note' | translate }}</span>
+      </div>
+    </div>
+  }
+
+  <!-- composer -->
+  @if (composerOpen()) {
+    <div class="card composer">
+      <h2>{{ 'notif_compose' | translate }}</h2>
+      <p class="hint">{{ 'notif_compose_hint' | translate }}</p>
+
+      <span class="section-label">{{ 'notif_target' | translate }}</span>
+      <div class="modes">
+        @for (m of modes; track m.mode) {
+          <button type="button" class="mode" [class.on]="draft().mode === m.mode" (click)="setMode(m.mode)">
+            {{ m.labelKey | translate }}
+          </button>
+        }
+      </div>
+
+      @switch (draft().mode) {
+        @case ('user') {
+          <div class="form-row">
+            <label>{{ 'col_user' | translate }}</label>
+            <app-lookup-picker type="users" [value]="draft().userId"
+                               (valueChange)="setDraft('userId', $event)" />
+          </div>
+        }
+        @case ('picked') {
+          <div class="form-row">
+            <label>{{ 'notif_add_recipient' | translate }}</label>
+            <app-lookup-picker #picker type="users" [value]="null"
+                               placeholderKey="notif_add_recipient"
+                               (picked)="addRecipient($event, picker)" />
+            @if (draft().recipients.length) {
+              <div class="chips" style="margin-top:8px">
+                @for (r of draft().recipients; track r.id) {
+                  <span class="chip">
+                    {{ r.label }}
+                    <button type="button" class="chip-x" (click)="removeRecipient(r.id)"
+                            [title]="'action_clear' | translate">×</button>
+                  </span>
+                }
+              </div>
+            } @else {
+              <span class="hint">{{ 'notif_no_recipients' | translate }}</span>
+            }
+          </div>
+        }
+        @case ('audience') {
+          <div class="form-row">
+            <label>{{ 'col_audience' | translate }}</label>
+            <select class="field" [ngModel]="draft().audience"
+                    (ngModelChange)="setDraft('audience', +$event)">
+              @for (o of audienceOptions; track o.value) {
+                <option [value]="o.value">{{ o.labelKey | translate }}</option>
+              }
+            </select>
+            <span class="hint">{{ 'broadcast_hint' | translate }}</span>
+          </div>
+        }
+      }
+
+      <span class="section-label">{{ 'notif_message' | translate }}</span>
+      <div class="form-grid">
+        <div class="form-row">
+          <label>{{ 'col_type' | translate }}</label>
+          <select class="field" [ngModel]="draft().type" (ngModelChange)="setDraft('type', +$event)">
+            @for (o of typeOptions; track o.value) {
+              <option [value]="o.value">{{ o.labelKey | translate }}</option>
+            }
+          </select>
+        </div>
+        <div class="form-row">
+          <label>{{ 'col_title' | translate }}</label>
+          <input class="field" dir="ltr" [ngModel]="draft().title"
+                 (ngModelChange)="setDraft('title', $event)" />
+        </div>
+        <div class="form-row">
+          <label>{{ 'col_title_ar' | translate }}</label>
+          <input class="field" dir="rtl" [ngModel]="draft().titleAr"
+                 (ngModelChange)="setDraft('titleAr', $event)" />
+        </div>
+        <div class="form-row wide">
+          <label>{{ 'col_body' | translate }}</label>
+          <textarea class="field" dir="ltr" rows="3" [ngModel]="draft().body"
+                    (ngModelChange)="setDraft('body', $event)"></textarea>
+        </div>
+        <div class="form-row wide">
+          <label>{{ 'col_body_ar' | translate }}</label>
+          <textarea class="field" dir="rtl" rows="3" [ngModel]="draft().bodyAr"
+                    (ngModelChange)="setDraft('bodyAr', $event)"></textarea>
+        </div>
+        <div class="form-row wide">
+          <label>{{ 'col_data' | translate }}</label>
+          <textarea class="field" dir="ltr" rows="2" [ngModel]="draft().dataJson"
+                    (ngModelChange)="setDraft('dataJson', $event)"></textarea>
+          @if (draftDataError(); as err) { <span class="err">{{ err }}</span> }
+        </div>
+      </div>
+
+      <!-- both languages side by side, so a half-translated send is obvious -->
+      <span class="section-label">{{ 'notif_preview' | translate }}</span>
+      <div class="previews">
+        <div class="preview" dir="ltr">
+          <span class="preview-lang">EN</span>
+          <strong>{{ previewEn().title || ('notif_preview_empty' | translate) }}</strong>
+          <p>{{ previewEn().body }}</p>
+        </div>
+        <div class="preview" dir="rtl">
+          <span class="preview-lang">AR</span>
+          <strong>{{ previewAr().title || ('notif_preview_empty' | translate) }}</strong>
+          <p>{{ previewAr().body }}</p>
+          @if (previewAr().fallback) {
+            <span class="preview-note">{{ 'notif_preview_fallback' | translate }}</span>
+          }
+        </div>
+      </div>
+
+      <div class="form-foot">
+        <button class="btn btn-primary btn-sm" [disabled]="sending() || !canSend()" (click)="send()">
+          {{ (sending() ? 'broadcast_sending' : 'action_send') | translate }}
+        </button>
+        <button class="btn btn-ghost btn-sm" (click)="closeComposer()">{{ 'action_cancel' | translate }}</button>
+      </div>
+    </div>
+  }
+
+  <!-- single-row editor -->
+  @if (editModel(); as m) {
+    <div class="card composer">
+      <h2>{{ 'notif_edit' | translate }} #{{ m.id }}</h2>
+      <div class="form-grid">
+        <div class="form-row">
+          <label>{{ 'col_user' | translate }}</label>
+          <app-lookup-picker type="users" [value]="m.userId" (valueChange)="setEdit('userId', $event ?? 0)" />
+        </div>
+        <div class="form-row">
+          <label>{{ 'col_type' | translate }}</label>
+          <select class="field" [ngModel]="m.type" (ngModelChange)="setEdit('type', +$event)">
+            @for (o of typeOptions; track o.value) {
+              <option [value]="o.value">{{ o.labelKey | translate }}</option>
+            }
+          </select>
+        </div>
+        <div class="form-row">
+          <label>{{ 'col_title' | translate }}</label>
+          <input class="field" dir="ltr" [ngModel]="m.title" (ngModelChange)="setEdit('title', $event)" />
+        </div>
+        <div class="form-row">
+          <label>{{ 'col_title_ar' | translate }}</label>
+          <input class="field" dir="rtl" [ngModel]="m.titleAr ?? ''"
+                 (ngModelChange)="setEdit('titleAr', $event)" />
+        </div>
+        <div class="form-row wide">
+          <label>{{ 'col_body' | translate }}</label>
+          <textarea class="field" dir="ltr" rows="3" [ngModel]="m.body"
+                    (ngModelChange)="setEdit('body', $event)"></textarea>
+        </div>
+        <div class="form-row wide">
+          <label>{{ 'col_body_ar' | translate }}</label>
+          <textarea class="field" dir="rtl" rows="3" [ngModel]="m.bodyAr ?? ''"
+                    (ngModelChange)="setEdit('bodyAr', $event)"></textarea>
+        </div>
+        <div class="form-row wide">
+          <label>{{ 'col_data' | translate }}</label>
+          <textarea class="field" dir="ltr" rows="2" [ngModel]="m.dataJson ?? ''"
+                    (ngModelChange)="setEdit('dataJson', $event)"></textarea>
+          @if (editDataError(); as err) { <span class="err">{{ err }}</span> }
+        </div>
+        <div class="form-row check">
+          <input type="checkbox" id="edit-read" [ngModel]="m.isRead"
+                 (ngModelChange)="setEdit('isRead', $event)" />
+          <label for="edit-read">{{ 'col_read' | translate }}</label>
+        </div>
+      </div>
+      <div class="form-foot">
+        <button class="btn btn-primary btn-sm" [disabled]="saving()" (click)="saveEdit()">
+          {{ 'action_save' | translate }}
+        </button>
+        <button class="btn btn-ghost btn-sm" (click)="closeEdit()">{{ 'action_cancel' | translate }}</button>
+      </div>
+    </div>
+  }
+
+  <!-- filters -->
+  <div class="toolbar">
+    <input class="field" [ngModel]="search()" (ngModelChange)="search.set($event)"
+           (keydown.enter)="applySearch()" [placeholder]="'common_search' | translate" />
+
+    <select class="field" [ngModel]="filterType()" (ngModelChange)="setType($event)">
+      <option value="">{{ 'filter_all_types' | translate }}</option>
+      @for (o of typeOptions; track o.value) {
+        <option [value]="o.value">{{ o.labelKey | translate }}</option>
+      }
+    </select>
+
+    <select class="field" [ngModel]="filterRead()" (ngModelChange)="setRead($event)">
+      <option value="">{{ 'filter_all_states' | translate }}</option>
+      <option value="false">{{ 'filter_unread' | translate }}</option>
+      <option value="true">{{ 'filter_read' | translate }}</option>
+    </select>
+
+    <div class="user-filter">
+      <app-lookup-picker type="users" [value]="filterUserId()"
+                         placeholderKey="filter_by_user" (valueChange)="setUser($event)" />
+    </div>
+
+    @if (anyFilter()) {
+      <button class="btn btn-ghost btn-sm" (click)="clearFilters()">{{ 'action_clear' | translate }}</button>
+    }
+  </div>
+
+  <!-- bulk bar: only present when something is ticked -->
+  @if (selected().length) {
+    <div class="bulk-bar">
+      <span class="bulk-count">{{ ('bulk_selected' | translate).replace('{count}', '' + selected().length) }}</span>
+      <span class="spacer"></span>
+      <button class="btn btn-ghost btn-sm" (click)="runBulk(bulkAction.MarkRead)">
+        {{ 'bulk_mark_read' | translate }}
+      </button>
+      <button class="btn btn-ghost btn-sm" (click)="runBulk(bulkAction.MarkUnread)">
+        {{ 'bulk_mark_unread' | translate }}
+      </button>
+      <button class="btn btn-danger btn-sm" (click)="runBulk(bulkAction.Delete)">
+        {{ 'action_delete' | translate }}
+      </button>
+      <button class="btn btn-ghost btn-sm" (click)="clearSelection()">{{ 'action_clear' | translate }}</button>
+    </div>
+  }
+
+  <div class="card">
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th class="tick">
+              <input type="checkbox" [checked]="allSelected()" (change)="toggleAll()"
+                     [attr.aria-label]="'bulk_select_all' | translate" />
+            </th>
+            <th>{{ 'col_id' | translate }}</th>
+            <th>{{ 'col_user' | translate }}</th>
+            <th>{{ 'col_type' | translate }}</th>
+            <th>{{ 'col_title' | translate }}</th>
+            <th>{{ 'col_read' | translate }}</th>
+            <th>{{ 'col_created' | translate }}</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of rows(); track row.id) {
+            <tr [class.unread]="!row.isRead">
+              <td class="tick">
+                <input type="checkbox" [checked]="isSelected(row.id)" (change)="toggleSelect(row.id)"
+                       [attr.aria-label]="'bulk_select_row' | translate" />
+              </td>
+              <td>{{ row.id }}</td>
+              <td class="user-cell" [title]="row.userName || '#' + row.userId">
+                {{ row.userName || '#' + row.userId }}
+              </td>
+              <td>{{ typeLabel(row.type) }}</td>
+              <td>
+                <span class="row-title" [title]="row.title">{{ row.title }}</span>
+                <span class="row-body" [title]="row.body">{{ row.body }}</span>
+              </td>
+              <td>
+                <button type="button" class="badge" [class.badge-verified]="row.isRead"
+                        [class.badge-pending]="!row.isRead" (click)="toggleRead(row)"
+                        [title]="'notif_toggle_read' | translate">
+                  {{ (row.isRead ? 'bool_true' : 'filter_unread') | translate }}
+                </button>
+              </td>
+              <td>{{ row.creationDate | date: 'yyyy-MM-dd HH:mm' }}</td>
+              <td>
+                <div class="row-actions">
+                  <button class="btn btn-ghost btn-sm" (click)="openEdit(row)">
+                    {{ 'action_edit' | translate }}
+                  </button>
+                  <button class="btn btn-danger btn-sm" (click)="remove(row)">
+                    {{ 'action_delete' | translate }}
+                  </button>
+                </div>
+              </td>
+            </tr>
+          } @empty {
+            <tr>
+              <td colspan="8" class="empty">
+                {{ (loading() ? 'common_loading' : 'list_empty') | translate }}
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <div class="pager">
+      <button class="btn btn-ghost btn-sm" [disabled]="pageNumber() <= 1" (click)="go(-1)">‹</button>
+      <span class="muted">{{ pageNumber() }} / {{ pageCount() }} · {{ total() }}</span>
+      <button class="btn btn-ghost btn-sm" [disabled]="pageNumber() >= pageCount()" (click)="go(1)">›</button>
+    </div>
+  </div>
+</div>

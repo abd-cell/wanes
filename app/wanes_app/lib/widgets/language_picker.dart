@@ -1,7 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../core/l10n.dart';
+import '../core/session.dart';
 import '../core/theme.dart';
+import '../models/models.dart';
+import '../services/services.dart';
 import 'wanes_ui.dart';
 
 /// The "Language" row that sits in the account group on both profile screens.
@@ -64,7 +69,17 @@ Future<void> showLanguagePicker(BuildContext context) {
                         selected:
                             AppLocalizations.supportedLocales[i].languageCode == current,
                         onTap: () async {
-                          await LocaleController.set(AppLocalizations.supportedLocales[i]);
+                          final picked = AppLocalizations.supportedLocales[i];
+                          await LocaleController.set(picked);
+                          // Push payloads are built server-side and can only
+                          // carry one language, so the account has to be told.
+                          // Fire-and-forget: the UI has already switched, and a
+                          // failed sync self-corrects at the next sign-in.
+                          if (Session.instance.isLoggedIn) {
+                            unawaited(AuthService().updatePreferences(
+                                language:
+                                    AppLanguage.fromLanguageCode(picked.languageCode)));
+                          }
                           if (sheetContext.mounted) Navigator.pop(sheetContext);
                         },
                       ),

@@ -1,8 +1,29 @@
 import '../core/api_client.dart';
+import '../core/app_config.dart';
 import '../core/app_response.dart';
+import '../core/l10n.dart';
 import '../core/places.dart';
+import '../core/push_service.dart';
 import '../core/session.dart';
 import '../models/models.dart';
+
+/// The admin-controlled platform settings (currency + brand colour).
+class ConfigService {
+  final _api = ApiClient.instance;
+
+  /// Fetches the settings and adopts them. Anonymous endpoint, so this works on
+  /// the splash screen before sign-in. A failure is deliberately silent: the
+  /// cached (or default) brand still paints a usable app, and there is nothing
+  /// the user could do about it.
+  Future<AppResponse<AppConfig>> refresh() async {
+    final res = await _api.get<AppConfig>(
+      'configuration',
+      parse: (d) => AppConfig.fromJson(d as Map<String, dynamic>),
+    );
+    if (res.success && res.data != null) await AppConfigController.adopt(res.data!);
+    return res;
+  }
+}
 
 /// Phone-OTP auth + profile.
 class AuthService {
@@ -14,11 +35,28 @@ class AuthService {
   Future<AppResponse<AuthResult>> verifyOtp(String phone, String code) async {
     final res = await _api.post<AuthResult>(
       'Accounts/verify-otp',
-      body: {'phone': phone, 'code': code, 'deviceType': 3},
+      body: {
+        'phone': phone,
+        'code': code,
+        'deviceType': PushService.deviceType,
+      },
       parse: (d) => AuthResult.fromJson(d as Map<String, dynamic>),
     );
     if (res.success && res.data != null) {
-      await Session.instance.save(res.data!.token, res.data!.profile);
+      await Session.instance.save(
+          res.data!.token, res.data!.refreshToken, res.data!.profile);
+      // Needs the session to exist first — the token is stored against this
+      // device's UserLogin row. Prompting here rather than at first launch
+      // means the user has context for what the permission is for.
+      await PushService.instance.requestPermission();
+      await PushService.instance.registerToken();
+      await PushService.instance.refreshUnreadCount();
+      await PushService.instance.connectStream();
+      // The server cannot see the app's locale, and it needs one to choose a
+      // language for push payloads. Sent at sign-in as well as on change, so
+      // users who never open the language picker still get the right language.
+      await updatePreferences(
+          language: AppLanguage.fromLanguageCode(LocaleController.value.languageCode));
     }
     return res;
   }
@@ -62,6 +100,29 @@ class AuthService {
     return res;
   }
 
+  /// Patches the account's preferences. Same "only what's passed" contract as
+  /// [updateProfile] — the theme lives on the account so a fresh install picks
+  /// the user's last choice back up.
+  Future<AppResponse<Profile>> updatePreferences({
+    AppTheme? theme,
+    bool? notifPush,
+    bool? notifSms,
+    AppLanguage? language,
+  }) async {
+    final res = await _api.patch<Profile>(
+      'Accounts/me/preferences',
+      body: {
+        if (theme != null) 'theme': theme.value,
+        if (notifPush != null) 'notifPush': notifPush,
+        if (notifSms != null) 'notifSms': notifSms,
+        if (language != null) 'language': language.value,
+      },
+      parse: (d) => Profile.fromJson(d as Map<String, dynamic>),
+    );
+    if (res.success && res.data != null) await Session.instance.saveProfile(res.data!);
+    return res;
+  }
+
   /// Switches the active role (1 = rider, 2 = driver).
   Future<AppResponse<Profile>> switchRole(int activeRole) async {
     final res = await _api.patch<Profile>(
@@ -74,6 +135,9 @@ class AuthService {
   }
 
   Future<void> logout() async {
+    // Detach the device while the auth token is still valid, so this handset
+    // stops receiving the account's pushes.
+    await PushService.instance.clearToken();
     await _api.post('Accounts/logout');
     await Session.instance.clear();
   }
@@ -92,6 +156,8 @@ class SearchService {
     required String destAddress,
     required DateTime when,
     int seats = 1,
+    bool nearby = true,
+    TripSort sortBy = TripSort.best,
   }) {
     return _api.post<SearchResult>(
       'Search',
@@ -100,6 +166,11 @@ class SearchService {
         'destination': {'lat': destLat, 'lng': destLng, 'address': destAddress},
         'when': when.toUtc().toIso8601String(),
         'seats': seats,
+        'nearby': nearby,
+        // The server orders the page before capping it, so the rider's sort has
+        // to travel with the request — re-sorting the reply can only shuffle
+        // whichever twenty it chose.
+        'sortBy': sortBy.wire,
       },
       parse: (d) => SearchResult.fromJson(d as Map<String, dynamic>),
     );
@@ -124,6 +195,10 @@ class BookingService {
             .map((e) => Booking.fromJson(e as Map<String, dynamic>))
             .toList(),
       );
+
+  /// Gives the seat back. The server refuses a booking that is already
+  /// cancelled or completed, and returns the seats to the trip.
+  Future<AppResponse> cancel(int id) => _api.post('Bookings/$id/cancel');
 }
 
 /// Two-way ratings (after a booking completes).
@@ -227,11 +302,49 @@ class TripService {
           },
           parse: (d) => Trip.fromJson(d as Map<String, dynamic>));
 
+  /// One trip in full — driver, vehicle and live seat count. Anonymous on the
+  /// server, so it also works for a trip the rider has not booked.
+  Future<AppResponse<Trip>> get(int id) => _api.get<Trip>(
+        'Trips/$id',
+        parse: (d) => Trip.fromJson(d as Map<String, dynamic>),
+      );
+
   Future<AppResponse<List<Trip>>> myTrips() => _api.get<List<Trip>>(
         'Trips/mine',
         parse: (d) => (d as List)
             .map((e) => Trip.fromJson(e as Map<String, dynamic>))
             .toList(),
+      );
+
+  /// The riders holding seats on one of the driver's own trips. The server
+  /// scopes this to the caller's trips, so another driver's manifest is a 404.
+  Future<AppResponse<List<TripBooking>>> tripBookings(int id) =>
+      _api.get<List<TripBooking>>(
+        'Trips/$id/bookings',
+        parse: (d) => (d as List)
+            .map((e) => TripBooking.fromJson(e as Map<String, dynamic>))
+            .toList(),
+      );
+
+  /// Where the driver last reported. Null data (with a successful response)
+  /// simply means they have not reported yet, which is normal before a trip
+  /// starts — the caller falls back to the stage-derived position.
+  Future<AppResponse<DriverLocation>> driverLocation(int id) =>
+      _api.get<DriverLocation>(
+        'Trips/$id/driver-location',
+        parse: (d) => DriverLocation.fromJson(d as Map<String, dynamic>),
+      );
+
+  /// Driver lifecycle. The server enforces the order (Posted/Full → Arrived →
+  /// Active → Completed) and pushes each move to the riders holding a seat,
+  /// which is what advances their tracking rail.
+  Future<AppResponse<Trip>> arrive(int id) => _transition(id, 'arrive');
+  Future<AppResponse<Trip>> start(int id) => _transition(id, 'start');
+  Future<AppResponse<Trip>> complete(int id) => _transition(id, 'complete');
+
+  Future<AppResponse<Trip>> _transition(int id, String verb) => _api.post<Trip>(
+        'Trips/$id/$verb',
+        parse: (d) => Trip.fromJson(d as Map<String, dynamic>),
       );
 }
 
@@ -297,4 +410,41 @@ class SavedPlaceService {
       );
 
   Future<AppResponse> remove(int id) => _api.delete('me/places/$id');
+}
+
+/// The notification inbox and this device's push registration.
+class NotificationsService {
+  final _api = ApiClient.instance;
+
+  Future<AppResponse<NotificationFeed>> feed() => _api.get<NotificationFeed>(
+        'Notifications/mine',
+        parse: (d) => NotificationFeed.fromJson(d as Map<String, dynamic>),
+      );
+
+  Future<AppResponse> markRead(int id) => _api.post('Notifications/$id/read');
+
+  Future<AppResponse> markAllRead() => _api.post('Notifications/read-all');
+
+  /// Upsert of this device's FCM token. Safe to call on every launch — the API
+  /// treats it as an upsert and detaches the token from any stale session.
+  Future<AppResponse> registerDevice(String token, {int? deviceType}) =>
+      _api.post('Notifications/device-token', body: {
+        'deviceToken': token,
+        if (deviceType != null) 'deviceType': deviceType,
+      });
+
+  /// Stops push for this device without ending the session.
+  Future<AppResponse> clearDevice() => _api.delete('Notifications/device-token');
+}
+
+/// The admin-curated help centre.
+class FaqService {
+  final _api = ApiClient.instance;
+
+  /// The published FAQ. Anonymous endpoint, so the help screen works before
+  /// sign-in — which is when most of these questions get asked.
+  Future<AppResponse<Faq>> get() => _api.get<Faq>(
+        'faq',
+        parse: (d) => Faq.fromJson(d as Map<String, dynamic>),
+      );
 }

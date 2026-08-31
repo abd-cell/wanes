@@ -42,6 +42,7 @@ public class User : AuditableEntity
 
     // preferences
     public Language Language { get; set; } = Language.En;
+    public AppTheme Theme { get; set; } = AppTheme.System;
     public bool NotifPush { get; set; } = true;
     public bool NotifSms { get; set; } = true;
 

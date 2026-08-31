@@ -10,7 +10,7 @@ lib): `http`, `shared_preferences`, `intl`.
 wanes_app/lib/
 ├── main.dart                  bootstrap; routes to login or home by session
 ├── core/
-│   ├── environment.dart       apiBaseUrl (10.0.2.2 for Android emulator)
+│   ├── environment.dart       apiBaseUrl (defaults to the PC's LAN address)
 │   ├── app_response.dart       AppResponse<T> envelope parser
 │   ├── api_client.dart         HTTP gateway (Bearer token, decode envelope)
 │   ├── session.dart            token + profile in shared_preferences
@@ -56,8 +56,11 @@ flutter run -d chrome       # web
 flutter build web           # verified building
 ```
 
-> Set `Environment.apiBaseUrl` per target (Android emulator → `10.0.2.2`,
-> iOS sim / web → `localhost`). Backend must be running.
+> Override the API base URL per target with
+> `--dart-define=API_BASE_URL=...`: the default LAN address reaches the
+> backend from a real phone, an emulator and the host alike; an emulator can
+> also use `10.0.2.2`, and web / desktop on the host `localhost`. A real
+> device cannot resolve either of those. Backend must be running.
 
 ## Driver mode (built)
 

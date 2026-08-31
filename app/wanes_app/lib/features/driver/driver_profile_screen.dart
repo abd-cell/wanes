@@ -2,12 +2,13 @@ import 'package:flutter/material.dart';
 import '../../core/l10n.dart';
 import '../../core/session.dart';
 import '../../core/theme.dart';
-import '../../main.dart';
 import '../../models/models.dart';
 import '../../services/services.dart';
 import '../../widgets/language_picker.dart';
 import '../../widgets/wanes_alerts.dart';
+import '../notifications_screen.dart';
 import '../../widgets/wanes_ui.dart';
+import '../contact_us_screen.dart';
 import '../edit_profile_screen.dart';
 import 'driver_apply_screen.dart';
 import 'vehicles_screen.dart';
@@ -98,11 +99,18 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
               Text(context.tr('nav.profile'),
                   style: TextStyle(
                       fontSize: 22, fontWeight: FontWeight.w800, letterSpacing: -0.44, color: t.ink)),
-              CircleIconButton(
-                icon: dark ? Icons.dark_mode_outlined : Icons.light_mode_outlined,
-                color: t.ink2,
-                onTap: () => WanesApp.toggleTheme(context),
+              Row(children: [
+                NotificationBellButton(
+                onTap: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const NotificationsScreen())),
               ),
+                const SizedBox(width: 10),
+                CircleIconButton(
+                  icon: dark ? Icons.dark_mode_outlined : Icons.light_mode_outlined,
+                  color: t.ink2,
+                  onTap: () => ThemeController.toggle(context),
+                ),
+              ]),
             ]),
             const SizedBox(height: 16),
             _identity(t, name, p, verified),
@@ -295,6 +303,13 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
         title: context.tr('driver.ratingsReviews'),
         onTap: () => WanesAlerts.info(context, context.tr('common.notAvailableYet'),
             message: context.tr('driver.reviewsComingSoon')),
+      ),
+      GroupedRow(
+        icon: Icons.support_agent_rounded,
+        title: context.tr('contact.title'),
+        subtitle: context.tr('contact.subtitle'),
+        onTap: () => Navigator.push(
+            context, MaterialPageRoute(builder: (_) => const ContactUsScreen())),
       ),
     ]);
   }

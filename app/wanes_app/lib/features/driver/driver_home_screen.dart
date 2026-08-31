@@ -11,6 +11,7 @@ import '../../models/models.dart';
 import '../../services/services.dart';
 import '../../widgets/wanes_alerts.dart';
 import '../../widgets/wanes_ui.dart';
+import '../notifications_screen.dart';
 import 'driver_profile_screen.dart';
 import 'my_trips_screen.dart';
 import 'post_trip_screen.dart';
@@ -28,16 +29,27 @@ class DriverHomeScreen extends StatefulWidget {
 class _DriverHomeScreenState extends State<DriverHomeScreen> {
   int _index = 0;
 
+  /// The tabs live in an `IndexedStack`, so each one is built once and kept
+  /// alive. That is what we want for scroll position, but it also means Trips
+  /// would keep showing the seat count it loaded on first build — a trip that
+  /// filled up meanwhile would still read "Posted". Reload it on arrival.
+  final _tripsTab = GlobalKey<MyTripsScreenState>();
+
+  void _select(int i) {
+    setState(() => _index = i);
+    if (i == 1) _tripsTab.currentState?.reload();
+  }
+
   @override
   Widget build(BuildContext context) {
     final tabs = [
-      DriverDashboard(onGoTrips: () => setState(() => _index = 1)),
-      const MyTripsScreen(),
+      DriverDashboard(onGoTrips: () => _select(1)),
+      MyTripsScreen(key: _tripsTab),
       const DriverProfileScreen(),
     ];
     return Scaffold(
       body: IndexedStack(index: _index, children: tabs),
-      bottomNavigationBar: WanesBottomNav(index: _index, onSelect: (i) => setState(() => _index = i)),
+      bottomNavigationBar: WanesBottomNav(index: _index, onSelect: _select),
     );
   }
 }
@@ -152,19 +164,11 @@ class _DriverDashboardState extends State<DriverDashboard> {
     return n.isEmpty ? context.tr('role.driverLower') : n.split(' ').first;
   }
 
-  static String initialsOf(String name) {
-    final parts = name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
-    if (parts.isEmpty) return '?';
-    if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
-    return (parts.first[0] + parts.last[0]).toUpperCase();
-  }
-
   // ── Build ────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     final t = WanesTokens.of(context);
-    final name = Session.instance.profile?.name ?? '';
     return SafeArea(
       bottom: false,
       child: RefreshIndicator(
@@ -184,7 +188,10 @@ class _DriverDashboardState extends State<DriverDashboard> {
                           fontSize: 22, fontWeight: FontWeight.w800, letterSpacing: -0.44, color: t.ink)),
                 ]),
               ),
-              AvatarBadge(initialsOf(name), size: 42, tint: t.tealTint, fg: t.tealInk),
+              NotificationBellButton(
+                onTap: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const NotificationsScreen())),
+              ),
             ]),
             const SizedBox(height: 16),
             _onlineBanner(t),

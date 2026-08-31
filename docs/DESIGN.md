@@ -253,7 +253,7 @@ POST /auth/verify-otp          # verify -> issue JWT (registers on first login)
 # profile & account
 GET   /me                      # full profile
 PATCH /me                      # edit name, avatar, bio, gender, dob, language
-PATCH /me/preferences          # notifications (push/sms), language
+PATCH /me/preferences          # notifications (push/sms), language, theme (system/light/dark)
 POST  /me/avatar               # upload profile photo
 PATCH /me/role                 # switch active role rider <-> driver
 POST  /me/emergency-contact    # set safety contact

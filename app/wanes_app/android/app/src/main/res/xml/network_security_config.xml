@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 9+ blocks cleartext HTTP by default, which would kill every call to
+     the dev backend on http://<PC-LAN-IP>:5000. Rather than opening cleartext
+     app-wide, allow it only for the loopback + private (RFC1918) ranges the dev
+     API is ever reached on; public traffic stays HTTPS-only. -->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <!-- host loopback, and the Android-emulator alias for it -->
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">10.0.2.2</domain>
+        <!-- the PC's LAN address; update alongside Environment.apiBaseUrl -->
+        <domain includeSubdomains="false">192.168.1.43</domain>
+    </domain-config>
+</network-security-config>

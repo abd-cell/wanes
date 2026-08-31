@@ -36,17 +36,18 @@ The button shows a teal spinner while it calls the API.
 ### The API base URL is target-specific — this is the #1 gotcha
 
 `app/wanes_app/lib/core/environment.dart` reads the base URL from a
-compile-time `--dart-define=API_BASE_URL=...` (default:
-`http://10.0.2.2:5000/api/v1/`, the Android-emulator→host mapping over plain
-HTTP). Pass the URL that the *target* can actually reach:
+compile-time `--dart-define=API_BASE_URL=...`. The default is the host PC's
+**LAN** address (`http://192.168.1.43:5000/api/v1/`) so a real phone, an
+emulator and the host browser all hit the same backend. Pass the URL the
+*target* can actually reach:
 
 ```bash
-# web / desktop browser
+# LAN — real phone / another PC on the same Wi-Fi (this is the default)
+C:/flutter/bin/flutter.bat run -d web-server --web-port 8090 --web-hostname 0.0.0.0
+# host browser only
 C:/flutter/bin/flutter.bat run -d web-server --web-port 8090 --dart-define=API_BASE_URL=http://localhost:5000/api/v1/
-# Android emulator (this is the default, no define needed)
+# Android emulator (10.0.2.2 is the emulator's alias for the host)
 C:/flutter/bin/flutter.bat run -d emulator-5554 --dart-define=API_BASE_URL=http://10.0.2.2:5000/api/v1/
-# real phone on same Wi-Fi (find <PC-LAN-IP> via ipconfig)
-C:/flutter/bin/flutter.bat run -d <device-id> --dart-define=API_BASE_URL=http://<PC-LAN-IP>:5000/api/v1/
 ```
 
 - `10.0.2.2` is the **Android-emulator** alias for the host — it does NOT
@@ -55,8 +56,40 @@ C:/flutter/bin/flutter.bat run -d <device-id> --dart-define=API_BASE_URL=http://
   (`:5001`) uses a self-signed dev cert: a browser times out
   (`ERR_CONNECTION_TIMED_OUT`), and a device/emulator throws a Dart
   `HandshakeException`. Use https only against a trusted cert
-  (`dotnet dev-certs https --trust` on the host). The backend must also allow
-  the client origin via CORS.
+  (`dotnet dev-certs https --trust` on the host).
+
+## Serving the backend over the LAN (verified)
+
+Three things must all be true, or a phone gets a connection timeout:
+
+1. **Kestrel binds all interfaces, not just loopback.** `launchSettings.json`
+   profile "Wases" is `https://0.0.0.0:5001;http://0.0.0.0:5000`. Confirm after
+   startup — the log must say `Now listening on: http://0.0.0.0:5000`, and
+   `netstat -ano | grep ":5000.*LISTENING"` must show `0.0.0.0:5000`, **not**
+   `127.0.0.1:5000`.
+2. **The Windows firewall allows inbound TCP 5000** (all profiles are ON here).
+   One-time, from an **elevated** PowerShell:
+   ```
+   netsh advfirewall firewall add rule name="Wanes API (dev, LAN)" dir=in action=allow protocol=TCP localport=5000 profile=private remoteip=localsubnet
+   ```
+   Scoped to the private profile + local subnet so it is not exposed beyond the
+   Wi-Fi. Testing from the host itself does **not** prove this — loopback and
+   same-machine LAN-IP traffic bypass the firewall. Test from the phone.
+3. **The client permits cleartext HTTP.** Android 9+ blocks it: the app ships
+   `android/app/src/main/res/xml/network_security_config.xml` allowing cleartext
+   only for `localhost`, `127.0.0.1`, `10.0.2.2` and the LAN IP. iOS uses
+   `NSAllowsLocalNetworking` in `Info.plist`. **Update the LAN IP in that XML
+   whenever it changes** or Android silently refuses the connection.
+
+The IP is DHCP-assigned (`ipconfig` → Wi-Fi IPv4). If it moves, update
+`environment.dart`, the Android network-security config, and
+`cms/wanes-cp/src/app/environment.ts` together — or reserve it on the router.
+
+Smoke-test the LAN path:
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" -X POST http://192.168.1.43:5000/api/v1/accounts/request-otp -H "Content-Type: application/json" -d '{"phone":"+962790000000"}'
+```
+`200` means the API is reachable at that address.
 
 ## Bring up the backend
 
@@ -65,8 +98,15 @@ cd /c/Git/claude/wanes/backend
 dotnet run --project Wanes
 ```
 
-Serves `https://localhost:5001` and `http://localhost:5000` (profile "Wases"),
-Swagger at `/swagger`. Needs SQL Server `DESKTOP-SBF2I7A` reachable.
+Serves `https://0.0.0.0:5001` and `http://0.0.0.0:5000` (profile "Wases"), so it
+answers on `localhost` *and* on the PC's LAN IP. Swagger at `/swagger`. Needs
+SQL Server `DESKTOP-SBF2I7A` reachable.
+
+`dotnet run` from the Bash tool exits 127; start it detached from PowerShell:
+
+```
+Start-Process dotnet -ArgumentList "run","--project","Wanes","--launch-profile","Wases" -WorkingDirectory "C:\Git\claude\wanes\backend" -RedirectStandardOutput out.log -RedirectStandardError err.log -WindowStyle Hidden
+```
 
 ## Stop the web app
 

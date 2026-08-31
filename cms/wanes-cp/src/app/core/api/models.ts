@@ -33,6 +33,37 @@ export interface LookupOption {
   description?: string;
 }
 
+/**
+ * Platform settings the admin owns (matches backend AppConfigurationOutput).
+ * Read anonymously by every client, written only from the CMS settings screen.
+ */
+export interface AppConfiguration {
+  currencyCode: string;
+  currencySymbol: string;
+  currencyPosition: CurrencyPosition;
+  /** Fraction digits, 0-3. */
+  currencyDecimals: number;
+  /** Brand primary as `#RRGGBB`; the other brand shades are derived from it. */
+  primaryColor: string;
+  /**
+   * Support channels the app's "Contact us" screen offers. Each one is optional
+   * and empty until an admin fills it in; a client hides the channel it has no
+   * value for rather than showing a row that goes nowhere.
+   */
+  supportPhone?: string;
+  supportWhatsApp?: string;
+  supportEmail?: string;
+  supportWebsite?: string;
+  /** Free text, e.g. "Sun-Thu, 9:00-17:00". */
+  supportHours?: string;
+  updatedAt?: string;
+}
+
+export enum CurrencyPosition {
+  Before = 1,
+  After = 2,
+}
+
 // ── Enums (kept in sync with the backend) ──
 export enum Roles {
   User = 1,
@@ -75,6 +106,8 @@ export enum TripStatus {
   Active = 3,
   Completed = 4,
   Cancelled = 5,
+  /** Driver is at the pickup point, waiting for the rider to board. */
+  Arrived = 6,
 }
 
 export enum BookingStatus {
@@ -103,7 +136,112 @@ export enum NotificationType {
   TripCancelled = 3,
   DriverAccepted = 4,
   TripCompleted = 5,
+  BookingCancelled = 6,
+  TripStarted = 7,
+  TripMatched = 8,
+  DriverVerified = 9,
+  DriverRejected = 10,
+  RatingReceived = 11,
+  DriverArrived = 12,
   General = 100,
+}
+
+/** Who a broadcast reaches (`Wanes.Shareds.Enums.NotificationAudience`). */
+export enum NotificationAudience {
+  All = 1,
+  Riders = 2,
+  Drivers = 3,
+  VerifiedDrivers = 4,
+}
+
+export interface BroadcastInput {
+  audience: NotificationAudience;
+  type: NotificationType;
+  title: string;
+  body: string;
+  /** Optional Arabic wording; blank means Arabic readers see `title`/`body`. */
+  titleAr?: string | null;
+  bodyAr?: string | null;
+  dataJson?: string | null;
+}
+
+export interface BroadcastResult {
+  audience: NotificationAudience;
+  recipients: number;
+}
+
+/** An inbox row as the admin console sees it (`Management.Models.NotificationRow`). */
+export interface NotificationRow {
+  id: number;
+  userId: number;
+  userName?: string | null;
+  type: NotificationType;
+  title: string;
+  body: string;
+  titleAr?: string | null;
+  bodyAr?: string | null;
+  dataJson?: string | null;
+  isRead: boolean;
+  creationDate: string;
+}
+
+/** Create/update payload for one user's notification. */
+export interface NotificationInput {
+  userId: number | null;
+  type: NotificationType;
+  title: string;
+  body: string;
+  titleAr?: string | null;
+  bodyAr?: string | null;
+  dataJson?: string | null;
+  isRead: boolean;
+}
+
+/** One notification aimed at a hand-picked set of users. */
+export interface TargetedSendInput {
+  userIds: number[];
+  type: NotificationType;
+  title: string;
+  body: string;
+  titleAr?: string | null;
+  bodyAr?: string | null;
+  dataJson?: string | null;
+}
+
+export interface TargetedSendResult {
+  recipients: number;
+}
+
+/** What a bulk action does to the ticked rows (`NotificationBulkAction`). */
+export enum NotificationBulkAction {
+  MarkRead = 1,
+  MarkUnread = 2,
+  Delete = 3,
+}
+
+export interface BulkNotificationInput {
+  ids: number[];
+  action: NotificationBulkAction;
+}
+
+export interface BulkNotificationResult {
+  action: NotificationBulkAction;
+  affected: number;
+}
+
+export interface NotificationTypeCount {
+  type: NotificationType;
+  count: number;
+}
+
+/** Headline counts describing the whole notification table, not one page of it. */
+export interface NotificationStats {
+  total: number;
+  unread: number;
+  read: number;
+  last24Hours: number;
+  recipients: number;
+  byType: NotificationTypeCount[];
 }
 
 export enum SavedPlaceLabel {
@@ -112,9 +250,21 @@ export enum SavedPlaceLabel {
   Custom = 3,
 }
 
+export enum FaqCategory {
+  General = 1,
+  Riding = 2,
+  Driving = 3,
+  Account = 4,
+  Safety = 5,
+}
+
 // ── DTOs ──
 export interface AuthResult {
+  /** Short-lived bearer token; `refreshToken` is what outlives it. */
   token: string;
+  expiresAt: string;
+  refreshToken: string;
+  refreshTokenExpiresAt: string;
   isNewUser: boolean;
   profile: Profile;
 }

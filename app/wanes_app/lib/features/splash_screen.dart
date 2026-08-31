@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../core/l10n.dart';
+import '../core/push_service.dart';
 import '../core/session.dart';
 import '../core/theme.dart';
 import '../widgets/wanes_logo.dart';
@@ -73,6 +76,16 @@ class _SplashScreenState extends State<SplashScreen>
     // A session that never got past the name step (app killed mid-onboarding)
     // lands back on the gate rather than in the app.
     final profile = Session.instance.profile;
+
+    if (Session.instance.isLoggedIn) {
+      // Warm start on a restored session: FCM may have rotated the token while
+      // the app was closed, and the badge is stale. Both are fire-and-forget so
+      // the hand-off isn't held up by the network.
+      unawaited(PushService.instance.registerToken());
+      unawaited(PushService.instance.refreshUnreadCount());
+      unawaited(PushService.instance.connectStream());
+    }
+
     final Widget next = !Session.instance.isLoggedIn
         ? const LoginScreen()
         : (profile?.isComplete ?? false)

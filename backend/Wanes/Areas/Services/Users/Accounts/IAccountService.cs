@@ -9,6 +9,7 @@ public interface IAccountService
 {
     Task<BaseResponse> RequestOtp(RequestOtpInput input);
     Task<BaseResponse<AuthResult>> VerifyOtp(VerifyOtpInput input);
+    Task<BaseResponse<AuthResult>> Refresh(RefreshTokenInput input);
     Task<BaseResponse> Logout();
 
     Task<BaseResponse<ProfileOutput>> GetProfile();

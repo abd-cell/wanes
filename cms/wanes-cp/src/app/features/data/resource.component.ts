@@ -5,6 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { ApiService } from '../../core/api/api.service';
+import { AppConfigService } from '../../core/services/app-config.service';
 import { GlobalService } from '../../core/services/global.service';
 import { TranslationService } from '../../core/services/translation.service';
 import { TranslatePipe } from '../../core/pipes/translate.pipe';
@@ -21,25 +22,17 @@ const PAGE_SIZE = 25;
   standalone: true,
   imports: [FormsModule, TranslatePipe, DatePipe, LookupPickerComponent],
   templateUrl: './resource.component.html',
+  // Toolbar, form grid, section label and pager now live in admin.css — they
+  // were identical to the notification manager's copies.
   styles: [`
-    .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
-    .toolbar .field { max-width: 240px; }
-    .toolbar .spacer { flex: 1; }
-    .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
-    .form-row { display: flex; flex-direction: column; gap: 5px; }
-    .form-row label { font-size: 13px; font-weight: 600; color: var(--app-ink-soft); }
-    .form-row.check { flex-direction: row; align-items: center; gap: 8px; }
-    .form-foot { display: flex; gap: 10px; margin-top: 18px; }
     .roles-row { display: flex; gap: 16px; flex-wrap: wrap; margin: 6px 0 2px; }
     .roles-row label { display: flex; align-items: center; gap: 6px; font-weight: 600; }
-    .section-label { font-size: 12px; text-transform: uppercase; letter-spacing: .04em;
-      color: var(--app-ink-soft); margin: 20px 0 8px; }
-    .pager { display: flex; gap: 12px; align-items: center; justify-content: flex-end; margin-top: 14px; }
   `],
 })
 export class ResourceComponent implements OnInit {
   private readonly api = inject(ApiService);
   private readonly global = inject(GlobalService);
+  private readonly appConfig = inject(AppConfigService);
   private readonly route = inject(ActivatedRoute);
   readonly translation = inject(TranslationService);
   private readonly isBrowser = isPlatformBrowser(inject(PLATFORM_ID));
@@ -123,6 +116,9 @@ export class ResourceComponent implements OnInit {
     if (v === null || v === undefined || v === '') return '—';
     if (col.type === 'bool') return this.translation.translate(v ? 'bool_true' : 'bool_false');
     if (col.type === 'enum' && col.enum) return this.enumLabel(col.enum, v as number);
+    // Money is written with whatever currency the admin configured, so the
+    // tables agree with what riders and drivers see in the app.
+    if (col.type === 'currency') return this.appConfig.format(Number(v), this.translation.lang());
     return String(v);
   }
 

@@ -6,12 +6,14 @@ import '../core/recent_places.dart';
 import '../core/saved_places.dart';
 import '../core/session.dart';
 import '../core/theme.dart';
+import '../core/trip_sort.dart';
 import '../models/models.dart';
 import '../services/services.dart';
 import '../widgets/place_picker.dart';
 import '../widgets/wanes_alerts.dart';
 import '../widgets/wanes_ui.dart';
 import '../widgets/when_picker.dart';
+import 'notifications_screen.dart';
 import 'saved_places_screen.dart';
 import 'results_screen.dart';
 import 'searching_screen.dart';
@@ -21,10 +23,7 @@ import 'searching_screen.dart';
 /// a greeting, the FROM→TO route card with a swap control, WHEN / SEATS
 /// tiles, the teal "Find rides" CTA, then recent places.
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, this.onOpenProfile});
-
-  /// Tapping the header avatar jumps to the Profile tab (wired by the shell).
-  final VoidCallback? onOpenProfile;
+  const HomeScreen({super.key});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -38,6 +37,10 @@ class _HomeScreenState extends State<HomeScreen> {
   Place? _to;
   int _seats = 1;
   bool _busy = false;
+
+  /// Match radius toggle. true = nearby (5 km around each end), false = wide
+  /// (50 km) for intercity rides.
+  bool _nearby = true;
 
   /// The rider's own recent picks, shown under the search card.
   List<Place> _recents = const [];
@@ -112,13 +115,6 @@ class _HomeScreenState extends State<HomeScreen> {
     return context.tr('home.goodEvening');
   }
 
-  String _initials(String name) {
-    final parts = name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
-    if (parts.isEmpty) return '?';
-    if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
-    return (parts.first[0] + parts.last[0]).toUpperCase();
-  }
-
   Future<void> _pickPlace(bool isFrom) async {
     final picked = await showPlacePicker(
       context,
@@ -157,6 +153,8 @@ class _HomeScreenState extends State<HomeScreen> {
       destLat: to.lat, destLng: to.lng, destAddress: to.name,
       when: _departAt,
       seats: _seats,
+      nearby: _nearby,
+      sortBy: SortPreference.instance.value,
     );
     if (!mounted) return;
     setState(() => _busy = false);
@@ -176,6 +174,8 @@ class _HomeScreenState extends State<HomeScreen> {
           seats: _seats,
           fromLat: from.lat,
           fromLng: from.lng,
+          toLat: to.lat,
+          toLng: to.lng,
           rideRequestId: result.rideRequestId,
         ),
       ));
@@ -184,6 +184,10 @@ class _HomeScreenState extends State<HomeScreen> {
         builder: (_) => SearchingScreen(
           rideRequestId: result.rideRequestId,
           driversNotified: result.driversNotified,
+          originLat: from.lat,
+          originLng: from.lng,
+          destLat: to.lat,
+          destLng: to.lng,
         ),
       ));
     }
@@ -220,9 +224,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       style: TextStyle(fontSize: 23, fontWeight: FontWeight.w800, letterSpacing: -0.5, height: 1.15, color: t.ink)),
                 ]),
               ),
-              GestureDetector(
-                onTap: widget.onOpenProfile,
-                child: AvatarBadge(_initials(name ?? ''), size: 42),
+              NotificationBellButton(
+                onTap: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const NotificationsScreen())),
               ),
             ],
           ),
@@ -236,6 +240,13 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(width: 12),
             Expanded(child: _seatsTile(t)),
           ]),
+          const SizedBox(height: 12),
+          // ── match radius ──
+          SegmentedToggle(
+            labels: [context.tr('home.rangeNearby'), context.tr('home.rangeWide')],
+            index: _nearby ? 0 : 1,
+            onSelect: (i) => setState(() => _nearby = i == 0),
+          ),
           const SizedBox(height: 14),
           PrimaryButton(
               label: context.tr('home.findRides'),

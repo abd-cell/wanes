@@ -105,6 +105,13 @@ public class AdminTripService : IAdminTripService
         entity.SeatsLeft = input.SeatsLeft;
         entity.PricePerSeat = input.PricePerSeat;
         entity.Status = input.Status;
+
+        // Posted and Full are a function of the seat count, not a free choice.
+        // Editing seats without this can leave a sold-out trip sitting "Posted"
+        // (or a trip with room stuck on "Full"). The lifecycle statuses the
+        // driver drives -- Arrived/Active/Completed/Cancelled -- are left alone.
+        if (entity.Status is TripStatus.Posted or TripStatus.Full)
+            entity.Status = entity.SeatsLeft <= 0 ? TripStatus.Full : TripStatus.Posted;
     }
 
     private static TripRow BuildRow(Trip trip) => new TripRow(trip)

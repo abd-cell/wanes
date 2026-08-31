@@ -2,4 +2,7 @@
 <resources>
     <!-- WanesColors.route — the brand teal the logo badge sits on. -->
     <color name="ic_launcher_background">#0FAE9E</color>
+
+    <!-- Tints the notification icon and the accent line in the shade. -->
+    <color name="notification_accent">#0FAE9E</color>
 </resources>

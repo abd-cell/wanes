@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import '../core/fare.dart';
 import '../core/l10n.dart';
 import '../core/theme.dart';
+import '../core/trip_sort.dart';
 import '../models/models.dart';
 import '../widgets/map_backdrop.dart';
+import '../widgets/sort_picker.dart';
 import '../widgets/wanes_motion.dart';
 import '../widgets/wanes_ui.dart';
 import 'confirm_booking_screen.dart';
 import 'searching_screen.dart';
+import 'trip_details_screen.dart';
 
 /// Carpool results — prototype screen 03. A short map strip with the route,
 /// then a sheet holding the Carpool / Hail toggle and one compact card per
@@ -22,6 +26,8 @@ class ResultsScreen extends StatefulWidget {
     this.rideRequestId,
     this.fromLat,
     this.fromLng,
+    this.toLat,
+    this.toLng,
   });
 
   final List<Trip> matches;
@@ -33,6 +39,11 @@ class ResultsScreen extends StatefulWidget {
   final double? fromLat;
   final double? fromLng;
 
+  /// Where they asked to go. Carried so the hail screen can draw the real
+  /// route rather than the prototype's illustration.
+  final double? toLat;
+  final double? toLng;
+
   /// Set when the search also opened a hail, so the "Hail a ride" tab can
   /// hand the rider straight to the live search.
   final int? rideRequestId;
@@ -43,6 +54,30 @@ class ResultsScreen extends StatefulWidget {
 
 class _ResultsScreenState extends State<ResultsScreen> {
   int _tab = 0;
+
+  /// What the rider last picked, so the sheet opens on their own choice and the
+  /// next search asks the server for that order.
+  TripSort _sort = SortPreference.instance.value;
+
+  /// Re-ordered locally on every sort change; the widget's own list stays as the
+  /// server ranked it, which is what [TripSort.best] restores.
+  late List<Trip> _matches = _sorted();
+
+  /// No rider start point means no walk to measure, so that option is hidden.
+  bool get _canSortByPickup => widget.fromLat != null && widget.fromLng != null;
+
+  List<Trip> _sorted() => widget.matches
+      .sortedBy(_sort, originLat: widget.fromLat, originLng: widget.fromLng);
+
+  Future<void> _pickSort() async {
+    final picked = await showSortPicker(context, _sort, allowPickup: _canSortByPickup);
+    if (picked == null || picked == _sort || !mounted) return;
+    setState(() {
+      _sort = picked;
+      _matches = _sorted();
+    });
+    await SortPreference.instance.save(picked);
+  }
 
   static String shortPlace(String address) => address.split(',').first.trim();
 
@@ -93,20 +128,19 @@ class _ResultsScreenState extends State<ResultsScreen> {
                             size: 11.5, weight: FontWeight.w500, color: t.ink2, spacing: 0)),
                   ),
                   const SizedBox(width: 12),
-                  Text(context.tr('results.sortBest'),
-                      style: WanesTheme.mono(
-                          size: 11.5, weight: FontWeight.w600, color: t.tealInk, spacing: 0)),
+                  _sortButton(t),
                 ]),
                 const SizedBox(height: 10),
                 Expanded(
-                  child: widget.matches.isEmpty
+                  child: _matches.isEmpty
                       ? _empty(t)
                       : ListView.separated(
+                          key: ValueKey(_sort),
                           padding: const EdgeInsets.only(bottom: 24),
-                          itemCount: widget.matches.length,
+                          itemCount: _matches.length,
                           separatorBuilder: (_, __) => const SizedBox(height: 9),
                           itemBuilder: (_, i) => _ResultCard(
-                            trip: widget.matches[i],
+                            trip: _matches[i],
                             seats: widget.seats,
                             from: widget.from,
                             to: widget.to,
@@ -132,7 +166,35 @@ class _ResultsScreenState extends State<ResultsScreen> {
     }
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => SearchingScreen(rideRequestId: widget.rideRequestId)),
+      MaterialPageRoute(
+        builder: (_) => SearchingScreen(
+          rideRequestId: widget.rideRequestId,
+          originLat: widget.fromLat,
+          originLng: widget.fromLng,
+          destLat: widget.toLat,
+          destLng: widget.toLng,
+        ),
+      ),
+    );
+  }
+
+  /// "Sort: Cheapest ▾" — the label carries the current choice so the rider can
+  /// see the order they are looking at without opening the sheet.
+  Widget _sortButton(WanesTokens t) {
+    return InkWell(
+      onTap: _pickSort,
+      borderRadius: BorderRadius.circular(999),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Text(
+            context.tr('results.sortBy', {'value': context.tr(_sort.labelKey)}),
+            style: WanesTheme.mono(
+                size: 11.5, weight: FontWeight.w600, color: t.tealInk, spacing: 0),
+          ),
+          Icon(Icons.expand_more_rounded, size: 15, color: t.tealInk),
+        ]),
+      ),
     );
   }
 
@@ -215,7 +277,17 @@ class _ResultCard extends StatelessWidget {
     final time = DateFormat('HH:mm', context.l10n.localeName).format(trip.departAt.toLocal());
     final price = trip.pricePerSeat;
 
-    return Container(
+    // The card body opens the full trip; the teal button inside still books
+    // directly, since its own tap handler wins over this one.
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => TripDetailsScreen(trip: trip, seats: seats),
+        ),
+      ),
+      child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
         color: t.surface,
@@ -246,7 +318,7 @@ class _ResultCard extends StatelessWidget {
           if (price != null) ...[
             const SizedBox(width: 8),
             Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-              Text('£${price.toStringAsFixed(2)}',
+              Text(Fare.format(price),
                   style: WanesTheme.mono(size: 17, weight: FontWeight.w800, color: t.tealInk, spacing: 0)),
               Text(context.tr('results.perSeat'),
                   style: WanesTheme.mono(size: 10, weight: FontWeight.w500, color: t.ink2, spacing: 0)),
@@ -264,6 +336,7 @@ class _ResultCard extends StatelessWidget {
           _bookButton(context, t),
         ]),
       ]),
+      ),
     );
   }
 

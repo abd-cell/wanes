@@ -37,29 +37,34 @@ class WanesLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The mark is brand-coloured, and the brand is admin-configurable, so both
+    // shades come off the theme rather than the design constants.
+    final t = WanesTokens.of(context);
     final badge = plain
         ? SizedBox(
             width: size,
             height: size,
             child: CustomPaint(
-                painter: _MarkPainter(plain: true, draw: draw, pinScale: pinScale)),
+                painter: _MarkPainter(
+                    brand: t.teal, onBrand: t.onTeal, plain: true, draw: draw, pinScale: pinScale)),
           )
         : Container(
             width: size,
             height: size,
             decoration: BoxDecoration(
-              color: WanesColors.route,
+              color: t.teal,
               borderRadius: BorderRadius.circular(size * 0.3),
               boxShadow: [
                 BoxShadow(
-                  color: WanesColors.route.withValues(alpha: .55),
+                  color: t.teal.withValues(alpha: .55),
                   blurRadius: size * 0.48,
                   offset: Offset(0, size * 0.22),
                 ),
               ],
             ),
             child: CustomPaint(
-                painter: _MarkPainter(draw: draw, pinScale: pinScale)),
+                painter: _MarkPainter(
+                    brand: t.teal, onBrand: t.onTeal, draw: draw, pinScale: pinScale)),
           );
 
     if (!showWordmark) return badge;
@@ -90,10 +95,20 @@ class WanesLogo extends StatelessWidget {
 
 /// Draws the route mark from the design's 48×48 viewBox, scaled to the badge.
 class _MarkPainter extends CustomPainter {
-  _MarkPainter({this.plain = false, this.draw = 1.0, this.pinScale = 1.0});
+  _MarkPainter({
+    required this.brand,
+    required this.onBrand,
+    this.plain = false,
+    this.draw = 1.0,
+    this.pinScale = 1.0,
+  });
 
-  /// On the splash tile the route is drawn in ink and the origin dot in teal;
-  /// inside the teal badge both are the deep brand ink.
+  /// The configured brand colour, and what reads on top of a solid fill of it.
+  final Color brand;
+  final Color onBrand;
+
+  /// On the splash tile the route is drawn in ink and the origin dot in the
+  /// brand colour; inside the brand badge both are the on-brand ink.
   final bool plain;
 
   /// `@keyframes sdraw` — the CSS animates `stroke-dashoffset` from the full
@@ -108,7 +123,7 @@ class _MarkPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final s = size.width / 48.0; // scale from the 48-unit design grid
     Offset p(double x, double y) => Offset(x * s, y * s);
-    final stroke = plain ? WanesColors.ink : WanesColors.inkDeep;
+    final stroke = plain ? WanesColors.ink : onBrand;
 
     // route: M11 37 Q 20 20 37 13
     final route = Path()
@@ -133,7 +148,7 @@ class _MarkPainter extends CustomPainter {
     canvas.drawCircle(
       p(11, 37),
       (plain ? 5.5 : 5.2) * s,
-      Paint()..color = plain ? WanesColors.route : WanesColors.inkDeep,
+      Paint()..color = plain ? brand : onBrand,
     );
 
     // destination pin (amber with dark-ink ring) — `transform-origin:37px 13px`
@@ -153,7 +168,11 @@ class _MarkPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_MarkPainter old) =>
-      old.plain != plain || old.draw != draw || old.pinScale != pinScale;
+      old.plain != plain ||
+      old.draw != draw ||
+      old.pinScale != pinScale ||
+      old.brand != brand ||
+      old.onBrand != onBrand;
 }
 
 /// The mark playing its entrance: the route curve draws itself in

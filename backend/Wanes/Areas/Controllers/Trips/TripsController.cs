@@ -30,12 +30,33 @@ public class TripsController : BaseApiController
     public async Task<BaseResponse<List<TripOutput>>> Mine() => await tripService.GetUserTrips();
 
     [AppAuthorize]
+    [HttpGet("{id:int}/bookings")]
+    public async Task<BaseResponse<List<TripBookingRow>>> Bookings(int id)
+        => await tripService.GetTripBookings(id);
+
+    /// <summary>Driver moves one rider's seat along (picked up, dropped off, no-show).</summary>
+    [AppAuthorize]
+    [HttpPut("{id:int}/bookings/{bookingId:int}/status")]
+    public async Task<BaseResponse<TripBookingRow>> SetBookingStatus(
+        int id, int bookingId, [FromBody] SetBookingStatusInput input)
+        => await tripService.SetBookingStatus(id, bookingId, input.Status);
+
+    [AppAuthorize]
+    [HttpGet("{id:int}/driver-location")]
+    public async Task<BaseResponse<DriverLocationOutput>> DriverLocation(int id)
+        => await tripService.GetDriverLocation(id);
+
+    [AppAuthorize]
     [HttpPost("{id:int}/cancel")]
     public async Task<BaseResponse> Cancel(int id) => await tripService.Cancel(id);
 
     [AppAuthorize]
     [HttpPost("{id:int}/start")]
     public async Task<BaseResponse<TripOutput>> Start(int id) => await tripService.Start(id);
+
+    [AppAuthorize]
+    [HttpPost("{id:int}/arrive")]
+    public async Task<BaseResponse<TripOutput>> Arrive(int id) => await tripService.Arrive(id);
 
     [AppAuthorize]
     [HttpPost("{id:int}/complete")]

@@ -131,7 +131,7 @@ class _BookingConfirmedScreenState extends State<BookingConfirmedScreen>
               onPressed: () => Navigator.pushReplacement(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => LiveTripScreen(trip: trip, bookingId: widget.booking.id),
+                  builder: (_) => LiveTripScreen(trip: trip, booking: widget.booking),
                 ),
               ),
             ),

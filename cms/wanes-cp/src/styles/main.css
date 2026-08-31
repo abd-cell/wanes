@@ -8,6 +8,9 @@
   --app-line: #dbe1ea;
   --app-primary: #0fae9e;
   --app-primary-deep: #0b8478;
+  /* Foreground for content on a solid --app-primary fill. Derived from the
+     configured brand colour at runtime (see AppConfigService). */
+  --app-on-primary: #04231f;
   --app-accent: #ff7a2f;
   --app-success: #1a9d6d;
   --app-danger: #e5484d;
@@ -24,6 +27,7 @@
   --app-line: #223047;
   --app-primary: #2ad0bf;
   --app-primary-deep: #1fb6a6;
+  --app-on-primary: #04231f;
   --app-accent: #ff8c4d;
   --app-shadow: 0 8px 28px -14px rgba(0, 0, 0, .6);
 }

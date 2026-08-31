@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using NetTopologySuite.Geometries;
+using Wanes.Areas.Domain.Bookings;
 using Wanes.Areas.Domain.Requests;
 using Wanes.Areas.Domain.Trips;
 using Wanes.Areas.Domain.Users;
@@ -20,11 +22,9 @@ namespace Wanes.Areas.Services.Search;
 public class SearchService : ISearchService
 {
     // MVP tuning — straight-line matching. Route-aware geometry comes later.
-    private const double MatchRadiusMeters = 3000;
-    private static readonly TimeSpan TimeWindow = TimeSpan.FromMinutes(30);
+    // The radii and the time window live in MatchRules so the reverse match in
+    // TripService and the hail push cannot drift away from what search used.
     private const int MaxResults = 20;
-    private const int HailRadiusMeters = 2000;
-    private static readonly TimeSpan HailTtl = TimeSpan.FromMinutes(10);
 
     private readonly IUnitOfWork unitOfWork;
     private readonly ISecurityManager securityManager;
@@ -34,6 +34,7 @@ public class SearchService : ISearchService
     private readonly IRepository<User> userRepository;
     private readonly IRepository<Vehicle> vehicleRepository;
     private readonly IRepository<RideRequest> rideRequestRepository;
+    private readonly IRepository<Booking> bookingRepository;
 
     public SearchService(
         IUnitOfWork unitOfWork,
@@ -43,7 +44,8 @@ public class SearchService : ISearchService
         IRepository<Trip> tripRepository,
         IRepository<User> userRepository,
         IRepository<Vehicle> vehicleRepository,
-        IRepository<RideRequest> rideRequestRepository)
+        IRepository<RideRequest> rideRequestRepository,
+        IRepository<Booking> bookingRepository)
     {
         this.unitOfWork = unitOfWork;
         this.securityManager = securityManager;
@@ -53,6 +55,7 @@ public class SearchService : ISearchService
         this.userRepository = userRepository;
         this.vehicleRepository = vehicleRepository;
         this.rideRequestRepository = rideRequestRepository;
+        this.bookingRepository = bookingRepository;
     }
 
     public async Task<BaseResponse<SearchResult>> Search(SearchInput input)
@@ -66,18 +69,40 @@ public class SearchService : ISearchService
         var origin = GeoFactory.Point(input.Origin.Lat, input.Origin.Lng);
         var destination = GeoFactory.Point(input.Destination.Lat, input.Destination.Lng);
 
-        var from = input.When - TimeWindow;
-        var to = input.When + TimeWindow;
+        var now = DateTime.UtcNow;
+        var from = input.When - MatchRules.TimeWindow;
+        var to = input.When + MatchRules.TimeWindow;
 
-        // candidate filter (indexed geo + time), ranked by combined distance
-        var candidates = await tripRepository
+        // A seat this rider already holds is not a seat they can take again --
+        // booking it would only answer AlreadyBooked, so keep those trips out of
+        // the results instead of showing an offer that cannot be accepted. A
+        // rider's live bookings are few, so the ids come back in one round trip.
+        var bookedTripIds = await bookingRepository
+            .Where(b => b.RiderId == riderId && b.Status != BookingStatus.Cancelled)
+            .Select(b => b.TripId)
+            .ToListAsync();
+
+        // The rider's Nearby toggle: keep both ends walkable, or open it up to
+        // intercity distances at the cost of a longer walk.
+        var matchRadius = MatchRules.RadiusFor(input.Nearby);
+
+        // candidate filter (indexed geo + time); the rider's sort ranks it below
+        var filtered = tripRepository
             .Where(t => t.Status == TripStatus.Posted
                         && t.SeatsLeft >= input.Seats
                         && t.DriverId != riderId
+                        && !bookedTripIds.Contains(t.Id)
+                        // A disabled account is not driving anyone anywhere.
+                        && (t.Driver == null || !t.Driver.IsDisabled)
+                        // The window reaches half an hour into the past, so a trip
+                        // that already left -- and whose driver simply never pressed
+                        // start -- would otherwise still be offered as bookable.
+                        && t.DepartAt > now
                         && t.DepartAt >= from && t.DepartAt <= to
-                        && t.Origin.IsWithinDistance(origin, MatchRadiusMeters)
-                        && t.Destination.IsWithinDistance(destination, MatchRadiusMeters))
-            .OrderBy(t => t.Origin.Distance(origin) + t.Destination.Distance(destination))
+                        && t.Origin.IsWithinDistance(origin, matchRadius)
+                        && t.Destination.IsWithinDistance(destination, matchRadius));
+
+        var candidates = await Order(filtered, input.SortBy, origin, destination)
             .Take(MaxResults)
             .ToListAsync();
 
@@ -121,9 +146,9 @@ public class SearchService : ISearchService
             Destination = destination,
             RequestedAt = DateTime.UtcNow,
             Seats = input.Seats,
-            RadiusMeters = HailRadiusMeters,
+            RadiusMeters = matchRadius,
             Status = RideRequestStatus.Open,
-            ExpiresAt = DateTime.UtcNow.Add(HailTtl),
+            ExpiresAt = DateTime.UtcNow.Add(MatchRules.HailTtl),
         };
         rideRequestRepository.Create(request);
         await unitOfWork.SaveAsync();
@@ -139,6 +164,45 @@ public class SearchService : ISearchService
             DriversNotified = notified,
         });
     }
+
+    /// <summary>
+    /// The rider's chosen order, applied in the database so the cap above keeps
+    /// the right twenty rather than the nearest twenty.
+    ///
+    /// Every sort ends on the combined-proximity ranking. Without that tie-break
+    /// a page of same-priced or same-departure trips would come back in whatever
+    /// order the query plan produced, and two identical searches could disagree.
+    /// </summary>
+    private static IOrderedQueryable<Trip> Order(IQueryable<Trip> query, SearchSort sort,
+        Point origin, Point destination) => sort switch
+    {
+        SearchSort.Departure => query
+            .OrderBy(t => t.DepartAt)
+            .ThenBy(t => t.Origin.Distance(origin) + t.Destination.Distance(destination)),
+
+        // Sorting on a nullable price puts the unpriced trips first in SQL, which
+        // is the opposite of useful: a rider asking for "cheapest" wants a number.
+        SearchSort.Price => query
+            .OrderBy(t => t.PricePerSeat == null)
+            .ThenBy(t => t.PricePerSeat)
+            .ThenBy(t => t.Origin.Distance(origin) + t.Destination.Distance(destination)),
+
+        SearchSort.Rating => query
+            .OrderByDescending(t => t.Driver == null ? 0 : t.Driver.RatingAvg)
+            .ThenBy(t => t.Origin.Distance(origin) + t.Destination.Distance(destination)),
+
+        // Only the near end matters here — this is the rider's walk to the car.
+        SearchSort.Pickup => query
+            .OrderBy(t => t.Origin.Distance(origin))
+            .ThenBy(t => t.Destination.Distance(destination)),
+
+        SearchSort.Seats => query
+            .OrderByDescending(t => t.SeatsLeft)
+            .ThenBy(t => t.Origin.Distance(origin) + t.Destination.Distance(destination)),
+
+        _ => query
+            .OrderBy(t => t.Origin.Distance(origin) + t.Destination.Distance(destination)),
+    };
 
     private static bool IsSamePoint(GeoPoint a, GeoPoint b) =>
         Math.Abs(a.Lat - b.Lat) < 1e-6 && Math.Abs(a.Lng - b.Lng) < 1e-6;

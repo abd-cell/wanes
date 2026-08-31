@@ -1,9 +1,11 @@
 using Microsoft.EntityFrameworkCore;
 using Wanes.Areas.Domain.Bookings;
+using Wanes.Areas.Domain.Requests;
 using Wanes.Areas.Domain.Trips;
 using Wanes.Areas.Domain.Users;
 using Wanes.Areas.Domain.Vehicles;
 using Wanes.Areas.Services.Audit;
+using Wanes.Areas.Services.Notifications;
 using Wanes.Areas.Services.Trips.Models;
 using Wanes.DataAccess.Repositories;
 using Wanes.DataAccess.UnitOfWorks;
@@ -11,6 +13,7 @@ using Wanes.Shareds.Constants;
 using Wanes.Shareds.Enums;
 using Wanes.Shareds.Extensions;
 using Wanes.Shareds.Models;
+using Wanes.Shareds.Notifications;
 using Wanes.Shareds.Security;
 
 namespace Wanes.Areas.Services.Trips;
@@ -20,30 +23,36 @@ public class TripService : ITripService
     private readonly IUnitOfWork unitOfWork;
     private readonly ISecurityManager securityManager;
     private readonly IAuditService auditService;
+    private readonly INotificationService notificationService;
     private readonly IRepository<Trip> tripRepository;
     private readonly IRepository<TripStatusHistory> tripHistoryRepository;
     private readonly IRepository<Vehicle> vehicleRepository;
     private readonly IRepository<User> userRepository;
     private readonly IRepository<Booking> bookingRepository;
+    private readonly IRepository<RideRequest> rideRequestRepository;
 
     public TripService(
         IUnitOfWork unitOfWork,
         ISecurityManager securityManager,
         IAuditService auditService,
+        INotificationService notificationService,
         IRepository<Trip> tripRepository,
         IRepository<TripStatusHistory> tripHistoryRepository,
         IRepository<Vehicle> vehicleRepository,
         IRepository<User> userRepository,
-        IRepository<Booking> bookingRepository)
+        IRepository<Booking> bookingRepository,
+        IRepository<RideRequest> rideRequestRepository)
     {
         this.unitOfWork = unitOfWork;
         this.securityManager = securityManager;
         this.auditService = auditService;
+        this.notificationService = notificationService;
         this.tripRepository = tripRepository;
         this.tripHistoryRepository = tripHistoryRepository;
         this.vehicleRepository = vehicleRepository;
         this.userRepository = userRepository;
         this.bookingRepository = bookingRepository;
+        this.rideRequestRepository = rideRequestRepository;
     }
 
     public async Task<BaseResponse<TripOutput>> Create(CreateTripInput input)
@@ -92,6 +101,11 @@ public class TripService : ITripService
         AddHistory(trip.Id, TripStatus.Posted, driverId);
         await unitOfWork.SaveAsync();
         await auditService.LogAsync(AuditActions.TripCreate, nameof(Trip), trip.Id);
+
+        // The other half of matching: riders who searched a minute ago and found
+        // nothing are sitting on an open hail. This trip may be exactly what they
+        // asked for, and without this they would never hear about it.
+        await NotifyWaitingRiders(trip, driver);
 
         return new BaseResponse<TripOutput>(new TripOutput(trip, driver, vehicle));
     }
@@ -149,7 +163,9 @@ public class TripService : ITripService
 
     public Task<BaseResponse<TripOutput>> Get(int id)
     {
-        var trip = tripRepository.FirstOrDefault(t => t.Id == id, query => query.Include(t => t.Driver).Include(t => t.Vehicle));
+        // History comes along so TripOutput can report when the trip started.
+        var trip = tripRepository.FirstOrDefault(t => t.Id == id,
+            query => query.Include(t => t.Driver).Include(t => t.Vehicle).Include(t => t.History));
         if (trip == null) return Task.FromResult(new BaseResponse<TripOutput>(default, ErrorCode.TripNotFound));
         return Task.FromResult(new BaseResponse<TripOutput>(new TripOutput(trip, trip.Driver)));
     }
@@ -174,6 +190,8 @@ public class TripService : ITripService
         if (trip.Status is TripStatus.Completed or TripStatus.Cancelled)
             return new BaseResponse(ErrorCode.TripNotBookable);
 
+        List<int> affectedRiders;
+
         await unitOfWork.BeginTransactionAsync();
         try
         {
@@ -183,13 +201,18 @@ public class TripService : ITripService
             // auto-cancel all confirmed/pending bookings
             var bookings = await bookingRepository
                 .Where(b => b.TripId == trip.Id &&
-                    (b.Status == BookingStatus.Pending || b.Status == BookingStatus.Confirmed))
+                    (b.Status == BookingStatus.Pending ||
+                     b.Status == BookingStatus.Confirmed ||
+                     b.Status == BookingStatus.Arrived))
                 .ToListAsync();
             foreach (var booking in bookings)
             {
                 booking.Status = BookingStatus.Cancelled;
                 bookingRepository.Update(booking);
             }
+
+            // Captured before the scope closes; the riders are notified after the commit.
+            affectedRiders = bookings.Select(b => b.RiderId).ToList();
 
             AddHistory(trip.Id, TripStatus.Cancelled, driverId);
             await unitOfWork.CommitAsync();
@@ -201,44 +224,247 @@ public class TripService : ITripService
         }
 
         await auditService.LogAsync(AuditActions.TripCancel, nameof(Trip), trip.Id);
+
+        // Everyone who had a seat loses their ride — this is the one that most
+        // needs to reach a backgrounded phone.
+        await notificationService.NotifyMany(affectedRiders, NotificationTemplate.TripCancelledRider,
+            args: new { origin = trip.OriginAddress, destination = trip.DestinationAddress },
+            data:
+            new { tripId = trip.Id });
+
         return new BaseResponse();
     }
 
+    /// <summary>
+    /// Who is riding. Scoped to the caller's own trip — a driver may see the
+    /// riders on a trip they are driving and no other, so the driver id is part
+    /// of the lookup rather than a check bolted on after it.
+    /// </summary>
+    public async Task<BaseResponse<List<TripBookingRow>>> GetTripBookings(int tripId)
+    {
+        var driverId = securityManager.RequireUserId();
+        var trip = tripRepository.FirstOrDefault(t => t.Id == tripId && t.DriverId == driverId);
+        if (trip == null) return new BaseResponse<List<TripBookingRow>>(default, ErrorCode.TripNotFound);
+
+        var bookings = await bookingRepository
+            .Where(b => b.TripId == tripId, query => query.Include(b => b.Rider))
+            .OrderBy(b => b.Id)
+            .ToListAsync();
+
+        var rows = bookings.Select(b => new TripBookingRow(b)).ToList();
+        return new BaseResponse<List<TripBookingRow>>(rows);
+    }
+
+    /// <summary>
+    /// The driver's last reported position, for the rider's tracking map.
+    ///
+    /// Visible to the driver themselves and to riders holding a live seat, and
+    /// to nobody else — a position is at least as sensitive as the phone number
+    /// guarded the same way on <see cref="Bookings.Models.BookingOutput"/>. A
+    /// finished or cancelled seat stops seeing it.
+    /// </summary>
+    public async Task<BaseResponse<DriverLocationOutput>> GetDriverLocation(int tripId)
+    {
+        var userId = securityManager.RequireUserId();
+        var trip = tripRepository.FirstOrDefault(t => t.Id == tripId,
+            query => query.Include(t => t.Driver));
+        if (trip == null) return new BaseResponse<DriverLocationOutput>(default, ErrorCode.TripNotFound);
+
+        if (trip.DriverId != userId)
+        {
+            // The live-seat set of BookingStatusRules.IsLive, spelled out because
+            // this has to translate to SQL. Keep the two in step.
+            var riding = await bookingRepository.AnyAsync(b =>
+                b.TripId == tripId && b.RiderId == userId &&
+                (b.Status == BookingStatus.Pending ||
+                 b.Status == BookingStatus.Confirmed ||
+                 b.Status == BookingStatus.Arrived ||
+                 b.Status == BookingStatus.InProgress));
+            if (!riding) return new BaseResponse<DriverLocationOutput>(default, ErrorCode.Forbidden);
+        }
+
+        var point = trip.Driver?.LastLocation;
+        // Success with no data: the driver simply has not reported yet, which is
+        // an ordinary state on a trip that has not started, not a failure.
+        if (point == null) return new BaseResponse<DriverLocationOutput>();
+
+        return new BaseResponse<DriverLocationOutput>(new DriverLocationOutput
+        {
+            Lat = point.Y,
+            Lng = point.X,
+            ReportedAt = trip.Driver?.LastLocationAt,
+            Online = trip.Driver?.IsOnline ?? false,
+        });
+    }
+
     public Task<BaseResponse<TripOutput>> Start(int id) => Transition(id, TripStatus.Active, AuditActions.TripStart);
+    public Task<BaseResponse<TripOutput>> Arrive(int id) => Transition(id, TripStatus.Arrived, AuditActions.TripArrive);
     public Task<BaseResponse<TripOutput>> Complete(int id) => Transition(id, TripStatus.Completed, AuditActions.TripComplete);
 
+    /// <summary>
+    /// One rider's seat, moved by the driver carrying them. This is the primary
+    /// way a trip advances: the trip-wide buttons are the same moves applied to
+    /// everyone at once, and either way the trip's own status is read back off
+    /// the seats through <see cref="TripStatusRules.Derive"/>.
+    /// </summary>
+    public async Task<BaseResponse<TripBookingRow>> SetBookingStatus(int tripId, int bookingId, BookingStatus status)
+    {
+        var driverId = securityManager.RequireUserId();
+
+        // Scoped to the caller's own trip exactly as GetTripBookings is: a driver
+        // tracks the riders they are carrying and nobody else's.
+        var trip = tripRepository.FirstOrDefault(t => t.Id == tripId && t.DriverId == driverId,
+            query => query.Include(t => t.Driver).Include(t => t.Vehicle));
+        if (trip == null) return new BaseResponse<TripBookingRow>(default, ErrorCode.TripNotFound);
+        if (trip.Status is TripStatus.Cancelled or TripStatus.Completed)
+            return new BaseResponse<TripBookingRow>(default, ErrorCode.Conflict);
+
+        // The whole manifest, because the trip's status is derived from all of it
+        // and not just the seat being moved.
+        var bookings = await bookingRepository
+            .Where(b => b.TripId == tripId, query => query.Include(b => b.Rider))
+            .ToListAsync();
+
+        var booking = bookings.FirstOrDefault(b => b.Id == bookingId);
+        if (booking == null) return new BaseResponse<TripBookingRow>(default, ErrorCode.BookingNotFound);
+        if (!BookingStatusRules.CanDriverSet(booking.Status, status))
+            return new BaseResponse<TripBookingRow>(default, ErrorCode.BookingStatusNotAllowed);
+
+        booking.Status = status;
+        bookingRepository.Update(booking);
+
+        // A seat lost before departure goes back on the trip, exactly as a rider's
+        // own cancel returns it. Once the trip has left, seats_left no longer
+        // describes anything bookable, so it is left alone.
+        if (status == BookingStatus.NoShow && trip.Status is TripStatus.Posted or TripStatus.Full)
+            trip.SeatsLeft += booking.Seats;
+
+        ApplyDerivedStatus(trip, bookings, driverId);
+        await unitOfWork.SaveAsync();
+        await auditService.LogAsync(AuditFor(status), nameof(Booking), booking.Id);
+
+        await NotifyRiders(trip, [booking.RiderId], status, booking.Id);
+
+        return new BaseResponse<TripBookingRow>(new TripBookingRow(booking));
+    }
+
+    /// <summary>
+    /// Which trip-wide moves a driver may make from where. Each one fans out to
+    /// the riders it legally can, and the trip's status follows from the result —
+    /// so this guards the driver's intent rather than the field itself.
+    /// </summary>
+    private static bool CanTransition(TripStatus from, TripStatus to) => to switch
+    {
+        TripStatus.Arrived => from is TripStatus.Posted or TripStatus.Full,
+        TripStatus.Active => from is TripStatus.Posted or TripStatus.Full or TripStatus.Arrived,
+        TripStatus.Completed => from is TripStatus.Active,
+        _ => false,
+    };
+
+    /// <summary>
+    /// A trip-wide move: the same per-seat move applied to every rider it is
+    /// legal for — the driver saying "everybody in" instead of tapping each one.
+    /// Seats it cannot reach (cancelled, a no-show, already there) are left alone.
+    /// </summary>
     private async Task<BaseResponse<TripOutput>> Transition(int id, TripStatus to, string action)
     {
         var driverId = securityManager.RequireUserId();
         var trip = tripRepository.FirstOrDefault(t => t.Id == id && t.DriverId == driverId,
             query => query.Include(t => t.Driver).Include(t => t.Vehicle));
         if (trip == null) return new BaseResponse<TripOutput>(default, ErrorCode.TripNotFound);
+        if (!CanTransition(trip.Status, to))
+            return new BaseResponse<TripOutput>(default, ErrorCode.Conflict);
 
-        trip.Status = to;
-        tripRepository.Update(trip);
+        var bookings = await bookingRepository
+            .Where(b => b.TripId == trip.Id)
+            .ToListAsync();
 
-        if (to == TripStatus.Completed)
+        var seatStatus = TripStatusRules.BookingStatusFor(to);
+        List<Booking> moved = [];
+        if (seatStatus is { } seat)
         {
-            // complete in-progress bookings + bump driver trip count
-            var bookings = await bookingRepository
-                .Where(b => b.TripId == trip.Id && b.Status != BookingStatus.Cancelled)
-                .ToListAsync();
-            foreach (var booking in bookings)
+            moved = bookings.Where(b => BookingStatusRules.CanDriverSet(b.Status, seat)).ToList();
+            foreach (var booking in moved)
             {
-                booking.Status = BookingStatus.Completed;
+                booking.Status = seat;
                 bookingRepository.Update(booking);
-            }
-            if (trip.Driver != null)
-            {
-                trip.Driver.TripsAsDriver++;
-                userRepository.Update(trip.Driver);
             }
         }
 
-        AddHistory(trip.Id, to, driverId);
+        ApplyDerivedStatus(trip, bookings, driverId, intent: to);
         await unitOfWork.SaveAsync();
         await auditService.LogAsync(action, nameof(Trip), trip.Id);
+
+        // Only the riders whose own seat moved. Telling a rider still waiting at
+        // the curb that their trip has started, because somebody else boarded,
+        // would be a lie the rail would then have to keep.
+        await NotifyRiders(trip, moved.Select(b => b.RiderId).ToList(), seatStatus);
+
         return new BaseResponse<TripOutput>(new TripOutput(trip, trip.Driver));
+    }
+
+    /// <summary>
+    /// Writes back the status the bookings imply, with its history row and the
+    /// driver's trip count.
+    ///
+    /// <paramref name="intent"/> is the driver's own trip-wide move, and stands
+    /// only where derivation has nothing to read: a trip whose riders all
+    /// cancelled or no-showed still has a driver on the road who has to be able
+    /// to finish it.
+    /// </summary>
+    private void ApplyDerivedStatus(Trip trip, List<Booking> bookings, int driverId, TripStatus? intent = null)
+    {
+        var before = trip.Status;
+        var derived = TripStatusRules.Derive(before, bookings.Select(b => b.Status).ToList(), trip.SeatsLeft);
+        trip.Status = derived == before && intent != null ? intent.Value : derived;
+        tripRepository.Update(trip);
+
+        if (trip.Status == before) return;
+
+        AddHistory(trip.Id, trip.Status, driverId);
+
+        if (trip.Status == TripStatus.Completed && trip.Driver != null)
+        {
+            trip.Driver.TripsAsDriver++;
+            userRepository.Update(trip.Driver);
+        }
+    }
+
+    private static string AuditFor(BookingStatus status) => status switch
+    {
+        BookingStatus.Arrived => AuditActions.BookingArrive,
+        BookingStatus.InProgress => AuditActions.BookingPickUp,
+        BookingStatus.Completed => AuditActions.BookingDropOff,
+        _ => AuditActions.BookingNoShow,
+    };
+
+    /// <summary>
+    /// Tells the riders whose seat just moved, in the words that advance their
+    /// tracking rail. One place, so the per-seat and trip-wide paths cannot
+    /// notify differently about the same thing happening.
+    /// </summary>
+    private async Task NotifyRiders(Trip trip, IReadOnlyCollection<int> riderIds, BookingStatus? seatStatus,
+        int? bookingId = null)
+    {
+        if (riderIds.Count == 0 || seatStatus == null) return;
+
+        NotificationTemplate? template = seatStatus switch
+        {
+            BookingStatus.Arrived => NotificationTemplate.DriverArrivedRider,
+            BookingStatus.InProgress => NotificationTemplate.TripStartedRider,
+            BookingStatus.Completed => NotificationTemplate.TripCompletedRider,
+            BookingStatus.NoShow => NotificationTemplate.BookingNoShowRider,
+            _ => null,
+        };
+        if (template == null) return;
+
+        object data = bookingId == null
+            ? new { tripId = trip.Id }
+            : new { tripId = trip.Id, bookingId };
+
+        await notificationService.NotifyMany(riderIds, template.Value,
+            args: new { origin = trip.OriginAddress, destination = trip.DestinationAddress },
+            data: data);
     }
 
     private void AddHistory(int tripId, TripStatus status, int changedBy) =>
@@ -248,6 +474,44 @@ public class TripService : ITripService
             Status = status,
             ChangedBy = changedBy,
         });
+
+    /// <summary>
+    /// Reverse match: open hails whose two ends both sit inside the radius that
+    /// rider asked for, departing inside the same window search uses. Best-effort
+    /// and after the commit — a failed push must never roll back a posted trip.
+    /// </summary>
+    private async Task NotifyWaitingRiders(Trip trip, User driver)
+    {
+        var now = DateTime.UtcNow;
+        var from = trip.DepartAt - MatchRules.TimeWindow;
+        var to = trip.DepartAt + MatchRules.TimeWindow;
+
+        // A hail carries no wanted departure time, so RequestedAt stands in for
+        // it — a hail means "now", and it expires within the window anyway.
+        var riderIds = await rideRequestRepository
+            .Where(r => r.Status == RideRequestStatus.Open
+                        && r.RiderId != trip.DriverId
+                        && (r.ExpiresAt == null || r.ExpiresAt > now)
+                        && r.RequestedAt >= from && r.RequestedAt <= to
+                        && r.Seats <= trip.SeatsLeft
+                        && r.Origin.Distance(trip.Origin) <= r.RadiusMeters
+                        && r.Destination.Distance(trip.Destination) <= r.RadiusMeters)
+            .Select(r => r.RiderId)
+            .Distinct()
+            .ToListAsync();
+
+        if (riderIds.Count == 0) return;
+
+        await notificationService.NotifyMany(riderIds, NotificationTemplate.TripMatchedRider,
+            args: new
+            {
+                name = driver.FirstName,
+                origin = trip.OriginAddress,
+                destination = trip.DestinationAddress,
+            },
+            data:
+            new { tripId = trip.Id });
+    }
 
     private static bool IsSamePoint(GeoPoint a, GeoPoint b) =>
         Math.Abs(a.Lat - b.Lat) < 1e-6 && Math.Abs(a.Lng - b.Lng) < 1e-6;

@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../models/models.dart';
+import 'app_config.dart';
+import 'environment.dart';
 
 /// Wanes brand palette — single source of truth, taken 1:1 from the
 /// `Wanes prototype` design (CSS custom properties). Brand constants live
@@ -159,8 +164,71 @@ class WanesTokens extends ThemeExtension<WanesTokens> {
     onTeal: Color(0xFF04241F),
   );
 
+  /// The light palette re-skinned to an admin-configured [primary].
+  ///
+  /// Only the teal family moves — surfaces, ink and the functional colours are
+  /// the design's and stay put. The derived shades mirror the CMS
+  /// (`brand-color.ts`) so both clients land on the same colours for a given
+  /// brand: `ink` is the same hue darkened for text on a light background, and
+  /// `tint` is the fill at 12% so it reads as a wash rather than a second colour.
+  static WanesTokens lightFor(Color primary) {
+    final hsl = HSLColor.fromColor(primary);
+    return light.copyWith(
+      teal: primary,
+      tealInk: hsl.withLightness((hsl.lightness * 0.75).clamp(0.0, 1.0)).toColor(),
+      tealTint: primary.withValues(alpha: 0.12),
+      onTeal: _onBrand(primary, hsl),
+    );
+  }
+
+  /// The dark palette re-skinned to [primary].
+  ///
+  /// The configured colour is lifted to a lightness floor first: a brand that
+  /// works on white can sit too close to the dark surface to be seen, and
+  /// `ink` goes *lighter* still, because on dark it is text rather than a fill.
+  static WanesTokens darkFor(Color primary) {
+    final hsl = HSLColor.fromColor(primary);
+    final lifted = hsl.withLightness(hsl.lightness.clamp(0.46, 1.0));
+    final brand = lifted.toColor();
+    return dark.copyWith(
+      teal: brand,
+      tealInk: lifted.withLightness(lifted.lightness.clamp(0.65, 1.0)).toColor(),
+      tealTint: brand.withValues(alpha: 0.16),
+      onTeal: _onBrand(brand, lifted),
+    );
+  }
+
+  /// Foreground for content on a solid brand fill: near-black or near-white,
+  /// whichever wins on contrast, tinted with the brand hue so it does not read
+  /// as a foreign colour. 0.179 is where black overtakes white on WCAG contrast.
+  static Color _onBrand(Color fill, HSLColor hsl) =>
+      fill.computeLuminance() > 0.179
+          ? hsl.withSaturation(hsl.saturation.clamp(0.0, 0.85)).withLightness(0.08).toColor()
+          : hsl.withSaturation(hsl.saturation.clamp(0.0, 0.35)).withLightness(0.97).toColor();
+
   static WanesTokens of(BuildContext context) =>
       Theme.of(context).extension<WanesTokens>() ?? light;
+
+  /// The colour a booking status is shown in — one table, so the rider's list,
+  /// their booking details and the driver's rider manifest never disagree about
+  /// what a seat looks like. Takes the server's `BookingStatus`:
+  /// 1 Pending · 2 Confirmed · 3 InProgress · 4 Completed · 5 Cancelled.
+  Color bookingStatus(int status) => switch (status) {
+        1 => amber,   // waiting on something
+        3 => teal,    // under way
+        4 => info,    // completed — the same blue trips use when they finish
+        5 => alert,   // cancelled
+        _ => success, // confirmed
+      };
+
+  /// Same idea for a trip's own status:
+  /// 1 Posted · 2 Full · 3 Active · 4 Completed · 5 Cancelled · 6 Arrived.
+  Color tripStatus(int status) => switch (status) {
+        3 || 6 => teal, // arrived / under way
+        4 => info,      // completed
+        5 => alert,     // cancelled
+        _ => amber,     // posted or full
+      };
 
   @override
   WanesTokens copyWith({
@@ -315,7 +383,11 @@ class WanesTheme {
 
   static ThemeData _base(Brightness brightness) {
     final isDark = brightness == Brightness.dark;
-    final t = isDark ? WanesTokens.dark : WanesTokens.light;
+    // The brand colour is admin-controlled, so the palette is derived per build
+    // rather than taken from the const design tokens. `WanesApp` rebuilds the
+    // themes whenever the configuration changes.
+    final primary = AppConfigController.primary;
+    final t = isDark ? WanesTokens.darkFor(primary) : WanesTokens.lightFor(primary);
 
     final scheme = ColorScheme.fromSeed(
       seedColor: t.teal,
@@ -409,5 +481,74 @@ class WanesTheme {
         ),
       ),
     );
+  }
+}
+
+/// Light/dark selection, driven by the sun/moon button on the profile screens
+/// (prototype 12).
+///
+/// The choice is an account preference — [AppTheme] on the user profile — so it
+/// follows the user to a new device. It is also mirrored into
+/// shared_preferences so a cold start paints the right theme before the profile
+/// call comes back, and so a signed-out device keeps the choice.
+class ThemeController {
+  ThemeController._();
+
+  static const _key = '${Environment.appName}_theme';
+
+  static final ValueNotifier<ThemeMode> mode = ValueNotifier(ThemeMode.system);
+
+  static AppTheme value = AppTheme.system;
+
+  /// Pushes the choice onto the account. Wired to `AuthService` in `main`, so
+  /// this file stays clear of the service layer (which depends on core).
+  static Future<void> Function(AppTheme theme)? saveToAccount;
+
+  /// Restores the last choice from disk. Runs before `runApp`, so there is no
+  /// flash of the wrong theme. The cached [profile] wins over the local mirror,
+  /// since that is what the server last confirmed.
+  static Future<void> load({Profile? profile}) async {
+    final prefs = await SharedPreferences.getInstance();
+    _apply(profile?.theme ?? AppTheme.fromValue(prefs.getInt(_key)));
+  }
+
+  /// Adopts the theme carried on a freshly fetched profile — sign-in on a new
+  /// device, or a change made on another one. Local only: the server is already
+  /// the source of this value.
+  static Future<void> applyFromProfile(Profile? profile) async {
+    if (profile == null || profile.theme == value) return;
+    _apply(profile.theme);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_key, profile.theme.value);
+  }
+
+  /// Flips between light and dark, resolving "system" against what is on screen.
+  static Future<void> toggle(BuildContext context) {
+    final dark = value == AppTheme.system
+        ? Theme.of(context).brightness == Brightness.dark
+        : value == AppTheme.dark;
+    return set(dark ? AppTheme.light : AppTheme.dark);
+  }
+
+  /// Repaints immediately, then persists — locally always, and on the account
+  /// through [saveToAccount]. A failed sync is not surfaced: the theme is not
+  /// worth an error toast, and the local mirror still holds the choice.
+  static Future<void> set(AppTheme next) async {
+    if (next == value) return;
+    _apply(next);
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_key, next.value);
+
+    await saveToAccount?.call(next);
+  }
+
+  static void _apply(AppTheme next) {
+    value = next;
+    mode.value = switch (next) {
+      AppTheme.system => ThemeMode.system,
+      AppTheme.light => ThemeMode.light,
+      AppTheme.dark => ThemeMode.dark,
+    };
   }
 }

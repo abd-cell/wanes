@@ -10,6 +10,8 @@ public static class AuditActions
     public const string OtpRequested = "auth.otp_requested";
     public const string Login = "auth.login";
     public const string Logout = "auth.logout";
+    public const string TokenRefreshed = "auth.token_refreshed";
+    public const string RefreshReuseDetected = "auth.refresh_reuse_detected";
 
     // profile
     public const string ProfileUpdate = "profile.update";
@@ -31,6 +33,7 @@ public static class AuditActions
     public const string TripUpdate = "trip.update";
     public const string TripCancel = "trip.cancel";
     public const string TripStart = "trip.start";
+    public const string TripArrive = "trip.arrive";
     public const string TripComplete = "trip.complete";
 
     // search
@@ -40,6 +43,12 @@ public static class AuditActions
     // bookings
     public const string BookingConfirm = "booking.confirm";
     public const string BookingCancel = "booking.cancel";
+
+    // per-rider tracking, by the trip's driver
+    public const string BookingArrive = "booking.arrive";
+    public const string BookingPickUp = "booking.pickup";
+    public const string BookingDropOff = "booking.dropoff";
+    public const string BookingNoShow = "booking.no_show";
 
     // ride requests
     public const string RequestCancel = "request.cancel";

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Status-bar icon for push notifications.
+
+  Android renders notification icons as a silhouette: every non-transparent
+  pixel is painted white (tinted by default_notification_color), so this is the
+  Wanes mark reduced to flat shapes with no colour of its own. Pointing FCM at
+  the launcher icon instead is what produces the familiar white blob.
+
+  Geometry matches _MarkPainter in lib/widgets/wanes_logo.dart, mapped from its
+  48-unit design grid onto the 24dp notification viewport.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <!-- route: M11 37 Q 20 20 37 13, halved -->
+    <path
+        android:pathData="M5.5,18.5 Q10,10 18.5,6.5"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2.25"
+        android:strokeLineCap="round" />
+
+    <!-- origin dot -->
+    <path
+        android:pathData="M2.75,18.5 a2.75,2.75 0 1,0 5.5,0 a2.75,2.75 0 1,0 -5.5,0 Z"
+        android:fillColor="#FFFFFFFF" />
+
+    <!-- destination pin -->
+    <path
+        android:pathData="M15.25,6.5 a3.25,3.25 0 1,0 6.5,0 a3.25,3.25 0 1,0 -6.5,0 Z"
+        android:fillColor="#FFFFFFFF" />
+</vector>

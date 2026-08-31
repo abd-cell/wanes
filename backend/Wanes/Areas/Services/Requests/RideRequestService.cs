@@ -13,6 +13,7 @@ using Wanes.Shareds.Constants;
 using Wanes.Shareds.Enums;
 using Wanes.Shareds.Extensions;
 using Wanes.Shareds.Models;
+using Wanes.Shareds.Notifications;
 using Wanes.Shareds.Security;
 
 namespace Wanes.Areas.Services.Requests;
@@ -82,11 +83,17 @@ public class RideRequestService : IRideRequestService
         var origin = GeoFactory.Point(lat, lng);
         var radius = radiusMeters <= 0 ? 5000 : radiusMeters;
 
+        // Two reaches, unioned: how far this driver is willing to look, and how
+        // far the rider asked to be reached from. The second half is what makes
+        // the list agree with the push — a rider who searched "Anywhere" gets a
+        // 50 km hail, and the driver we already notified must be able to find it
+        // here even though their own filter is narrower.
         var requests = await rideRequestRepository
             .Where(r => r.Status == RideRequestStatus.Open
                         && r.RiderId != driverId
                         && (r.ExpiresAt == null || r.ExpiresAt > DateTime.UtcNow)
-                        && r.Origin.IsWithinDistance(origin, radius))
+                        && (r.Origin.IsWithinDistance(origin, radius)
+                            || r.Origin.Distance(origin) <= r.RadiusMeters))
             .OrderBy(r => r.Origin.Distance(origin))
             .Take(30)
             .ToListAsync();
@@ -153,9 +160,9 @@ public class RideRequestService : IRideRequestService
             await unitOfWork.CommitAsync();
             await auditService.LogAsync(AuditActions.RequestAccept, nameof(RideRequest), request.Id);
 
-            await notificationService.Notify(request.RiderId, NotificationType.DriverAccepted,
-                "A driver accepted your ride",
-                $"{driver.FirstName} is on the way.",
+            await notificationService.Notify(request.RiderId, NotificationTemplate.DriverAcceptedRider,
+                args: new { name = driver.FirstName },
+                data:
                 new { requestId = request.Id, tripId = trip.Id });
 
             return new BaseResponse<RideRequestRow>(new RideRequestRow(request));

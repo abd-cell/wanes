@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  APNs environment. Xcode's "Push Notifications" capability writes this file;
+	  it is checked in so a fresh clone builds with push already declared.
+
+	  "development" is correct for debug builds and TestFlight-from-Xcode. Switch
+	  to "production" for App Store builds, or let Xcode manage it by re-adding
+	  the capability under Signing & Capabilities.
+	-->
+	<key>aps-environment</key>
+	<string>development</string>
+</dict>
+</plist>

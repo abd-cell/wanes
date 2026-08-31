@@ -4,26 +4,30 @@
 /// `--dart-define` named `API_BASE_URL`. This keeps one binary configurable
 /// per device without editing source:
 ///
-///   flutter run --dart-define=API_BASE_URL=http://10.0.2.2:5000/api/v1/      # Android emulator
-///   flutter run --dart-define=API_BASE_URL=http://localhost:5000/api/v1/     # web / desktop
-///   flutter run --dart-define=API_BASE_URL=http://192.168.1.20:5000/api/v1/  # real phone on LAN
+///   flutter run --dart-define=API_BASE_URL=http://192.168.1.43:5000/api/v1/ # LAN (default)
+///   flutter run --dart-define=API_BASE_URL=http://10.0.2.2:5000/api/v1/       # Android emulator
+///   flutter run --dart-define=API_BASE_URL=http://localhost:5000/api/v1/      # web / desktop on the host
+///   flutter run --dart-define=API_BASE_URL=https://www.technzone.com/wanesApi/api/v1/ # staging
 ///
 /// Notes:
-/// - The Android emulator reaches the host machine at 10.0.2.2, not localhost.
-/// - A real device reaches the host at the PC's LAN IP (see `ipconfig`); the
-///   phone and PC must be on the same Wi-Fi.
-/// - Dev defaults to the backend's plain-HTTP endpoint (:5000) so the
-///   self-signed HTTPS dev cert (:5001) doesn't trip the client with a
-///   HandshakeException. Use an https URL only against a trusted cert.
-///
-/// When no define is passed, the default targets the Android emulator over
-/// HTTP — the most common local run target.
+/// - Dev defaults to the host PC's LAN address so a real phone, an emulator and
+///   the host browser all reach the same backend. The backend must be bound to
+///   all interfaces (`https://0.0.0.0:5001;http://0.0.0.0:5000` in
+///   launchSettings.json) and TCP 5000 opened in the Windows firewall.
+/// - The LAN IP is DHCP-assigned: re-check with `ipconfig` and pass
+///   `--dart-define=API_BASE_URL=...` if it moved, or reserve it on the router.
+/// - The Android emulator can also reach the host at 10.0.2.2; a real device
+///   cannot. Phone and PC must be on the same Wi-Fi.
+/// - Prefer the plain-HTTP endpoint (:5000). The self-signed HTTPS dev cert on
+///   :5001 trips clients with a HandshakeException / browser warning. Cleartext
+///   to private ranges is allowed by the Android network-security config and by
+///   NSAllowsLocalNetworking on iOS.
 class Environment {
   static const String appName = 'Wanes';
 
   static const String apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'https://localhost:5001/api/v1/',
+    defaultValue: 'http://192.168.1.43:5000/api/v1/',
   );
 
   /// Free-text location search endpoint (OpenStreetMap Nominatim by default).

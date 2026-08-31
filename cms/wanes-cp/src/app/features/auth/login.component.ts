@@ -55,7 +55,7 @@ export class LoginComponent {
           this.global.errorMsg(this.translation.translate('login_not_admin'));
           return;
         }
-        this.global.setSession(res.data.token, res.data.profile);
+        this.global.setSession(res.data.token, res.data.refreshToken, res.data.profile);
         this.global.successMsg(this.translation.translate('login_success'));
         this.router.navigate(['/', this.translation.lang(), 'dashboard']);
       } else {

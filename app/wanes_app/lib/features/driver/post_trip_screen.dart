@@ -48,8 +48,8 @@ class _PostTripScreenState extends State<PostTripScreen> {
     return DateTime(n.year, n.month, n.day, n.hour, (n.minute ~/ 15) * 15);
   }
 
-  /// The design's "Suggested £5.00" — our own distance-based estimate for one
-  /// seat on this route, rounded to the nearest 50p.
+  /// The design's suggestion chip — our own distance-based estimate for one
+  /// seat on this route, rounded to the nearest half unit of the currency.
   /// Falls back to the current price until both ends of the route are set.
   double get _suggestedPrice {
     final from = _from;
@@ -377,6 +377,12 @@ class _PostTripScreenState extends State<PostTripScreen> {
     );
   }
 
+  Widget _symbol(WanesTokens t) => Text(Fare.symbol,
+      style: WanesTheme.mono(size: 30, weight: FontWeight.w800, color: t.ink2, spacing: 0));
+
+  Widget _amount(WanesTokens t) => Text(_price.toStringAsFixed(Fare.decimals),
+      style: WanesTheme.mono(size: 30, weight: FontWeight.w800, color: t.ink, spacing: 0));
+
   /// PRICE PER SEAT — big mono figure, suggestion chip, tap the amount to edit.
   Widget _priceCard(WanesTokens t) {
     final suggestion = _suggestedPrice;
@@ -388,11 +394,12 @@ class _PostTripScreenState extends State<PostTripScreen> {
         Row(textDirection: TextDirection.ltr, children: [
           _stepButton(t, '–', _price > 1, () => setState(() => _price = (_price - 0.5).clamp(1, 50))),
           const SizedBox(width: 10),
-          Text(Fare.symbol,
-              style: WanesTheme.mono(size: 30, weight: FontWeight.w800, color: t.ink2, spacing: 0)),
-          const SizedBox(width: 4),
-          Text(_price.toStringAsFixed(2),
-              style: WanesTheme.mono(size: 30, weight: FontWeight.w800, color: t.ink, spacing: 0)),
+          // The row is pinned LTR so the -/+ buttons keep their sides in both
+          // languages, which means the symbol has to be placed by hand rather
+          // than left to the text direction.
+          ...(Fare.symbolAfterAmount
+              ? [_amount(t), const SizedBox(width: 6), _symbol(t)]
+              : [_symbol(t), const SizedBox(width: 4), _amount(t)]),
           const SizedBox(width: 10),
           _stepButton(t, '+', _price < 50, () => setState(() => _price = (_price + 0.5).clamp(1, 50)),
               accent: true),

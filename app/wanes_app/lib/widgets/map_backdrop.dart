@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' show PathMetric;
 
 import 'package:flutter/material.dart';
 import '../core/theme.dart';
@@ -47,6 +48,37 @@ class MapRoutes {
   );
 }
 
+/// How one stretch of a route reads: already travelled, still only proposed,
+/// or merely there for context.
+enum MapLegStyle { solid, dashed, faint }
+
+/// A marker somewhere along the route, and how the route reads on either side
+/// of it — the live-trip car and its two legs.
+///
+/// [MapBackdrop] glides the marker whenever [at] changes, so a screen only has
+/// to hand over the new value when the trip moves on a stage.
+class MapProgress {
+  const MapProgress({
+    required this.at,
+    this.behind = MapLegStyle.solid,
+    this.ahead = MapLegStyle.dashed,
+    this.marker,
+  });
+
+  /// 0 -> 1 along the curve, measured from its start.
+  final double at;
+
+  /// The stretch from the route's start up to [at] — solid once it has been
+  /// covered.
+  final MapLegStyle behind;
+
+  /// The stretch from [at] to the route's end — dashed while it is still ahead.
+  final MapLegStyle ahead;
+
+  /// Drawn centred on [at]. Null leaves the split route without a marker.
+  final Widget? marker;
+}
+
 /// The prototype's stylised map: a 28px grid over `--map-bg`, two diagonal
 /// road bands, and optionally a route curve. Markers are supplied as
 /// [children] so each screen can place its own.
@@ -61,6 +93,7 @@ class MapBackdrop extends StatefulWidget {
     this.gridSize = 28,
     this.startMarker,
     this.endMarker,
+    this.progress,
   });
 
   final MapRouteSpec? route;
@@ -77,37 +110,72 @@ class MapBackdrop extends StatefulWidget {
   final Widget? startMarker;
   final Widget? endMarker;
 
+  /// A marker part-way along the route — where the trip has got to. Set it and
+  /// the route is drawn as two legs either side of the marker instead of one
+  /// uniform curve.
+  final MapProgress? progress;
+
   @override
   State<MapBackdrop> createState() => _MapBackdropState();
 }
 
-class _MapBackdropState extends State<MapBackdrop>
-    with SingleTickerProviderStateMixin {
+class _MapBackdropState extends State<MapBackdrop> with TickerProviderStateMixin {
   /// `@keyframes dashflow` — a dashed *proposed* route creeps forward. Only
   /// runs when there is one to animate; a solid route stays still.
   late final AnimationController _dash =
       AnimationController(vsync: this, duration: WanesMotion.dashFlow);
 
+  /// Slides the progress marker from where it was to where it now is, so a
+  /// stage change reads as the car moving rather than teleporting.
+  late final AnimationController _glide =
+      AnimationController(vsync: this, duration: WanesMotion.marker, value: 1);
+
+  late double _from = widget.progress?.at ?? 0;
+  late double _to = _from;
+
+  /// Whether anything on the map is dashed, and so needs the flow running.
+  bool get _flowing {
+    final p = widget.progress;
+    if (p != null) {
+      return p.behind == MapLegStyle.dashed || p.ahead == MapLegStyle.dashed;
+    }
+    return widget.route?.dashed ?? false;
+  }
+
+  /// The marker's position this frame, part-way through the glide.
+  double get _at => _from + (_to - _from) * Curves.easeInOut.transform(_glide.value);
+
   @override
   void initState() {
     super.initState();
-    if (widget.route?.dashed ?? false) _dash.repeat();
+    if (_flowing) _dash.repeat();
   }
 
   @override
   void didUpdateWidget(MapBackdrop old) {
     super.didUpdateWidget(old);
-    final flow = widget.route?.dashed ?? false;
-    if (flow && !_dash.isAnimating) {
+    if (_flowing && !_dash.isAnimating) {
       _dash.repeat();
-    } else if (!flow && _dash.isAnimating) {
+    } else if (!_flowing && _dash.isAnimating) {
       _dash.stop();
+    }
+
+    final to = widget.progress?.at;
+    if (to == null) {
+      _from = _to = 0;
+    } else if (to != _to) {
+      // Glide on from wherever the last one had reached, not from its target —
+      // two stage changes in quick succession must not jump the marker back.
+      _from = old.progress == null ? to : _at;
+      _to = to;
+      _glide.forward(from: 0);
     }
   }
 
   @override
   void dispose() {
     _dash.dispose();
+    _glide.dispose();
     super.dispose();
   }
 
@@ -119,12 +187,14 @@ class _MapBackdropState extends State<MapBackdrop>
     final endMarker = widget.endMarker;
     final gridSize = widget.gridSize;
     final routeColor = widget.routeColor;
+    final progress = widget.progress;
+    final marker = progress?.marker;
     return Stack(
       fit: StackFit.expand,
       children: [
         RepaintBoundary(
           child: AnimatedBuilder(
-            animation: _dash,
+            animation: Listenable.merge([_dash, _glide]),
             builder: (_, __) => CustomPaint(
               painter: _MapPainter(
                 bg: t.mapBg,
@@ -134,18 +204,27 @@ class _MapBackdropState extends State<MapBackdrop>
                 routeColor: routeColor ?? t.teal,
                 grid: gridSize,
                 dashPhase: _dash.value,
+                progressAt: progress == null ? null : _at,
+                behind: progress?.behind ?? MapLegStyle.solid,
+                ahead: progress?.ahead ?? MapLegStyle.dashed,
               ),
             ),
           ),
         ),
-        if (spec != null && (startMarker != null || endMarker != null))
+        if (spec != null && (startMarker != null || endMarker != null || marker != null))
           Positioned.fill(
             child: LayoutBuilder(
               builder: (_, box) {
-                final ends = _routeEnds(spec, box.biggest);
+                final size = box.biggest;
                 return Stack(clipBehavior: Clip.none, children: [
-                  if (startMarker != null) _at(ends.$1, startMarker),
-                  if (endMarker != null) _at(ends.$2, endMarker),
+                  if (startMarker != null) _pin(_pointOn(spec, size, 0), startMarker),
+                  if (endMarker != null) _pin(_pointOn(spec, size, 1), endMarker),
+                  if (marker != null)
+                    AnimatedBuilder(
+                      animation: _glide,
+                      builder: (_, child) => _pin(_pointOn(spec, size, _at), child!),
+                      child: marker,
+                    ),
                 ]);
               },
             ),
@@ -156,23 +235,23 @@ class _MapBackdropState extends State<MapBackdrop>
   }
 
   /// Centres [child] on [p] without needing to know its size.
-  Widget _at(Offset p, Widget child) => Positioned(
+  Widget _pin(Offset p, Widget child) => Positioned(
         left: p.dx,
         top: p.dy,
         child: FractionalTranslation(translation: const Offset(-0.5, -0.5), child: child),
       );
 
-  /// First and last point of the route, in box coordinates.
-  static (Offset, Offset) _routeEnds(MapRouteSpec spec, Size size) {
+  /// The point [fraction] of the way along the route, in box coordinates —
+  /// scaled by the same `slice` transform the painter uses, so a marker stays
+  /// on the line at any screen width.
+  static Offset _pointOn(MapRouteSpec spec, Size size, double fraction) {
     final scale = math.max(size.width / spec.viewBox.width, size.height / spec.viewBox.height);
     final dx = (size.width - spec.viewBox.width * scale) / 2;
     final dy = (size.height - spec.viewBox.height * scale) / 2;
-    Offset map(Offset p) => Offset(dx + p.dx * scale, dy + p.dy * scale);
 
     final metric = spec.build().computeMetrics().first;
-    final a = metric.getTangentForOffset(0)!.position;
-    final b = metric.getTangentForOffset(metric.length)!.position;
-    return (map(a), map(b));
+    final p = metric.getTangentForOffset(metric.length * fraction.clamp(0.0, 1.0))!.position;
+    return Offset(dx + p.dx * scale, dy + p.dy * scale);
   }
 }
 
@@ -308,6 +387,9 @@ class _MapPainter extends CustomPainter {
     required this.routeColor,
     required this.grid,
     this.dashPhase = 0,
+    this.progressAt,
+    this.behind = MapLegStyle.solid,
+    this.ahead = MapLegStyle.dashed,
   });
 
   final Color bg;
@@ -319,6 +401,11 @@ class _MapPainter extends CustomPainter {
 
   /// 0 → 1 through one dash+gap period (`@keyframes dashflow`).
   final double dashPhase;
+
+  /// Where the route splits into its two legs, or null for one uniform curve.
+  final double? progressAt;
+  final MapLegStyle behind;
+  final MapLegStyle ahead;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -371,34 +458,47 @@ class _MapPainter extends CustomPainter {
     final dx = (size.width - spec.viewBox.width * scale) / 2;
     final dy = (size.height - spec.viewBox.height * scale) / 2;
 
-    final p = Paint()
-      ..color = routeColor
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..strokeWidth = 5;
-
     canvas.save();
     canvas.translate(dx, dy);
     canvas.scale(scale);
-    final path = spec.build();
-    if (!spec.dashed) {
-      canvas.drawPath(path, p);
-    } else {
-      // `stroke-dasharray:2 12`. Walking the start back by one full period
-      // and sliding it forward by the phase keeps the loop seamless.
-      const dash = 2.0, gap = 12.0;
-      const period = dash + gap;
-      for (final metric in path.computeMetrics()) {
-        var d = -period + dashPhase * period;
-        while (d < metric.length) {
-          final a = math.max(0.0, d);
-          final b = math.min(d + dash, metric.length);
-          if (b > a) canvas.drawPath(metric.extractPath(a, b), p);
-          d += period;
-        }
+    final at = progressAt;
+    for (final metric in spec.build().computeMetrics()) {
+      if (at == null) {
+        _paintLeg(canvas, metric, 0, metric.length,
+            spec.dashed ? MapLegStyle.dashed : MapLegStyle.solid);
+      } else {
+        final split = metric.length * at.clamp(0.0, 1.0);
+        _paintLeg(canvas, metric, 0, split, behind);
+        _paintLeg(canvas, metric, split, metric.length, ahead);
       }
     }
     canvas.restore();
+  }
+
+  /// One stretch of the route, [from]..[to] along [metric] in viewBox units.
+  void _paintLeg(Canvas canvas, PathMetric metric, double from, double to, MapLegStyle style) {
+    if (to <= from) return;
+    final p = Paint()
+      ..color = style == MapLegStyle.faint ? routeColor.withValues(alpha: 0.3) : routeColor
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = style == MapLegStyle.faint ? 4 : 5;
+
+    if (style != MapLegStyle.dashed) {
+      canvas.drawPath(metric.extractPath(from, to), p);
+      return;
+    }
+    // `stroke-dasharray:2 12`. Walking the start back by one full period
+    // and sliding it forward by the phase keeps the loop seamless.
+    const dash = 2.0, gap = 12.0;
+    const period = dash + gap;
+    var d = from - period + dashPhase * period;
+    while (d < to) {
+      final a = math.max(from, d);
+      final b = math.min(d + dash, to);
+      if (b > a) canvas.drawPath(metric.extractPath(a, b), p);
+      d += period;
+    }
   }
 
   @override
@@ -409,5 +509,8 @@ class _MapPainter extends CustomPainter {
       old.route != route ||
       old.routeColor != routeColor ||
       old.grid != grid ||
-      old.dashPhase != dashPhase;
+      old.dashPhase != dashPhase ||
+      old.progressAt != progressAt ||
+      old.behind != behind ||
+      old.ahead != ahead;
 }

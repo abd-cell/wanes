@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import '../core/l10n.dart';
+import '../core/push_service.dart';
 import '../core/theme.dart';
 import 'wanes_motion.dart';
 
@@ -271,6 +272,15 @@ class AvatarBadge extends StatelessWidget {
   final Color? tint;
   final Color? fg;
 
+  /// "Layla Haddad" → "LH". First + last initial, or the single initial of a
+  /// one-word name; "?" when there is no name at all.
+  static String initialsOf(String name) {
+    final parts = name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+    if (parts.isEmpty) return '?';
+    if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
+    return (parts.first[0] + parts.last[0]).toUpperCase();
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = WanesTokens.of(context);
@@ -414,19 +424,30 @@ class RatingStars extends StatelessWidget {
   }
 }
 
-/// The three-item bottom navigation (Home · Trips · Profile) — pill highlight
-/// on the active item, matching the prototype's floating tab bar.
+/// The bottom navigation — pill highlight on the active item, matching the
+/// prototype's floating tab bar. Three items by default (the driver shell),
+/// four for the rider ([riderItems]).
 class WanesBottomNav extends StatelessWidget {
   const WanesBottomNav({super.key, required this.index, required this.onSelect, this.items});
 
   final int index;
   final ValueChanged<int> onSelect;
 
-  /// Defaults to the rider tabs, translated for the current language.
+  /// Defaults to [defaultItems], translated for the current language.
   final List<WanesNavItem>? items;
 
+  /// Home · Trips · Profile — the driver shell's three tabs.
   static List<WanesNavItem> defaultItems(BuildContext context) => [
         WanesNavItem(Icons.home_outlined, context.tr('nav.home')),
+        WanesNavItem(Icons.subject_rounded, context.tr('nav.trips')),
+        WanesNavItem(Icons.person_outline_rounded, context.tr('nav.profile')),
+      ];
+
+  /// Home · Bookings · Trips · Profile — the rider shell, where a booking (your
+  /// seat) and a trip (the journey it is on) are two different things.
+  static List<WanesNavItem> riderItems(BuildContext context) => [
+        WanesNavItem(Icons.home_outlined, context.tr('nav.home')),
+        WanesNavItem(Icons.confirmation_number_outlined, context.tr('nav.bookings')),
         WanesNavItem(Icons.subject_rounded, context.tr('nav.trips')),
         WanesNavItem(Icons.person_outline_rounded, context.tr('nav.profile')),
       ];
@@ -816,6 +837,61 @@ class CircleIconButton extends StatelessWidget {
   }
 }
 
+/// Bell button with a live unread badge — the home header's notifications
+/// entry. The count comes from [PushService.unreadCount], so a push landing
+/// while the tab is on screen bumps the badge without a rebuild from above.
+class NotificationBellButton extends StatelessWidget {
+  const NotificationBellButton({super.key, this.onTap, this.size = 42});
+  final VoidCallback? onTap;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = WanesTokens.of(context);
+    return ValueListenableBuilder<int>(
+      valueListenable: PushService.instance.unreadCount,
+      builder: (context, count, _) => Semantics(
+        button: true,
+        label: context.tr('notif.title'),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            CircleIconButton(
+              icon: Icons.notifications_none_rounded,
+              onTap: onTap,
+              size: size,
+            ),
+            if (count > 0)
+              Positioned(
+                top: -3,
+                right: -3,
+                child: Container(
+                  constraints: BoxConstraints(minWidth: size * 0.43),
+                  height: size * 0.43,
+                  alignment: Alignment.center,
+                  padding: const EdgeInsets.symmetric(horizontal: 5),
+                  decoration: BoxDecoration(
+                    color: t.info,
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: t.surface, width: 2),
+                  ),
+                  child: Text(
+                    count > 99 ? '99+' : '$count',
+                    style: WanesTheme.mono(
+                        size: size * 0.22,
+                        weight: FontWeight.w700,
+                        color: Colors.white,
+                        spacing: 0),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Screen header: circular back button + title (prototype 09).
 class ScreenHeader extends StatelessWidget {
   const ScreenHeader({super.key, required this.title, this.onBack, this.trailing});
@@ -990,7 +1066,7 @@ class MiniStat extends StatelessWidget {
   }
 }
 
-/// Tinted mono chip (VERIFIED, "Suggested £5.00", "All valid").
+/// Tinted mono chip (VERIFIED, "Suggested 5.000 د.أ", "All valid").
 class TintChip extends StatelessWidget {
   const TintChip(
     this.label, {
@@ -1331,7 +1407,7 @@ class RoundAction extends StatelessWidget {
   final IconData icon;
   final VoidCallback? onTap;
 
-  /// Solid teal (the message button) rather than the outlined `surface-2` one.
+  /// Solid teal (the call button) rather than the outlined `surface-2` one.
   final bool filled;
   final double size;
 

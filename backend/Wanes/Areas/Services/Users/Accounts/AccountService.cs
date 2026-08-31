@@ -29,6 +29,9 @@ public class AccountService : IAccountService
     private readonly IRepository<UserLogin> userLoginRepository;
     private readonly OtpSettings otpSettings;
 
+    /// <summary>How long a just-rotated refresh token still works, covering a client retry.</summary>
+    private static readonly TimeSpan RefreshReuseGrace = TimeSpan.FromSeconds(60);
+
     public AccountService(
         IUnitOfWork unitOfWork,
         ISecurityManager securityManager,
@@ -125,12 +128,16 @@ public class AccountService : IAccountService
 
         // new device session
         var sessionKey = Guid.NewGuid().ToString("N");
+        var refresh = tokenGenerator.GenerateRefreshToken();
         userLoginRepository.Create(new UserLogin
         {
             UserId = user.Id,
             SessionKey = sessionKey,
             DeviceType = input.DeviceType,
             DeviceToken = input.DeviceToken,
+            RefreshTokenHash = refresh.Hash,
+            RefreshTokenExpiresAt = refresh.ExpiresAt,
+            RefreshRotatedAt = DateTime.UtcNow,
         });
 
         user.LastSeenAt = DateTime.UtcNow;
@@ -139,15 +146,115 @@ public class AccountService : IAccountService
 
         var roles = await LoadRoles(user.Id);
 
-        var token = tokenGenerator.Generate(user.Id, roles, sessionKey);
+        var access = tokenGenerator.Generate(user.Id, roles, sessionKey);
         await auditService.LogAsync(AuditActions.Login, nameof(User), user.Id);
 
         return new BaseResponse<AuthResult>(new AuthResult
         {
-            Token = token,
+            Token = access.Token,
+            ExpiresAt = access.ExpiresAt,
+            RefreshToken = refresh.Token,
+            RefreshTokenExpiresAt = refresh.ExpiresAt,
             IsNewUser = isNewUser,
             Profile = new ProfileOutput(user) { Roles = roles },
         });
+    }
+
+    /// <summary>
+    /// Trades a refresh token for a fresh access token, rotating the refresh token in the
+    /// same step. Anonymous by design: it is reached precisely when the access token has
+    /// expired, so the refresh token is the only credential the caller still holds.
+    /// </summary>
+    public async Task<BaseResponse<AuthResult>> Refresh(RefreshTokenInput input)
+    {
+        if (string.IsNullOrWhiteSpace(input.RefreshToken))
+            return new BaseResponse<AuthResult>(default, ErrorCode.SessionExpired);
+
+        var hash = tokenGenerator.HashRefreshToken(input.RefreshToken);
+
+        var login = await userLoginRepository
+            .Where(l => !l.IsDeleted &&
+                        (l.RefreshTokenHash == hash || l.PreviousRefreshTokenHash == hash))
+            .OrderByDescending(l => l.Id)
+            .FirstOrDefaultAsync();
+
+        // Unknown token, or one belonging to a session that has already been logged out.
+        if (login == null)
+            return new BaseResponse<AuthResult>(default, ErrorCode.SessionExpired);
+
+        // The presented token has already been rotated away. Two calls racing on a dropped
+        // response happen often enough that a brief window is treated as that retry; past it,
+        // the likely explanation is a copy of the token elsewhere, so the session is revoked.
+        if (login.RefreshTokenHash != hash)
+        {
+            var rotatedAgo = DateTime.UtcNow - (login.RefreshRotatedAt ?? DateTime.MinValue);
+            if (rotatedAgo > RefreshReuseGrace)
+            {
+                await RevokeSession(login);
+                await auditService.LogAsync(AuditActions.RefreshReuseDetected, nameof(UserLogin), login.Id);
+                return new BaseResponse<AuthResult>(default, ErrorCode.SessionExpired);
+            }
+        }
+
+        if (login.RefreshTokenExpiresAt == null || login.RefreshTokenExpiresAt < DateTime.UtcNow)
+        {
+            await RevokeSession(login);
+            return new BaseResponse<AuthResult>(default, ErrorCode.SessionExpired);
+        }
+
+        var user = await userRepository.GetByIdAsync(login.UserId);
+        if (user == null || user.IsDeleted)
+        {
+            await RevokeSession(login);
+            return new BaseResponse<AuthResult>(default, ErrorCode.SessionExpired);
+        }
+        if (user.IsDisabled)
+        {
+            // Nothing is minted for a disabled account, and the session goes with it —
+            // otherwise a live refresh token outlives the ban by up to its whole lifetime.
+            await RevokeSession(login);
+            return new BaseResponse<AuthResult>(default, ErrorCode.AccountDisabled);
+        }
+
+        var rotated = tokenGenerator.GenerateRefreshToken();
+        login.PreviousRefreshTokenHash = login.RefreshTokenHash;
+        login.RefreshTokenHash = rotated.Hash;
+        login.RefreshTokenExpiresAt = rotated.ExpiresAt;
+        login.RefreshRotatedAt = DateTime.UtcNow;
+        login.LastActivityAt = DateTime.UtcNow;
+        userLoginRepository.Update(login);
+
+        user.LastSeenAt = DateTime.UtcNow;
+        userRepository.Update(user);
+        await unitOfWork.SaveAsync();
+
+        var roles = await LoadRoles(user.Id);
+        // Same session key, so the new access token stays tied to this device row and logout
+        // still kills it instantly; only the expiry and the role claims are refreshed.
+        var access = tokenGenerator.Generate(user.Id, roles, login.SessionKey);
+        await auditService.LogAsync(AuditActions.TokenRefreshed, nameof(UserLogin), login.Id);
+
+        return new BaseResponse<AuthResult>(new AuthResult
+        {
+            Token = access.Token,
+            ExpiresAt = access.ExpiresAt,
+            RefreshToken = rotated.Token,
+            RefreshTokenExpiresAt = rotated.ExpiresAt,
+            IsNewUser = false,
+            Profile = new ProfileOutput(user) { Roles = roles },
+        });
+    }
+
+    /// <summary>Ends a session for good: no push target left, and no refresh path back in.</summary>
+    private async Task RevokeSession(UserLogin login)
+    {
+        login.DeviceToken = null;
+        login.RefreshTokenHash = null;
+        login.PreviousRefreshTokenHash = null;
+        login.RefreshTokenExpiresAt = null;
+        userLoginRepository.Update(login);
+        userLoginRepository.SoftDelete(login);
+        await unitOfWork.SaveAsync();
     }
 
     public async Task<BaseResponse> Logout()
@@ -158,8 +265,9 @@ public class AccountService : IAccountService
             var login = userLoginRepository.FirstOrDefault(l => l.SessionKey == sessionKey);
             if (login != null)
             {
-                userLoginRepository.SoftDelete(login);
-                await unitOfWork.SaveAsync();
+                // Drops the FCM token as well: a soft-deleted row still holds it, and
+                // pushing to a signed-out handset leaks the next user's alerts.
+                await RevokeSession(login);
             }
         }
         await auditService.LogAsync(AuditActions.Logout, nameof(UserLogin));
@@ -196,6 +304,7 @@ public class AccountService : IAccountService
         var user = await GetCurrentUser();
 
         if (input.Language != null) user.Language = input.Language.Value;
+        if (input.Theme != null) user.Theme = input.Theme.Value;
         if (input.NotifPush != null) user.NotifPush = input.NotifPush.Value;
         if (input.NotifSms != null) user.NotifSms = input.NotifSms.Value;
 

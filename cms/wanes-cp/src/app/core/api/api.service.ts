@@ -1,11 +1,14 @@
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpContext, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { environment } from '../../environment';
+import { SKIP_AUTH_HANDLING } from '../interceptors/auth-context';
 import {
   AdminPage, AnalyticsBreakdowns, AnalyticsLeaderboards, AnalyticsOperations,
-  AnalyticsOverview, AnalyticsTimeSeries, AppResponse, AuditRow, AuthResult,
-  DeviceType, DriverRow, LookupOption, PageQuery, ResourceRecord, Roles,
+  AnalyticsOverview, AnalyticsTimeSeries, AppConfiguration, AppResponse, AuditRow,
+  AuthResult, BroadcastInput, BroadcastResult, BulkNotificationInput, BulkNotificationResult,
+  DeviceType, DriverRow, LookupOption, NotificationStats, PageQuery, ResourceRecord, Roles,
+  TargetedSendInput, TargetedSendResult,
 } from './models';
 
 type FilterValue = string | number | boolean | undefined | null;
@@ -31,6 +34,29 @@ export class ApiService {
 
   logout = (): Observable<AppResponse> =>
     this.http.post<AppResponse>(`${this.base}Accounts/logout`, {});
+
+  /**
+   * Trades the refresh token for a new pair. Skips the auth interceptors: the
+   * access token is expired by definition here, and a 401 on this call is the
+   * end of the session rather than something to retry.
+   */
+  refreshSession = (refreshToken: string): Observable<AppResponse<AuthResult>> =>
+    this.http.post<AppResponse<AuthResult>>(`${this.base}Accounts/refresh`,
+      { refreshToken },
+      { context: new HttpContext().set(SKIP_AUTH_HANDLING, true) });
+
+  // ── platform configuration ──
+  /**
+   * Public read, used at bootstrap before anyone has signed in. Opted out of the
+   * auth interceptors: a settings fetch that fails is a degraded brand, not the
+   * end of a session, and it must not toast or redirect to login.
+   */
+  configuration = (): Observable<AppResponse<AppConfiguration>> =>
+    this.http.get<AppResponse<AppConfiguration>>(`${this.base}configuration`,
+      { context: new HttpContext().set(SKIP_AUTH_HANDLING, true) });
+
+  updateConfiguration = (body: AppConfiguration): Observable<AppResponse<AppConfiguration>> =>
+    this.http.put<AppResponse<AppConfiguration>>(`${this.base}admin/configuration`, body);
 
   // ── admin: drivers (verification queue) ──
   pendingDrivers = (q: PageQuery): Observable<AppResponse<AdminPage<DriverRow>>> =>
@@ -79,6 +105,25 @@ export class ApiService {
 
   createResource = (route: string, body: ResourceRecord): Observable<AppResponse<ResourceRecord>> =>
     this.http.post<AppResponse<ResourceRecord>>(`${this.base}admin/${route}`, body);
+
+  /** One notification to a whole audience; resolves with the recipient count. */
+  broadcastNotification = (body: BroadcastInput): Observable<AppResponse<BroadcastResult>> =>
+    this.http.post<AppResponse<BroadcastResult>>(`${this.base}admin/notifications/broadcast`, body);
+
+  /** One notification to a hand-picked set of users; resolves with the recipient count. */
+  sendTargetedNotification = (body: TargetedSendInput): Observable<AppResponse<TargetedSendResult>> =>
+    this.http.post<AppResponse<TargetedSendResult>>(`${this.base}admin/notifications/send`, body);
+
+  /** Marks read/unread or deletes every row the admin ticked. */
+  bulkNotifications = (body: BulkNotificationInput): Observable<AppResponse<BulkNotificationResult>> =>
+    this.http.post<AppResponse<BulkNotificationResult>>(`${this.base}admin/notifications/bulk`, body);
+
+  /**
+   * Headline counts for the notification manager. Separate from the list call
+   * because the totals describe the whole table, not the page on screen.
+   */
+  notificationStats = (): Observable<AppResponse<NotificationStats>> =>
+    this.http.get<AppResponse<NotificationStats>>(`${this.base}admin/notifications/stats`);
 
   updateResource = (route: string, id: number, body: ResourceRecord): Observable<AppResponse<ResourceRecord>> =>
     this.http.put<AppResponse<ResourceRecord>>(`${this.base}admin/${route}/${id}`, body);

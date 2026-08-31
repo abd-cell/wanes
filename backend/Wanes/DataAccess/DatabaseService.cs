@@ -1,10 +1,12 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Wanes.Areas.Domain.Audit;
 using Wanes.Areas.Domain.Bookings;
+using Wanes.Areas.Domain.Configuration;
 using Wanes.Areas.Domain.Logging;
 using Wanes.Areas.Domain.Notifications;
 using Wanes.Areas.Domain.Ratings;
 using Wanes.Areas.Domain.Requests;
+using Wanes.Areas.Domain.Support;
 using Wanes.Areas.Domain.Trips;
 using Wanes.Areas.Domain.Users;
 using Wanes.Areas.Domain.Vehicles;
@@ -32,6 +34,10 @@ public class DatabaseService : DbContext
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<ApiLog> ApiLogs => Set<ApiLog>();
     public DbSet<UserNotification> UserNotifications => Set<UserNotification>();
+
+    public DbSet<AppConfiguration> AppConfigurations => Set<AppConfiguration>();
+
+    public DbSet<FaqItem> FaqItems => Set<FaqItem>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

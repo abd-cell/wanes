@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug-build override of main/res/xml/network_security_config.xml.
+     The dev backend is reached over plain HTTP at whatever LAN address DHCP
+     handed the PC today, so pinning a single IP here means every lease change
+     breaks a real device until someone remembers to edit XML. Debug builds are
+     never shipped, so allow cleartext outright and let the strict per-host list
+     in main/ govern release builds. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

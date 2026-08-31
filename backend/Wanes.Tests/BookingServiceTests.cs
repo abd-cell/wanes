@@ -14,7 +14,7 @@ public class BookingServiceTests
     {
         var uow = new FakeUnitOfWork();
         var sec = new FakeSecurityManager(riderId);
-        var svc = new BookingService(uow, sec, new FakeAuditService(),
+        var svc = new BookingService(uow, sec, new FakeAuditService(), new FakeNotificationService(),
             uow.Repository<Booking>(), uow.Repository<Trip>());
         return (svc, uow, sec);
     }

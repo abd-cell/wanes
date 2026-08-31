@@ -84,6 +84,12 @@ export class LookupPickerComponent {
   readonly placeholderKey = input('lookup_search');
   readonly valueChange = output<number | null>();
 
+  /**
+   * The whole option, for callers that need its label too — a multi-select
+   * building chips would otherwise have to re-fetch what we just resolved.
+   */
+  readonly picked = output<LookupOption>();
+
   readonly term = signal('');
   readonly options = signal<LookupOption[]>([]);
   readonly open = signal(false);
@@ -133,6 +139,14 @@ export class LookupPickerComponent {
     this.term.set('');
     this.open.set(false);
     this.valueChange.emit(option.id);
+    this.picked.emit(option);
+  }
+
+  /** Drops the current pick without emitting, for a multi-select that has taken it. */
+  reset(): void {
+    this.labelledId = null;
+    this.selectedLabel.set(null);
+    this.term.set('');
   }
 
   clear(): void {

@@ -2,6 +2,17 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- ATS blocks plain HTTP; NSAllowsLocalNetworking re-permits it for
+	     loopback and LAN hosts only, so the dev API on http://<PC-LAN-IP>:5000
+	     works while public traffic stays HTTPS-only. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<!-- iOS 14+ prompts before an app may talk to devices on the local network. -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Wanes connects to the development server on your local network.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
@@ -26,6 +37,22 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<!-- canLaunchUrl only answers truthfully for schemes declared here, and
+	     url_launcher checks it before opening. The Contact us screen dials,
+	     mails and opens WhatsApp, so all three have to be listed. -->
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>tel</string>
+		<string>mailto</string>
+		<string>whatsapp</string>
+	</array>
+	<!-- remote-notification lets a data-only push wake the app; fetch covers the
+	     inbox refresh that follows. Both are required for background delivery. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+		<string>remote-notification</string>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

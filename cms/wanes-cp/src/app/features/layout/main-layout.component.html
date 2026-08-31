@@ -10,7 +10,9 @@
       @for (r of resources; track r.key) {
         <a [routerLink]="['data', r.key]" routerLinkActive="active">{{ r.titleKey | translate }}</a>
       }
+      <a routerLink="notifications" routerLinkActive="active">{{ 'nav_notifications' | translate }}</a>
       <a routerLink="audit" routerLinkActive="active">{{ 'nav_audit' | translate }}</a>
+      <a routerLink="settings" routerLinkActive="active">{{ 'nav_settings' | translate }}</a>
     </nav>
     <div class="side-foot">
       <button class="btn btn-ghost btn-sm" (click)="toggleLang()">{{ lang === 'en' ? 'العربية' : 'English' }}</button>

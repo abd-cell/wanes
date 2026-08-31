@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
+import '../core/api_log.dart';
 import '../core/l10n.dart';
 import '../core/saved_places.dart';
+import '../core/push_service.dart';
 import '../core/session.dart';
 import '../core/theme.dart';
-import '../main.dart';
 import '../models/models.dart';
 import '../services/services.dart';
 import '../widgets/language_picker.dart';
@@ -13,6 +14,9 @@ import 'driver/driver_home_screen.dart';
 import 'edit_profile_screen.dart';
 import 'login_screen.dart';
 import 'notifications_screen.dart';
+import 'api_log_screen.dart';
+import 'contact_us_screen.dart';
+import 'faq_screen.dart';
 import 'saved_places_screen.dart';
 
 /// Rider profile tab. Mirrors prototype screen 11 (Rider profile): identity
@@ -87,6 +91,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   /// The shortcuts read as a summary line — "Home · Work · Gym" — so the row
   /// says what is actually set rather than advertising a fixed trio.
+  /// Unread count next to the Notifications row. Listens to the live counter,
+  /// so a push that lands while this tab is on screen updates it in place.
+  Widget _unreadBadge() => ValueListenableBuilder<int>(
+        valueListenable: PushService.instance.unreadCount,
+        builder: (context, count, _) {
+          if (count <= 0) return const SizedBox.shrink();
+          final t = WanesTokens.of(context);
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+            decoration: BoxDecoration(color: t.info, borderRadius: BorderRadius.circular(999)),
+            child: Text(
+              count > 99 ? '99+' : '$count',
+              style: WanesTheme.mono(
+                  size: 10, weight: FontWeight.w700, color: Colors.white, spacing: 0),
+            ),
+          );
+        },
+      );
+
   String _savedPlacesSummary() {
     final places = SavedPlaces.instance.cached;
     if (places.isEmpty) return context.tr('places.addHomeWorkFavourites');
@@ -129,11 +152,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
               Text(context.tr('nav.profile'),
                   style: TextStyle(
                       fontSize: 22, fontWeight: FontWeight.w800, letterSpacing: -0.44, color: t.ink)),
-              CircleIconButton(
-                icon: dark ? Icons.dark_mode_outlined : Icons.light_mode_outlined,
-                color: t.ink2,
-                onTap: () => WanesApp.toggleTheme(context),
+              Row(children: [
+                NotificationBellButton(
+                onTap: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const NotificationsScreen())),
               ),
+                const SizedBox(width: 10),
+                CircleIconButton(
+                  icon: dark ? Icons.dark_mode_outlined : Icons.light_mode_outlined,
+                  color: t.ink2,
+                  onTap: () => ThemeController.toggle(context),
+                ),
+              ]),
             ]),
             const SizedBox(height: 16),
             _identity(t, name, p),
@@ -228,9 +258,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
       GroupedRow(
         icon: Icons.notifications_none_rounded,
         title: context.tr('notif.title'),
+        trailing: _unreadBadge(),
         onTap: () => Navigator.push(
             context, MaterialPageRoute(builder: (_) => const NotificationsScreen())),
       ),
+      GroupedRow(
+        icon: Icons.help_outline_rounded,
+        title: context.tr('faq.title'),
+        subtitle: context.tr('faq.subtitle'),
+        onTap: () => Navigator.push(
+            context, MaterialPageRoute(builder: (_) => const FaqScreen())),
+      ),
+      GroupedRow(
+        icon: Icons.support_agent_rounded,
+        title: context.tr('contact.title'),
+        subtitle: context.tr('contact.subtitle'),
+        onTap: () => Navigator.push(
+            context, MaterialPageRoute(builder: (_) => const ContactUsScreen())),
+      ),
+      // Developer aid. `ApiLog.enabled` is `kDebugMode`, so the row — and the
+      // screen behind it — are tree-shaken out of release builds.
+      if (ApiLog.enabled)
+        GroupedRow(
+          icon: Icons.swap_vert_rounded,
+          title: context.tr('apiLog.title'),
+          subtitle: context.tr('apiLog.subtitle'),
+          onTap: () => Navigator.push(
+              context, MaterialPageRoute(builder: (_) => const ApiLogScreen())),
+        ),
     ]);
   }
 

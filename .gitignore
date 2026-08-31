@@ -26,3 +26,22 @@
 .env
 .env.*
 !.env.example
+
+# Firebase / push credentials
+# The service-account JSON is a real secret: it can send push to every user of
+# the project. google-services.json / GoogleService-Info.plist are not secrets,
+# but they are per-project so they stay out of the repo too.
+**/wanes-firebase-service-account*.json
+**/wanees-notification*.json
+**/firebase-service-account*.json
+**/*firebase-adminsdk*.json
+**/serviceAccountKey*.json
+**/google-services.json
+**/GoogleService-Info.plist
+
+# Local scratch used while poking the API by hand (admin JWT, request payloads)
+/.tok
+/cfg.json
+
+# Per-user Visual Studio publish state
+*.pubxml.user

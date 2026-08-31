@@ -23,6 +23,7 @@ public class ProfileOutput
     public double RatingAvg { get; set; }
     public int RatingCount { get; set; }
     public Language Language { get; set; }
+    public AppTheme Theme { get; set; }
     public bool NotifPush { get; set; }
     public bool NotifSms { get; set; }
 
@@ -57,6 +58,7 @@ public class ProfileOutput
         RatingAvg = user.RatingAvg;
         RatingCount = user.RatingCount;
         Language = user.Language;
+        Theme = user.Theme;
         NotifPush = user.NotifPush;
         NotifSms = user.NotifSms;
     }

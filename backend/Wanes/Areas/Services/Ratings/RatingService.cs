@@ -3,12 +3,14 @@ using Wanes.Areas.Domain.Ratings;
 using Wanes.Areas.Domain.Trips;
 using Wanes.Areas.Domain.Users;
 using Wanes.Areas.Services.Audit;
+using Wanes.Areas.Services.Notifications;
 using Wanes.Areas.Services.Ratings.Models;
 using Wanes.DataAccess.Repositories;
 using Wanes.DataAccess.UnitOfWorks;
 using Wanes.Shareds.Constants;
 using Wanes.Shareds.Enums;
 using Wanes.Shareds.Models;
+using Wanes.Shareds.Notifications;
 using Wanes.Shareds.Security;
 
 namespace Wanes.Areas.Services.Ratings;
@@ -18,6 +20,7 @@ public class RatingService : IRatingService
     private readonly IUnitOfWork unitOfWork;
     private readonly ISecurityManager securityManager;
     private readonly IAuditService auditService;
+    private readonly INotificationService notificationService;
     private readonly IRepository<Booking> bookingRepository;
     private readonly IRepository<Trip> tripRepository;
     private readonly IRepository<Rating> ratingRepository;
@@ -27,6 +30,7 @@ public class RatingService : IRatingService
         IUnitOfWork unitOfWork,
         ISecurityManager securityManager,
         IAuditService auditService,
+        INotificationService notificationService,
         IRepository<Booking> bookingRepository,
         IRepository<Trip> tripRepository,
         IRepository<Rating> ratingRepository,
@@ -35,6 +39,7 @@ public class RatingService : IRatingService
         this.unitOfWork = unitOfWork;
         this.securityManager = securityManager;
         this.auditService = auditService;
+        this.notificationService = notificationService;
         this.bookingRepository = bookingRepository;
         this.tripRepository = tripRepository;
         this.ratingRepository = ratingRepository;
@@ -98,6 +103,13 @@ public class RatingService : IRatingService
         }
 
         await auditService.LogAsync(AuditActions.RatingCreate, nameof(Rating), booking.Id);
+
+        // Fired after the commit: a delivery failure must not roll back a rating
+        // that is already counted in the target's running average.
+        await notificationService.Notify(toUserId, NotificationTemplate.RatingReceived,
+            args: new { stars = input.Stars },
+            data: new { bookingId = booking.Id, tripId = trip.Id, stars = input.Stars });
+
         return new BaseResponse();
     }
 }

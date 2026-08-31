@@ -45,6 +45,9 @@ public enum ErrorCode
     CannotBookOwnTrip = 402,
     AlreadyBooked = 403,
 
+    /// <summary>The driver asked for a seat move its current status does not allow.</summary>
+    BookingStatusNotAllowed = 404,
+
     // Ride requests
     RequestNotFound = 500,
     RequestNotOpen = 501,

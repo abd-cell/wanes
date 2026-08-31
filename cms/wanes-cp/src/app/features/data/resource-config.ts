@@ -1,10 +1,11 @@
 import {
-  ActiveRole, BookingStatus, DeviceType, DriverStatus, Gender, Language,
-  NotificationType, RatingDirection, RideRequestStatus, Roles, SavedPlaceLabel, TripStatus,
+  ActiveRole, BookingStatus, DeviceType, DriverStatus, FaqCategory, Gender, Language,
+  NotificationAudience, NotificationType, RatingDirection, RideRequestStatus, Roles,
+  SavedPlaceLabel, TripStatus,
 } from '../../core/api/models';
 
 export type FieldType = 'text' | 'number' | 'checkbox' | 'select' | 'datetime' | 'textarea' | 'reference';
-export type ColumnType = 'text' | 'datetime' | 'enum' | 'bool';
+export type ColumnType = 'text' | 'datetime' | 'enum' | 'bool' | 'currency';
 
 export interface EnumOption { value: number; labelKey: string; }
 
@@ -67,9 +68,11 @@ export const BOOKING_STATUS = opt(BookingStatus, 'bookingstatus');
 export const REQUEST_STATUS = opt(RideRequestStatus, 'requeststatus');
 export const RATING_DIR = opt(RatingDirection, 'ratingdir');
 export const NOTIF_TYPE = opt(NotificationType, 'notiftype');
+export const NOTIF_AUDIENCE = opt(NotificationAudience, 'audience');
 export const PLACE_LABEL = opt(SavedPlaceLabel, 'placelabel');
 export const DEVICE_TYPE = opt(DeviceType, 'devicetype');
 export const ROLE_OPTIONS = opt(Roles, 'role');
+export const FAQ_CATEGORY = opt(FaqCategory, 'faqcategory');
 
 export const RESOURCES: ResourceConfig[] = [
   {
@@ -136,6 +139,7 @@ export const RESOURCES: ResourceConfig[] = [
       { field: 'destinationAddress', labelKey: 'col_destination' },
       { field: 'departAt', labelKey: 'col_depart', type: 'datetime' },
       { field: 'seatsLeft', labelKey: 'col_seats_left' },
+      { field: 'pricePerSeat', labelKey: 'col_price', type: 'currency' },
       { field: 'status', labelKey: 'col_status', type: 'enum', enum: TRIP_STATUS },
     ],
     filters: [{ name: 'status', labelKey: 'col_status', enum: TRIP_STATUS }],
@@ -225,27 +229,6 @@ export const RESOURCES: ResourceConfig[] = [
     ],
   },
   {
-    key: 'notifications', route: 'notifications', titleKey: 'res_notifications',
-    searchable: true, canCreate: true, canEdit: true, canDelete: true,
-    columns: [
-      { field: 'id', labelKey: 'col_id' },
-      { field: 'userName', labelKey: 'col_user' },
-      { field: 'type', labelKey: 'col_type', type: 'enum', enum: NOTIF_TYPE },
-      { field: 'title', labelKey: 'col_title' },
-      { field: 'isRead', labelKey: 'col_read', type: 'bool' },
-      { field: 'creationDate', labelKey: 'col_created', type: 'datetime' },
-    ],
-    filters: [{ name: 'type', labelKey: 'col_type', enum: NOTIF_TYPE }],
-    fields: [
-      { name: 'userId', labelKey: 'col_user', type: 'reference', lookup: 'users', required: true },
-      { name: 'type', labelKey: 'col_type', type: 'select', enum: NOTIF_TYPE },
-      { name: 'title', labelKey: 'col_title', type: 'text', required: true },
-      { name: 'body', labelKey: 'col_body', type: 'textarea', required: true },
-      { name: 'dataJson', labelKey: 'col_data', type: 'textarea' },
-      { name: 'isRead', labelKey: 'col_read', type: 'checkbox' },
-    ],
-  },
-  {
     key: 'places', route: 'places', titleKey: 'res_places',
     searchable: true, canCreate: true, canEdit: true, canDelete: true,
     columns: [
@@ -277,6 +260,30 @@ export const RESOURCES: ResourceConfig[] = [
     ],
     filters: [{ name: 'deviceType', labelKey: 'col_device', enum: DEVICE_TYPE }],
     fields: [],
+  },
+  {
+    // Help-centre content. Both languages are edited side by side so a
+    // half-translated entry is obvious before it is published.
+    key: 'faqs', route: 'faqs', titleKey: 'res_faqs',
+    searchable: true, canCreate: true, canEdit: true, canDelete: true,
+    columns: [
+      { field: 'id', labelKey: 'col_id' },
+      { field: 'category', labelKey: 'col_category', type: 'enum', enum: FAQ_CATEGORY },
+      { field: 'questionEn', labelKey: 'col_question_en' },
+      { field: 'questionAr', labelKey: 'col_question_ar' },
+      { field: 'sortOrder', labelKey: 'col_sort_order' },
+      { field: 'isPublished', labelKey: 'col_published', type: 'bool' },
+    ],
+    filters: [{ name: 'category', labelKey: 'col_category', enum: FAQ_CATEGORY }],
+    fields: [
+      { name: 'category', labelKey: 'col_category', type: 'select', enum: FAQ_CATEGORY, required: true },
+      { name: 'questionEn', labelKey: 'col_question_en', type: 'text', required: true },
+      { name: 'questionAr', labelKey: 'col_question_ar', type: 'text', required: true },
+      { name: 'answerEn', labelKey: 'col_answer_en', type: 'textarea', required: true },
+      { name: 'answerAr', labelKey: 'col_answer_ar', type: 'textarea', required: true },
+      { name: 'sortOrder', labelKey: 'col_sort_order', type: 'number' },
+      { name: 'isPublished', labelKey: 'col_published', type: 'checkbox' },
+    ],
   },
   {
     key: 'api-logs', route: 'api-logs', titleKey: 'res_api_logs',

@@ -12,7 +12,9 @@ public class UserConfig : IEntityTypeConfiguration<User>
         b.Property(u => u.Phone).HasMaxLength(20).IsRequired();
         b.HasIndex(u => u.Phone).IsUnique().HasFilter("[IsDeleted] = 0");
         b.Property(u => u.PhoneKey).HasMaxLength(PhoneExtensions.PhoneKeyLength).IsRequired();
-        b.HasIndex(u => u.PhoneKey);
+        // Auth matches on the key, so one live account per key is a hard rule and not just a
+        // convention: two rows sharing it means sign-in silently picks one of them.
+        b.HasIndex(u => u.PhoneKey).IsUnique().HasFilter("[IsDeleted] = 0");
         b.Property(u => u.Email).HasMaxLength(200);
         b.Property(u => u.FirstName).HasMaxLength(100);
         b.Property(u => u.LastName).HasMaxLength(100);
@@ -43,6 +45,10 @@ public class UserLoginConfig : IEntityTypeConfiguration<UserLogin>
     {
         b.Property(x => x.SessionKey).HasMaxLength(100).IsRequired();
         b.HasIndex(x => x.SessionKey);
+        b.Property(x => x.RefreshTokenHash).HasMaxLength(64);
+        b.Property(x => x.PreviousRefreshTokenHash).HasMaxLength(64);
+        // Refresh redeems the token without knowing the session, so the hash is the lookup key.
+        b.HasIndex(x => x.RefreshTokenHash);
         b.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId)
             .OnDelete(DeleteBehavior.Restrict);
     }

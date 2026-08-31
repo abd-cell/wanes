@@ -1,0 +1,117 @@
+.muted { color: var(--app-ink-soft); font-size: 13px; }
+
+/* ── headline tiles ──
+   Self-contained rather than borrowed from the dashboard's chart stylesheet:
+   this screen wants a plain label/value card, not sparklines and deltas, and
+   component styles ship with the route's own chunk so the tiles cannot render
+   unstyled if that stylesheet is missing. Label and value are block-level —
+   as inline spans they ran together on one line. */
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; margin-bottom: 18px; }
+.stat {
+  display: flex; flex-direction: column; gap: 2px; padding: 14px 16px;
+  background: var(--app-surface); border: 1px solid var(--app-line); border-radius: var(--app-radius);
+}
+.stat-label { display: block; font-size: 12.5px; color: var(--app-ink-soft); }
+.stat-value { display: block; font-size: 26px; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.stat-note { display: block; margin-top: 2px; font-size: 12px; color: var(--app-ink-soft); }
+
+/* The share is spelled out in .stat-note too, so the bar never carries it alone. */
+.stat-meter {
+  display: block; height: 6px; margin-top: 8px; border-radius: 999px;
+  background: var(--app-surface-2); overflow: hidden;
+}
+.stat-meter > span { display: block; height: 100%; border-radius: 999px; background: var(--app-primary); }
+
+.hint { margin: 0; font-size: 13px; color: var(--app-ink-soft); }
+
+.err { font-size: 12.5px; font-weight: 600; color: var(--app-danger); }
+
+/* ── chips (composer recipients) ── */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.chip {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 5px 10px; border-radius: 999px;
+  border: 1px solid var(--app-line); background: var(--app-surface-2);
+  font-size: 13px; font-weight: 600; color: var(--app-ink);
+}
+
+.chip-x {
+  border: 0; background: transparent; cursor: pointer; padding: 0;
+  font-size: 16px; line-height: 1; color: var(--app-ink-soft);
+}
+.chip-x:hover { color: var(--app-danger); }
+
+/* ── composer ── */
+.composer { margin-bottom: 18px; }
+.composer h2 { margin: 0 0 4px; font-size: 18px; }
+
+.modes { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.mode {
+  padding: 7px 14px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--app-line); background: transparent;
+  font-size: 13px; font-weight: 600; color: var(--app-ink);
+}
+.mode:hover { background: var(--app-surface-2); }
+.mode.on {
+  background: var(--app-primary); border-color: var(--app-primary); color: var(--app-on-primary);
+}
+
+/* ── preview ── */
+.previews { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+
+.preview {
+  position: relative; display: flex; flex-direction: column; gap: 4px; padding: 14px 14px 12px;
+  border: 1px solid var(--app-line); border-radius: 12px; background: var(--app-surface-2);
+}
+
+.preview strong { font-size: 14.5px; }
+.preview p { margin: 0; font-size: 13px; color: var(--app-ink-soft); white-space: pre-wrap; }
+
+.preview-lang {
+  position: absolute; top: 10px; inset-inline-end: 12px;
+  font-size: 11px; font-weight: 700; letter-spacing: .06em; color: var(--app-ink-soft);
+}
+
+.preview-note { margin-top: 4px; font-size: 12px; font-weight: 600; color: var(--app-accent); }
+
+/* ── bulk bar ── */
+.user-filter { width: 220px; }
+
+.bulk-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  padding: 10px 14px; margin-bottom: 12px;
+  border: 1px solid var(--app-primary); border-radius: 12px;
+  background: color-mix(in srgb, var(--app-primary) 10%, transparent);
+}
+.bulk-bar .spacer { flex: 1; }
+.bulk-count { font-size: 13.5px; font-weight: 700; }
+
+/* ── table ── */
+.data-table th.tick, .data-table td.tick { width: 34px; }
+
+/* Unread rows carry a start-edge bar as well as the badge, so the state does
+   not rest on colour alone. */
+.data-table tbody tr.unread td:first-child {
+  box-shadow: inset 3px 0 0 0 var(--app-accent);
+}
+:host-context([dir='rtl']) .data-table tbody tr.unread td:first-child {
+  box-shadow: inset -3px 0 0 0 var(--app-accent);
+}
+
+/* Cells are nowrap, so an unbounded title pushed the row actions off-screen.
+   Capping both free-text columns keeps all eight on screen at desktop width;
+   .table-wrap still scrolls on anything narrower. Full text is in a title=. */
+.row-title, .row-body {
+  display: block; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.row-title { font-weight: 600; }
+.row-body { font-size: 12.5px; color: var(--app-ink-soft); }
+
+.data-table td.user-cell { max-width: 175px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The read badge doubles as the toggle, so it needs to look pressable. */
+button.badge { border: 0; cursor: pointer; font: inherit; font-size: 12px; font-weight: 600; }
+button.badge:hover { filter: brightness(1.08); }
+

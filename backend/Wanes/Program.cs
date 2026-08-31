@@ -10,6 +10,7 @@ using Wanes.DataAccess;
 using Wanes.Shareds.Attributes;
 using Wanes.Shareds.Extensions;
 using Wanes.Shareds.Middlewares;
+using Wanes.Shareds.Json;
 using Wanes.Shareds.Security;
 using Wanes.Shareds.Security.Token;
 
@@ -24,10 +25,17 @@ builder.Host.UseSerilog((context, config) => config
 // ── Configuration models ──
 builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("Jwt"));
 builder.Services.Configure<Wanes.Shareds.Models.Config.OtpSettings>(builder.Configuration.GetSection("Otp"));
+builder.Services.Configure<Wanes.Shareds.Models.Config.FcmSettings>(builder.Configuration.GetSection("Fcm"));
 var jwt = builder.Configuration.GetSection("Jwt").Get<JwtSettings>() ?? new JwtSettings();
 
 // ── Framework ──
-builder.Services.AddControllers(options => options.Filters.Add<ValidateModelAttribute>());
+builder.Services.AddControllers(options => options.Filters.Add<ValidateModelAttribute>())
+    // Inbound DateTimes are normalised to UTC — see UtcDateTimeConverter for why.
+    .AddJsonOptions(o =>
+    {
+        o.JsonSerializerOptions.Converters.Add(new UtcDateTimeConverter());
+        o.JsonSerializerOptions.Converters.Add(new NullableUtcDateTimeConverter());
+    });
 // our ValidateModel filter owns invalid-model responses (uniform BaseResponse)
 builder.Services.Configure<ApiBehaviorOptions>(o => o.SuppressModelStateInvalidFilter = true);
 builder.Services.AddHttpContextAccessor();
@@ -67,6 +75,11 @@ builder.Services
             ValidAudience = jwt.Audience,
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt.Secret)),
             RoleClaimType = System.Security.Claims.ClaimTypes.Role,
+            // Default is five minutes of grace, which would quietly stretch every
+            // access token past its stated expiry — and with it the window in which
+            // a revoked session keeps working. The same server both issues and
+            // validates these, so there are no clocks to reconcile.
+            ClockSkew = TimeSpan.Zero,
         };
         options.Events = new JwtBearerEvents
         {

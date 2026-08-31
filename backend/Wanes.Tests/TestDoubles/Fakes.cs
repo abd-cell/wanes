@@ -4,6 +4,7 @@ using Wanes.Areas.Services.Notifications;
 using Wanes.Areas.Services.Notifications.Models;
 using Wanes.Shareds.Enums;
 using Wanes.Shareds.Models;
+using Wanes.Shareds.Notifications;
 using Wanes.Shareds.Notifications.Sms;
 using Wanes.Shareds.Security;
 using Wanes.Shareds.Security.Token;
@@ -35,22 +36,54 @@ public class FakeAuditService : IAuditService
 
 public class FakeNotificationService : INotificationService
 {
+    /// <summary>"userId:template" per delivery, in order, so a test can assert who was told what.</summary>
     public List<string> Sent { get; } = [];
     public int NearbyDriverCount { get; set; } = 2;
 
-    public Task Notify(int userId, NotificationType type, string title, string body, object? data = null)
+    public Task Notify(int userId, NotificationTemplate template, object? args = null, object? data = null)
+    {
+        Sent.Add($"{userId}:{template}");
+        return Task.CompletedTask;
+    }
+
+    public Task NotifyRaw(int userId, NotificationType type, LocalizedText text, string? dataJson)
     {
         Sent.Add($"{userId}:{type}");
         return Task.CompletedTask;
     }
 
+    public Task NotifyMany(IEnumerable<int> userIds, NotificationTemplate template, object? args = null,
+        object? data = null)
+    {
+        foreach (var userId in userIds.Distinct()) Sent.Add($"{userId}:{template}");
+        return Task.CompletedTask;
+    }
+
+    public Task<int> NotifyAudience(NotificationAudience audience, NotificationType type, LocalizedText text,
+        object? data = null)
+    {
+        Sent.Add($"{audience}:{type}");
+        return Task.FromResult(0);
+    }
+
+    public Task<int> NotifyUsersRaw(IEnumerable<int> userIds, NotificationType type, LocalizedText text,
+        string? dataJson)
+    {
+        var ids = userIds.Distinct().ToList();
+        foreach (var userId in ids) Sent.Add($"{userId}:{type}");
+        return Task.FromResult(ids.Count);
+    }
+
     public Task<int> NotifyNearbyDrivers(RideRequest request) =>
         Task.FromResult(NearbyDriverCount);
 
-    public Task<BaseResponse<List<NotificationRow>>> GetUserNotifications() =>
-        Task.FromResult(new BaseResponse<List<NotificationRow>>(new List<NotificationRow>()));
+    public Task<BaseResponse<NotificationFeed>> GetUserNotifications() =>
+        Task.FromResult(new BaseResponse<NotificationFeed>(new NotificationFeed()));
 
     public Task<BaseResponse> MarkRead(int id) => Task.FromResult(new BaseResponse());
+    public Task<BaseResponse> MarkAllRead() => Task.FromResult(new BaseResponse());
+    public Task<BaseResponse> RegisterDevice(RegisterDeviceInput input) => Task.FromResult(new BaseResponse());
+    public Task<BaseResponse> ClearDevice() => Task.FromResult(new BaseResponse());
 }
 
 public class FakeSmsSender : ISmsSender
@@ -66,6 +99,16 @@ public class FakeSmsSender : ISmsSender
 
 public class FakeTokenGenerator : ITokenGenerator
 {
-    public string Generate(int userId, IEnumerable<Roles> roles, string sessionKey) =>
-        $"token-{userId}-{sessionKey}";
+    public (string Token, DateTime ExpiresAt) Generate(int userId, IEnumerable<Roles> roles, string sessionKey) =>
+        ($"token-{userId}-{sessionKey}", DateTime.UtcNow.AddMinutes(15));
+
+    // Deterministic and reversible-by-eye: the hash is the raw value with a marker,
+    // so a test can assert the stored hash matches the token it handed out.
+    public (string Token, string Hash, DateTime ExpiresAt) GenerateRefreshToken()
+    {
+        var token = $"refresh-{Guid.NewGuid():N}";
+        return (token, HashRefreshToken(token), DateTime.UtcNow.AddDays(30));
+    }
+
+    public string HashRefreshToken(string token) => $"hash:{token}";
 }

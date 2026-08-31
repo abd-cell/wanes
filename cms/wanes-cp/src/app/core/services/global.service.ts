@@ -16,6 +16,7 @@ export class GlobalService {
   private readonly isBrowser = isPlatformBrowser(this.platformId);
 
   private readonly tokenKey = environment.APP_NAME;
+  private readonly refreshKey = environment.APP_NAME + 'Refresh';
   private readonly userKey = environment.APP_NAME + 'UserData';
 
   readonly toasts = signal<Toast[]>([]);
@@ -25,6 +26,14 @@ export class GlobalService {
   // ── session ──
   get token(): string | null {
     return this.isBrowser ? localStorage.getItem(this.tokenKey) : null;
+  }
+
+  /**
+   * The long-lived half of the pair. Access tokens expire within the hour, so
+   * this is what actually keeps the tab signed in across a refresh of the page.
+   */
+  get refreshToken(): string | null {
+    return this.isBrowser ? localStorage.getItem(this.refreshKey) : null;
   }
 
   get user(): Profile | null {
@@ -58,15 +67,17 @@ export class GlobalService {
     return !!roles && !roles.includes(Roles.Admin);
   }
 
-  setSession(token: string, user: Profile): void {
+  setSession(token: string, refreshToken: string, user: Profile): void {
     if (!this.isBrowser) return;
     localStorage.setItem(this.tokenKey, token);
+    localStorage.setItem(this.refreshKey, refreshToken);
     localStorage.setItem(this.userKey, JSON.stringify(user));
   }
 
   clearSession(): void {
     if (!this.isBrowser) return;
     localStorage.removeItem(this.tokenKey);
+    localStorage.removeItem(this.refreshKey);
     localStorage.removeItem(this.userKey);
   }
 

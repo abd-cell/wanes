@@ -7,6 +7,20 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!--
+      The Firebase service-account key. Git-ignored (it can push to every user of
+      the project), so the Condition keeps the build working on a machine or CI
+      runner that doesn't have it — push simply stays off there.
+      Fcm:CredentialsPath resolves against the content root, which is the output
+      directory for a published app, hence the copy.
+    -->
+    <None Update="wanees-notification.json"
+          CopyToOutputDirectory="PreserveNewest"
+          Condition="Exists('wanees-notification.json')" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FirebaseAdmin" Version="3.6.0" />
     <PackageReference Include="Konscious.Security.Cryptography.Argon2" Version="1.3.1" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.0">

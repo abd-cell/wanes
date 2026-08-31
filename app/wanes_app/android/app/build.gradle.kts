@@ -4,12 +4,23 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Turns google-services.json into the resources firebase_core reads. Applied only
+// when the file is present: pushing it into `plugins {}` unconditionally hard-fails
+// the build whenever there is no Firebase project, and the file is gitignored, so a
+// fresh clone must still build (push then falls back to SSE-only).
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
 android {
     namespace = "com.wanes.wanes_app"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
+        // Required by flutter_local_notifications, which uses java.time on API
+        // levels that predate it. Without this the AAR metadata check fails.
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -36,6 +47,10 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+}
+
+dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
 }
 
 kotlin {

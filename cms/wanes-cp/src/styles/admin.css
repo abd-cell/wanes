@@ -25,6 +25,9 @@
   min-width: 220px;
 }
 .field:focus { outline: 2px solid var(--app-primary); outline-offset: 1px; }
+/* Placeholders were left to the browser default, so they neither matched the
+   muted-text token nor followed the theme — unreadable on the dark surface. */
+.field::placeholder { color: var(--app-ink-soft); opacity: 1; }
 
 .table-wrap { overflow-x: auto; }
 .data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
@@ -48,7 +51,7 @@
   font: inherit; font-weight: 600; cursor: pointer; transition: filter .15s, background .15s;
 }
 .btn:focus-visible { outline: 2px solid var(--app-primary); outline-offset: 2px; }
-.btn-primary { background: var(--app-primary); color: #04231f; }
+.btn-primary { background: var(--app-primary); color: var(--app-on-primary); }
 .btn-primary:hover { filter: brightness(1.05); }
 .btn-ghost { background: transparent; border-color: var(--app-line); color: var(--app-ink); }
 .btn-ghost:hover { background: var(--app-surface-2); }
@@ -64,3 +67,24 @@
 .toast { padding: 12px 18px; border-radius: 10px; color: #fff; box-shadow: var(--app-shadow); font-weight: 600; }
 .toast.success { background: var(--app-success); }
 .toast.error { background: var(--app-danger); }
+
+/* ── admin form chrome ──
+   Shared by every admin screen that edits a record (the config-driven data
+   grids and the notification manager), which were carrying identical copies. */
+.toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
+.toolbar .field { max-width: 240px; }
+.toolbar .spacer { flex: 1; }
+
+.section-label {
+  display: block; font-size: 12px; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--app-ink-soft); margin: 20px 0 8px;
+}
+
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+.form-row { display: flex; flex-direction: column; gap: 5px; }
+.form-row label { font-size: 13px; font-weight: 600; color: var(--app-ink-soft); }
+.form-row.check { flex-direction: row; align-items: center; gap: 8px; }
+.form-row.wide { grid-column: 1 / -1; }
+.form-foot { display: flex; gap: 10px; margin-top: 18px; }
+
+.pager { display: flex; gap: 12px; align-items: center; justify-content: flex-end; margin-top: 14px; }

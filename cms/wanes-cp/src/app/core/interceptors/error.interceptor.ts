@@ -4,6 +4,7 @@ import { Router } from '@angular/router';
 import { catchError, throwError } from 'rxjs';
 import { GlobalService } from '../services/global.service';
 import { TranslationService } from '../services/translation.service';
+import { SKIP_AUTH_HANDLING } from './auth-context';
 
 /**
  * Toasts transport errors; on 401/403 clears the session and returns to login.
@@ -15,6 +16,10 @@ export const errorInterceptor: HttpInterceptorFn = (req, next) => {
   const global = inject(GlobalService);
   const translation = inject(TranslationService);
   const router = inject(Router);
+
+  // The refresh call carries the session's fate on its own: whatever it returns
+  // reaches the caller that triggered it, and toasting here would double up.
+  if (req.context.get(SKIP_AUTH_HANDLING)) return next(req);
 
   return next(req).pipe(
     catchError((err: HttpErrorResponse) => {

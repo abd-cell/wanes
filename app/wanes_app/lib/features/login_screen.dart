@@ -209,6 +209,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 controller: _phone,
                 autofocus: true,
                 keyboardType: TextInputType.phone,
+                inputFormatters: [_JordanPhoneFormatter()],
                 style: WanesTheme.mono(size: 16, weight: FontWeight.w500, color: t.ink, spacing: 0.6),
                 decoration: InputDecoration(
                   hintText: '79 000 0000',
@@ -328,5 +329,56 @@ class _OtpBoxesState extends State<_OtpBoxes> {
         ),
       ),
     ]);
+  }
+}
+
+/// Types the local part of a Jordanian mobile number into the pattern the
+/// design writes — `79 000 0000`. Non-digits are dropped, a pasted 0 / 962 /
+/// +962 prefix is peeled off (the field already shows +962), and entry stops
+/// at the 9 digits the dial code allows after it.
+class _JordanPhoneFormatter extends TextInputFormatter {
+  /// Digits per space-separated group, left to right.
+  static const _groups = [2, 3, 4];
+  static const _maxDigits = 9;
+
+  @override
+  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
+    final caret = newValue.selection.end.clamp(0, newValue.text.length);
+    var kept = _digits(newValue.text.substring(0, caret)).length;
+
+    var digits = _digits(newValue.text);
+    final trimmed = digits
+        .replaceFirst(RegExp(r'^(00)?962'), '')
+        .replaceFirst(RegExp(r'^0+'), '');
+    kept -= digits.length - trimmed.length;
+    digits = trimmed.length > _maxDigits ? trimmed.substring(0, _maxDigits) : trimmed;
+    kept = kept.clamp(0, digits.length);
+
+    final out = StringBuffer();
+    var i = 0;
+    for (final size in _groups) {
+      if (i >= digits.length) break;
+      if (i > 0) out.write(' ');
+      final end = i + size < digits.length ? i + size : digits.length;
+      out.write(digits.substring(i, end));
+      i = end;
+    }
+
+    return TextEditingValue(
+      text: out.toString(),
+      selection: TextSelection.collapsed(offset: _offsetFor(kept)),
+    );
+  }
+
+  static String _digits(String s) => s.replaceAll(RegExp(r'\D'), '');
+
+  /// Where `n` digits land once the separators are counted in.
+  static int _offsetFor(int n) {
+    var offset = n, boundary = 0;
+    for (var g = 0; g < _groups.length - 1; g++) {
+      boundary += _groups[g];
+      if (n > boundary) offset++;
+    }
+    return offset;
   }
 }

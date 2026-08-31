@@ -1,0 +1,152 @@
+<div class="admin-page">
+  <div class="page-head">
+    <h1>{{ 'settings_title' | translate }}</h1>
+    <span class="spacer"></span>
+  </div>
+  <p class="page-sub">{{ 'settings_intro' | translate }}</p>
+
+  <div class="settings-grid">
+    <!-- ── Currency ── -->
+    <section class="card section">
+      <h2>{{ 'cfg_currency' | translate }}</h2>
+      <p class="hint">{{ 'cfg_currency_hint' | translate }}</p>
+
+      <div class="form-row">
+        <label for="cfg-preset">{{ 'cfg_currency_preset' | translate }}</label>
+        <select id="cfg-preset" class="field" [ngModel]="model().currencyCode"
+                (ngModelChange)="applyCurrency($event)">
+          @for (c of currencies; track c.code) {
+            <option [value]="c.code">{{ c.code }} · {{ c.symbol }}</option>
+          }
+        </select>
+      </div>
+
+      <div class="pair">
+        <div class="form-row">
+          <label for="cfg-code">{{ 'cfg_currency_code' | translate }}</label>
+          <input id="cfg-code" class="field" maxlength="8" [ngModel]="model().currencyCode"
+                 (ngModelChange)="set('currencyCode', $event)" />
+        </div>
+        <div class="form-row">
+          <label for="cfg-symbol">{{ 'cfg_currency_symbol' | translate }}</label>
+          <input id="cfg-symbol" class="field" maxlength="8" [ngModel]="model().currencySymbol"
+                 (ngModelChange)="set('currencySymbol', $event)" />
+        </div>
+      </div>
+
+      <div class="pair">
+        <div class="form-row">
+          <label for="cfg-position">{{ 'cfg_position' | translate }}</label>
+          <select id="cfg-position" class="field" [ngModel]="model().currencyPosition"
+                  (ngModelChange)="set('currencyPosition', +$event)">
+            @for (p of positions; track p.value) {
+              <option [value]="p.value">{{ p.labelKey | translate }}</option>
+            }
+          </select>
+        </div>
+        <div class="form-row">
+          <label for="cfg-decimals">{{ 'cfg_decimals' | translate }}</label>
+          <input id="cfg-decimals" class="field" type="number" min="0" max="3" step="1"
+                 [ngModel]="model().currencyDecimals"
+                 (ngModelChange)="set('currencyDecimals', +$event)" />
+        </div>
+      </div>
+
+      <div class="preview money">
+        <span class="preview-label">{{ 'cfg_preview' | translate }}</span>
+        <span class="money-value">{{ sample() }}</span>
+      </div>
+    </section>
+
+    <!-- ── Brand colour ── -->
+    <section class="card section">
+      <h2>{{ 'cfg_brand' | translate }}</h2>
+      <p class="hint">{{ 'cfg_brand_hint' | translate }}</p>
+
+      <div class="pair">
+        <div class="form-row">
+          <label for="cfg-color">{{ 'cfg_primary' | translate }}</label>
+          <input id="cfg-color" class="swatch-input" type="color" [ngModel]="shades().primary"
+                 (ngModelChange)="set('primaryColor', $event)" />
+        </div>
+        <div class="form-row">
+          <label for="cfg-hex">{{ 'cfg_primary_hex' | translate }}</label>
+          <input id="cfg-hex" class="field mono" maxlength="7" [ngModel]="model().primaryColor"
+                 (ngModelChange)="set('primaryColor', $event)" />
+        </div>
+      </div>
+
+      <div class="presets">
+        @for (p of presets; track p) {
+          <button type="button" class="preset" [style.background]="p"
+                  [class.chosen]="shades().primary.toLowerCase() === p.toLowerCase()"
+                  [attr.aria-label]="p" [title]="p" (click)="set('primaryColor', p)"></button>
+        }
+      </div>
+
+      <div class="preview">
+        <span class="preview-label">{{ 'cfg_preview' | translate }}</span>
+        <div class="swatches">
+          <span class="chip" [style.background]="shades().primary"
+                [style.color]="shades().onPrimary">{{ 'cfg_shade_primary' | translate }}</span>
+          <span class="chip" [style.background]="shades().primaryDeep"
+                [style.color]="shades().onPrimary">{{ 'cfg_shade_deep' | translate }}</span>
+          <span class="chip" [style.background]="shades().darkPrimary"
+                [style.color]="shades().onPrimary">{{ 'cfg_shade_dark' | translate }}</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Support contact ── -->
+    <section class="card section span-2">
+      <h2>{{ 'cfg_support' | translate }}</h2>
+      <p class="hint">{{ 'cfg_support_hint' | translate }}</p>
+
+      <div class="pair">
+        <div class="form-row">
+          <label for="cfg-support-phone">{{ 'cfg_support_phone' | translate }}</label>
+          <input id="cfg-support-phone" class="field mono" dir="ltr" maxlength="32"
+                 placeholder="+962790000000" [ngModel]="model().supportPhone"
+                 (ngModelChange)="set('supportPhone', $event)" />
+        </div>
+        <div class="form-row">
+          <label for="cfg-support-whatsapp">{{ 'cfg_support_whatsapp' | translate }}</label>
+          <input id="cfg-support-whatsapp" class="field mono" dir="ltr" maxlength="32"
+                 placeholder="+962790000000" [ngModel]="model().supportWhatsApp"
+                 (ngModelChange)="set('supportWhatsApp', $event)" />
+        </div>
+      </div>
+
+      <div class="pair">
+        <div class="form-row">
+          <label for="cfg-support-email">{{ 'cfg_support_email' | translate }}</label>
+          <input id="cfg-support-email" class="field" dir="ltr" type="email" maxlength="256"
+                 placeholder="help@wanes.app" [ngModel]="model().supportEmail"
+                 (ngModelChange)="set('supportEmail', $event)" />
+        </div>
+        <div class="form-row">
+          <label for="cfg-support-website">{{ 'cfg_support_website' | translate }}</label>
+          <input id="cfg-support-website" class="field" dir="ltr" maxlength="512"
+                 placeholder="https://wanes.app/help" [ngModel]="model().supportWebsite"
+                 (ngModelChange)="set('supportWebsite', $event)" />
+        </div>
+      </div>
+
+      <div class="form-row">
+        <label for="cfg-support-hours">{{ 'cfg_support_hours' | translate }}</label>
+        <input id="cfg-support-hours" class="field" maxlength="200"
+               [placeholder]="'cfg_support_hours_hint' | translate"
+               [ngModel]="model().supportHours" (ngModelChange)="set('supportHours', $event)" />
+      </div>
+
+      <p class="hint foot">{{ 'cfg_support_empty_hint' | translate }}</p>
+    </section>
+  </div>
+
+  <div class="form-foot">
+    <button class="btn btn-primary" [disabled]="saving()" (click)="save()">
+      {{ (saving() ? 'common_loading' : 'action_save') | translate }}
+    </button>
+    <button class="btn btn-ghost" [disabled]="saving()" (click)="reset()">{{ 'action_cancel' | translate }}</button>
+  </div>
+</div>

@@ -31,8 +31,20 @@ export const routes: Routes = [
             loadComponent: () => import('./features/drivers/drivers.component').then((m) => m.DriversComponent),
           },
           {
+            path: 'notifications',
+            loadComponent: () =>
+              import('./features/notifications/notifications.component').then((m) => m.NotificationsComponent),
+            data: { title: { en: 'Notifications', ar: 'الإشعارات' } },
+          },
+          {
             path: 'audit',
             loadComponent: () => import('./features/audit/audit.component').then((m) => m.AuditComponent),
+          },
+          {
+            path: 'settings',
+            loadComponent: () =>
+              import('./features/settings/settings.component').then((m) => m.SettingsComponent),
+            data: { title: { en: 'Configuration', ar: 'الإعدادات' } },
           },
           {
             path: 'data/:resource',

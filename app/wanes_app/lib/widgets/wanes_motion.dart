@@ -35,6 +35,11 @@ class WanesMotion {
   /// `carbob` — the car marker rocking on the active-trip map.
   static const bob = Duration(milliseconds: 2400);
 
+  /// The active-trip car sliding along the route when the trip moves on a
+  /// stage. The prototype's map is a still, so this borrows the design's own
+  /// slow, eased timing rather than a keyframe.
+  static const marker = Duration(milliseconds: 1100);
+
   /// `dashflow` — the dashed proposed route creeping along.
   static const dashFlow = Duration(milliseconds: 1200);
 

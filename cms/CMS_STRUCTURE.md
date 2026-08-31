@@ -21,7 +21,7 @@ wanes-cp/src/app/
 ├── environment.ts                 APP_NAME + apiBaseUrl (https://localhost:5001/api/v1/)
 ├── app.ts                         root (router-outlet + toast host)
 ├── app.config.ts                  providers: router, hydration, HttpClient + interceptors
-├── app.routes.ts                  /:languageCode → login | shell(dashboard, drivers, audit)
+├── app.routes.ts                  /:languageCode → login | shell(dashboard, drivers, notifications, audit, settings, data/:resource)
 ├── app.routes.server.ts           RenderMode.Server
 ├── i18n/  en.ts · ar.ts           label maps (same keys)
 ├── components/
@@ -39,8 +39,11 @@ wanes-cp/src/app/
 └── features/
     ├── auth/login                  phone-OTP sign in
     ├── layout/main-layout          authenticated sidebar shell (lang + logout)
-    ├── dashboard                   landing
+    ├── dashboard                   analytics landing (tiles, donuts, bars) + charts/
     ├── drivers                     pending-driver verification (approve/reject)  ← key screen
+    ├── notifications               notification manager (compose · bulk · stats)  ← key screen
+    ├── data/:resource              config-driven CRUD grids (resource-config.ts)
+    ├── settings                    platform configuration (currency, brand, support, …)
     └── audit                       audit log (filter by action)
 
 src/styles/
@@ -53,6 +56,17 @@ src/styles/
 - **Login** — phone + OTP (admin seeded phone `+962790000000`, OTP `1234` in testing mode).
 - **Dashboard** — welcome + quick tiles.
 - **Driver Verification** — lists pending drivers from `GET /admin/drivers/pending`, approve/reject via `POST /admin/drivers/{id}/verify`.
+- **Notification Manager** — full admin control over the user inbox. Headline
+  counts from `GET /admin/notifications/stats`; a composer that targets **one
+  user**, a **hand-picked set** (`POST /admin/notifications/send`) or a **whole
+  audience** (`POST /admin/notifications/broadcast`), with side-by-side en/ar
+  preview showing the Arabic fallback; filter by search / type / read state /
+  user; tick rows for bulk mark-read, mark-unread or delete
+  (`POST /admin/notifications/bulk`); plus per-row edit and delete.
+- **Data grids** — `data/:resource`, one config-driven CRUD screen per entity
+  (users, vehicles, trips, bookings, requests, ratings, places, sessions, FAQs,
+  API logs) declared in `features/data/resource-config.ts`.
+- **Configuration** — platform settings (currency, brand colour, support contact).
 - **Audit Log** — `GET /admin/audit`, filter by action.
 
 Every string exists in **en + ar**; the panel is fully RTL-aware.

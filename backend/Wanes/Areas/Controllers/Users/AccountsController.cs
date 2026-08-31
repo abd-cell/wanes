@@ -20,6 +20,12 @@ public class AccountsController : BaseApiController
     public async Task<BaseResponse<AuthResult>> VerifyOtp([FromBody] VerifyOtpInput input)
         => await accountService.VerifyOtp(input);
 
+    /// <summary>Exchanges a refresh token for a new access token. Anonymous: the caller's
+    /// access token has expired by the time this is needed.</summary>
+    [HttpPost("refresh")]
+    public async Task<BaseResponse<AuthResult>> Refresh([FromBody] RefreshTokenInput input)
+        => await accountService.Refresh(input);
+
     [AppAuthorize]
     [HttpPost("logout")]
     public async Task<BaseResponse> Logout() => await accountService.Logout();

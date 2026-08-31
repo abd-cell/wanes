@@ -30,6 +30,16 @@ public class TripOutput
     public decimal? PricePerSeat { get; set; }
     public TripStatus Status { get; set; }
 
+    /// <summary>
+    /// When the driver actually started, from the status history. Lets the
+    /// rider's map advance the car across the journey against a real clock
+    /// instead of parking it at an arbitrary fraction of the route.
+    ///
+    /// Only filled where the history was loaded (the single-trip GET); null
+    /// elsewhere, and null on a trip that has not started.
+    /// </summary>
+    public DateTime? StartedAt { get; set; }
+
     public TripOutput() { }
 
     public TripOutput(Trip trip, User? driver) : this(trip, driver, trip?.Vehicle) { }
@@ -60,5 +70,9 @@ public class TripOutput
         SeatsLeft = trip.SeatsLeft;
         PricePerSeat = trip.PricePerSeat;
         Status = trip.Status;
+        StartedAt = trip.History?
+            .Where(h => h.Status == TripStatus.Active)
+            .OrderByDescending(h => h.Id)
+            .FirstOrDefault()?.CreationDate;
     }
 }
