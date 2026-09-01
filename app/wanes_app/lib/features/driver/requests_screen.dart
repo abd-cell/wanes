@@ -1,16 +1,20 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+
 import '../../core/fare.dart';
 import '../../core/geo.dart';
 import '../../core/l10n.dart';
 import '../../core/places.dart';
+import '../../core/push_service.dart';
 import '../../core/theme.dart';
 import '../../models/models.dart';
 import '../../services/services.dart';
 import '../../widgets/map_backdrop.dart';
 import '../../widgets/wanes_alerts.dart';
 import '../../widgets/wanes_ui.dart';
+import '../../widgets/wanes_motion.dart';
 
 /// Incoming ride request — prototype screen 10. The map fills the screen and
 /// the top hail sits in a bottom sheet with its countdown ring; declining
@@ -32,6 +36,7 @@ class _RequestsScreenState extends State<RequestsScreen> {
   bool _loading = true;
   bool _accepting = false;
   Timer? _tick;
+  StreamSubscription<RideRequestClosed>? _closed;
 
   @override
   void initState() {
@@ -40,12 +45,31 @@ class _RequestsScreenState extends State<RequestsScreen> {
     _tick = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() {}); // countdown ring + label
     });
+    // The countdown only covers a hail that ran its full window. One the rider
+    // withdrew, or another driver took, ends early and without warning — the
+    // server says so over SSE and the card has to go the moment it does.
+    _closed = PushService.instance.requestClosed.listen(_onClosed);
   }
 
   @override
   void dispose() {
     _tick?.cancel();
+    _closed?.cancel();
     super.dispose();
+  }
+
+  void _onClosed(RideRequestClosed closed) {
+    if (!mounted) return;
+    // Only worth a word if it is the card in front of them. One further down
+    // the queue can leave silently — the driver never saw it.
+    final wasShowing = _queue.isNotEmpty && _queue.first.id == closed.requestId;
+    final held = _list.any((r) => r.id == closed.requestId);
+    if (!held) return;
+
+    setState(() => _list.removeWhere((r) => r.id == closed.requestId));
+    if (wasShowing && !_accepting) {
+      WanesAlerts.info(context, context.tr(closed.reason.messageKey));
+    }
   }
 
   Future<void> _load() async {
@@ -125,7 +149,7 @@ class _RequestsScreenState extends State<RequestsScreen> {
             ? _sheet(t,
                 child: const Padding(
                     padding: EdgeInsets.symmetric(vertical: 28),
-                    child: Center(child: CircularProgressIndicator())))
+                    child: Center(child: WanesSpinner())))
             : top == null
                 ? _sheet(t, child: _emptyBody(t))
                 : _sheet(t, child: _requestBody(t, top)),
@@ -164,7 +188,7 @@ class _RequestsScreenState extends State<RequestsScreen> {
 
   Widget _requestBody(WanesTokens t, RideRequestRow r) {
     final left = r.expiresAt.difference(DateTime.now());
-    final progress = left.inMilliseconds / RideRequestRow.ttl.inMilliseconds;
+    final progress = left.inMilliseconds / r.ttl.inMilliseconds;
     final pickupKm = Geo.distanceKm(_here.lat, _here.lng, r.originLat, r.originLng);
     final fare = Fare.estimateBetween(
       r.originLat, r.originLng, r.destinationLat, r.destinationLng, seats: r.seats);
@@ -180,6 +204,16 @@ class _RequestsScreenState extends State<RequestsScreen> {
             Text(context.tr('driver.rideNearby'),
                 style: TextStyle(
                     fontSize: 20, fontWeight: FontWeight.w800, letterSpacing: -0.4, color: t.ink)),
+            const SizedBox(height: 3),
+            // Not every hail is for right now. A rider who searched for this
+            // evening and matched nothing is asking for this evening, and the
+            // trip Accept creates leaves then — so this is the time the driver
+            // is actually agreeing to, and the card has to say it.
+            Text(_leaving(context, r.wantedDepartAt),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: WanesTheme.mono(
+                    size: 11, weight: FontWeight.w600, color: t.ink2, spacing: 0)),
           ]),
         ),
       ]),
@@ -332,6 +366,26 @@ class _RequestsScreenState extends State<RequestsScreen> {
   }
 
   static String _short(String address) => address.split(',').first.trim();
+
+  /// "Leaving now" for the ordinary hail, a clock time for a scheduled one, and
+  /// a day as well once it is not today.
+  ///
+  /// The threshold is generous on purpose: every hail departs at least a pickup
+  /// lead out, and one opened a couple of minutes ago is still, to the driver
+  /// reading the card, a ride they are taking now.
+  static String _leaving(BuildContext context, DateTime at) {
+    final local = at.toLocal();
+    final now = DateTime.now();
+    final until = local.difference(now);
+    if (until.inMinutes < 15) return context.tr('driver.leavingNow');
+
+    final locale = context.l10n.localeName;
+    final sameDay = local.year == now.year && local.month == now.month && local.day == now.day;
+    final when = sameDay
+        ? DateFormat('HH:mm', locale).format(local)
+        : DateFormat('E HH:mm', locale).format(local);
+    return context.tr('driver.leavingAt', {'time': when});
+  }
 
   static String _ago(BuildContext context, DateTime at) {
     final s = DateTime.now().difference(at.toLocal()).inSeconds;

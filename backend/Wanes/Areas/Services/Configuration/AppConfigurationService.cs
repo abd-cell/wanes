@@ -3,6 +3,7 @@ using Wanes.Areas.Services.Audit;
 using Wanes.Areas.Services.Configuration.Models;
 using Wanes.DataAccess.Repositories;
 using Wanes.DataAccess.UnitOfWorks;
+using Wanes.Shareds.Constants;
 using Wanes.Shareds.Models;
 using Entity = Wanes.Areas.Domain.Configuration.AppConfiguration;
 
@@ -50,6 +51,9 @@ public class AppConfigurationService : IAppConfigurationService
         entity.CurrencyPosition = input.CurrencyPosition;
         entity.CurrencyDecimals = input.CurrencyDecimals;
         entity.PrimaryColor = NormalizeHex(input.PrimaryColor);
+        entity.FontFamily = input.FontFamily;
+        entity.HailRequestTtlMinutes =
+            Math.Clamp(input.HailRequestTtlMinutes, MatchRules.MinHailTtlMinutes, MatchRules.MaxHailTtlMinutes);
         entity.SupportPhone = Blank(input.SupportPhone);
         entity.SupportWhatsApp = Blank(input.SupportWhatsApp);
         entity.SupportEmail = Blank(input.SupportEmail)?.ToLowerInvariant();

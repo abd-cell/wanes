@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -59,6 +59,11 @@ builder.Services.AddDbContext<DatabaseService>(options =>
 builder.Services.AddScoped(typeof(Wanes.DataAccess.Repositories.IRepository<>),
     typeof(Wanes.DataAccess.Repositories.Repository<>));
 builder.Services.RegisterTypes();
+
+// ── Background work ──
+// Convention-based DI covers service interfaces only, so the hosted services
+// that run off a timer are registered here.
+builder.Services.AddHostedService<Wanes.Areas.Services.Requests.RideRequestExpiryWorker>();
 
 // ── Authentication (JWT; session validated against UserLogin) ──
 builder.Services

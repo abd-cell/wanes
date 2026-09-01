@@ -3,6 +3,7 @@ using Wanes.Areas.Domain.Users;
 using Wanes.Areas.Services.Users.Accounts;
 using Wanes.Areas.Services.Users.Accounts.Models;
 using Wanes.Shareds.Models.Config;
+using Wanes.Shareds.SSE;
 using Wanes.Tests.TestDoubles;
 
 namespace Wanes.Tests;
@@ -12,7 +13,7 @@ public class AccountServiceTests
     private static AccountService Service(FakeUnitOfWork uow) => new(
         uow, new FakeSecurityManager(1), new FakeTokenGenerator(), new FakeSmsSender(),
         new FakeAuditService(), uow.Repository<OtpCode>(), uow.Repository<User>(),
-        uow.Repository<UserRole>(), uow.Repository<UserLogin>(),
+        uow.Repository<UserRole>(), uow.Repository<UserLogin>(), new SseConnectionManager(),
         Options.Create(new OtpSettings { IsTesting = true, FixedCode = "1234", ExpiryMinutes = 5 }));
 
     [Theory]

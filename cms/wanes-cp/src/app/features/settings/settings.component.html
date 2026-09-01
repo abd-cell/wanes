@@ -97,6 +97,61 @@
       </div>
     </section>
 
+    <!-- ── Typeface ── -->
+    <section class="card section span-2">
+      <h2>{{ 'cfg_font' | translate }}</h2>
+      <p class="hint">{{ 'cfg_font_hint' | translate }}</p>
+
+      <div class="fonts">
+        @for (f of fonts; track f.value) {
+          <button type="button" class="font-option"
+                  [class.chosen]="+model().fontFamily === f.value"
+                  [attr.aria-pressed]="+model().fontFamily === f.value"
+                  (click)="chooseFont(f.value)">
+            <span class="font-name">{{ f.labelKey | translate }}</span>
+            <span class="font-faces">{{ f.faceKey | translate }}</span>
+          </button>
+        }
+      </div>
+
+      <!-- Both scripts, always — the sample text is type, not UI copy, so it is
+           fixed rather than translated: the choice has to be judged on the
+           Arabic face as well as the Latin one whichever language the admin
+           happens to be reading the panel in. -->
+      <div class="preview specimen">
+        <span class="preview-label">{{ 'cfg_preview' | translate }}</span>
+        <div class="specimen-lines">
+          <p class="specimen-line" dir="ltr" [style.fontFamily]="fontPreview()">
+            Wanes · Amman → Irbid · 3 seats · 0123456789
+          </p>
+          <p class="specimen-line" dir="rtl" [style.fontFamily]="fontPreviewRtl()">
+            وانِس · عمّان → إربد · ٣ مقاعد · ٠١٢٣٤٥٦٧٨٩
+          </p>
+        </div>
+      </div>
+
+      <p class="hint foot">{{ 'cfg_font_foot' | translate }}</p>
+    </section>
+
+    <!-- ── Matching ── -->
+    <section class="card section span-2">
+      <h2>{{ 'cfg_matching' | translate }}</h2>
+      <p class="hint">{{ 'cfg_matching_hint' | translate }}</p>
+
+      <div class="pair">
+        <div class="form-row">
+          <label for="cfg-hail-ttl">{{ 'cfg_hail_ttl' | translate }}</label>
+          <input id="cfg-hail-ttl" class="field" type="number" min="1" max="240" step="1"
+                 [ngModel]="model().hailRequestTtlMinutes"
+                 (ngModelChange)="set('hailRequestTtlMinutes', +$event)" />
+        </div>
+        <div class="form-row">
+          <span class="preview-label">{{ 'cfg_preview' | translate }}</span>
+          <p class="hint">{{ hailTtlPreview() }}</p>
+        </div>
+      </div>
+    </section>
+
     <!-- ── Support contact ── -->
     <section class="card section span-2">
       <h2>{{ 'cfg_support' | translate }}</h2>

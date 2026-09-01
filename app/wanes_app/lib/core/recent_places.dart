@@ -25,6 +25,10 @@ class RecentPlaces {
   /// Most recent read without touching disk — safe for a synchronous build().
   List<Place> get cached => _cache ?? const [];
 
+  /// Drops the in-memory copy so the next [load] re-reads storage. Needed by
+  /// tests, which swap the backing store between cases.
+  void reset() => _cache = null;
+
   Future<void> add(Place place) async {
     final list = List<Place>.from(await load())
       ..removeWhere((p) => p.key == place.key)

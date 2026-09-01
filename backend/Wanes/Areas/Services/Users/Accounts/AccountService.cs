@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Wanes.Areas.Domain.Users;
 using Wanes.Areas.Services.Audit;
@@ -12,6 +12,7 @@ using Wanes.Shareds.Models;
 using Wanes.Shareds.Models.Config;
 using Wanes.Shareds.Notifications.Sms;
 using Wanes.Shareds.Security;
+using Wanes.Shareds.SSE;
 using Wanes.Shareds.Security.Token;
 
 namespace Wanes.Areas.Services.Users.Accounts;
@@ -27,6 +28,7 @@ public class AccountService : IAccountService
     private readonly IRepository<User> userRepository;
     private readonly IRepository<UserRole> userRoleRepository;
     private readonly IRepository<UserLogin> userLoginRepository;
+    private readonly SseConnectionManager sseConnectionManager;
     private readonly OtpSettings otpSettings;
 
     /// <summary>How long a just-rotated refresh token still works, covering a client retry.</summary>
@@ -42,6 +44,7 @@ public class AccountService : IAccountService
         IRepository<User> userRepository,
         IRepository<UserRole> userRoleRepository,
         IRepository<UserLogin> userLoginRepository,
+        SseConnectionManager sseConnectionManager,
         IOptions<OtpSettings> otpSettings)
     {
         this.unitOfWork = unitOfWork;
@@ -53,6 +56,7 @@ public class AccountService : IAccountService
         this.userRepository = userRepository;
         this.userRoleRepository = userRoleRepository;
         this.userLoginRepository = userLoginRepository;
+        this.sseConnectionManager = sseConnectionManager;
         this.otpSettings = otpSettings.Value;
     }
 
@@ -245,7 +249,16 @@ public class AccountService : IAccountService
         });
     }
 
-    /// <summary>Ends a session for good: no push target left, and no refresh path back in.</summary>
+    /// <summary>
+    /// Ends a session for good: no push target left, no refresh path back in, no
+    /// live stream, and — if this was the account's last session — no presence.
+    ///
+    /// The last two are easy to forget and were: revoking the row stopped the
+    /// API calls but left the SSE socket open, because the stream authenticates
+    /// once at connect and never again; and it left <c>IsOnline</c> true, so a
+    /// driver who signed out went on being counted as available and targeted by
+    /// hail fan-out.
+    /// </summary>
     private async Task RevokeSession(UserLogin login)
     {
         login.DeviceToken = null;
@@ -254,7 +267,27 @@ public class AccountService : IAccountService
         login.RefreshTokenExpiresAt = null;
         userLoginRepository.Update(login);
         userLoginRepository.SoftDelete(login);
+
+        // Only when nothing else is signed in. A driver with the app on a second
+        // handset is still reachable, and knocking them offline mid-shift because
+        // they signed out of the first one would be worse than the bug.
+        var stillSignedIn = await userLoginRepository
+            .AnyAsync(l => l.UserId == login.UserId && l.Id != login.Id && !l.IsDeleted);
+        if (!stillSignedIn)
+        {
+            var user = await userRepository.GetByIdAsync(login.UserId);
+            if (user is { IsOnline: true })
+            {
+                user.IsOnline = false;
+                userRepository.Update(user);
+            }
+        }
+
         await unitOfWork.SaveAsync();
+
+        // After the commit: the socket is not part of the transaction, and a
+        // client that reconnects must find the session already gone.
+        sseConnectionManager.DisconnectSession(login.UserId, login.SessionKey);
     }
 
     public async Task<BaseResponse> Logout()

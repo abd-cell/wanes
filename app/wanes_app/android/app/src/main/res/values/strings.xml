@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The label under the launcher icon: Wanees ع الطريق.
+         The invisible marks are load-bearing: &#x2066;/&#x2069; (LRI/PDI)
+         isolate the name as left-to-right so an Arabic launcher cannot mirror
+         it, and the &#x200E; (LRM) after the ع separates it from الطريق —
+         without it the two Arabic runs merge into one right-to-left run and
+         the ع renders past the Arabic word ("Wanees الطريق ع"). Keep in step
+         with kWanesAppName in lib/widgets/wanes_logo.dart. -->
+    <string name="app_name">&#x2066;Wanees ع&#x200E; الطريق&#x2069;</string>
+</resources>

@@ -46,6 +46,19 @@ void main() {
     });
   });
 
+  group('a trip that takes the driver off the board', () {
+    test('is one they are out on, and only that', () {
+      // The server treats Arrived and Active as "engaged": at a pickup point, or
+      // carrying riders. A posted or finished trip leaves the driver available.
+      expect(trip(status: 3).isUnderway, isTrue); // Active
+      expect(trip(status: 6).isUnderway, isTrue); // Arrived
+      expect(trip(status: 1).isUnderway, isFalse); // Posted
+      expect(trip(status: 2).isUnderway, isFalse); // Full
+      expect(trip(status: 4).isUnderway, isFalse); // Completed
+      expect(trip(status: 5).isUnderway, isFalse); // Cancelled
+    });
+  });
+
   group('the step button', () {
     testWidgets('shows the move a posted trip offers', (tester) async {
       await tester.pumpWidget(
@@ -112,13 +125,60 @@ void main() {
       expect(row({'status': 3}).statusKey, 'bookingStatus.inProgress');
       expect(row({'status': 4}).statusKey, 'bookingStatus.completed');
       expect(row({'status': 5}).statusKey, 'bookingStatus.cancelled');
+      expect(row({'status': 6}).statusKey, 'bookingStatus.arrived');
+      expect(row({'status': 7}).statusKey, 'bookingStatus.noShow');
     });
 
     test('only a live seat is callable', () {
       expect(row({'status': 2}).isLive, isTrue);
       expect(row({'status': 3}).isLive, isTrue);
+      expect(row({'status': 6}).isLive, isTrue);
       expect(row({'status': 4}).isLive, isFalse);
       expect(row({'status': 5}).isLive, isFalse);
+      // A no-show is settled too — nobody gave the seat back, but it is spent.
+      expect(row({'status': 7}).isLive, isFalse);
+    });
+
+    group('the per-seat moves it offers', () {
+      List<int> stepsFor(int status) =>
+          SeatStep.forSeat(row({'status': status})).map((s) => s.status).toList();
+
+      test('mirror the order the server enforces per seat', () {
+        // Confirmed: reach them, take them aboard, or give up on them.
+        expect(stepsFor(2), [6, 3, 7]);
+        // Once the driver is at the pickup, arriving again is not a move.
+        expect(stepsFor(6), [3, 7]);
+        // Aboard: the only thing left is dropping them off — no no-show now.
+        expect(stepsFor(3), [4]);
+        // Settled seats offer nothing.
+        expect(stepsFor(4), isEmpty);
+        expect(stepsFor(5), isEmpty);
+        expect(stepsFor(7), isEmpty);
+      });
+
+      test('only the no-show asks first', () {
+        final steps = SeatStep.forSeat(row({'status': 2}));
+        expect(steps.where((s) => s.confirm).map((s) => s.status), [7]);
+      });
+    });
+
+    testWidgets('offers the next move first, and the no-show quietly',
+        (tester) async {
+      await tester.pumpWidget(host(SeatStepButtons(
+          tripId: 7, seat: row({'status': 6}), onChanged: () {})));
+      await tester.pump();
+
+      // Picked up leads as the filled button; No show trails as an outline.
+      expect(find.widgetWithText(FilledButton, 'Picked up'), findsOneWidget);
+      expect(find.widgetWithText(OutlinedButton, 'No show'), findsOneWidget);
+    });
+
+    testWidgets('offers nothing once the seat is settled', (tester) async {
+      await tester.pumpWidget(host(SeatStepButtons(
+          tripId: 7, seat: row({'status': 4}), onChanged: () {})));
+      await tester.pump();
+      expect(find.byType(FilledButton), findsNothing);
+      expect(find.byType(OutlinedButton), findsNothing);
     });
 
     test('a withheld number comes back null, never an empty string', () {

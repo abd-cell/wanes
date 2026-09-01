@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using Wanes.Shareds.Constants;
 using Wanes.Shareds.Enums;
 
 namespace Wanes.Areas.Services.Configuration.Models;
@@ -15,6 +16,20 @@ public class AppConfigurationOutput
     public CurrencyPosition CurrencyPosition { get; set; }
     public int CurrencyDecimals { get; set; }
     public string PrimaryColor { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The display/body typeface. A client maps the value to the concrete faces
+    /// it uses for Latin and Arabic; it is never a family name on the wire.
+    /// </summary>
+    public AppFont FontFamily { get; set; }
+
+    /// <summary>
+    /// Minutes an unanswered hail stays open. The clients need it as well as the
+    /// server: the rider's search screen and the driver's request card both draw
+    /// a countdown, and a window they guessed at would disagree with the one the
+    /// server actually enforces.
+    /// </summary>
+    public int HailRequestTtlMinutes { get; set; }
 
     // ── Support contact ──
     //
@@ -42,6 +57,8 @@ public class AppConfigurationOutput
         CurrencyPosition = e.CurrencyPosition;
         CurrencyDecimals = e.CurrencyDecimals;
         PrimaryColor = e.PrimaryColor;
+        FontFamily = e.FontFamily;
+        HailRequestTtlMinutes = e.HailRequestTtlMinutes;
         SupportPhone = e.SupportPhone;
         SupportWhatsApp = e.SupportWhatsApp;
         SupportEmail = e.SupportEmail;
@@ -73,6 +90,22 @@ public class AppConfigurationInput
     [Required, RegularExpression("^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
         ErrorMessage = "PrimaryColor must be a hex colour such as #0FAE9E.")]
     public string PrimaryColor { get; set; } = string.Empty;
+
+    /// <summary>
+    /// One of <see cref="AppFont"/>. A value outside the set is rejected rather
+    /// than coerced: it means the caller knows a font this build does not, and
+    /// storing it would leave every client without a face it can resolve.
+    /// </summary>
+    [EnumDataType(typeof(AppFont))]
+    public AppFont FontFamily { get; set; } = AppFont.Jakarta;
+
+    /// <summary>
+    /// Hail lifetime in minutes. Bounded rather than free: a sub-minute window
+    /// expires before any driver could answer, and a multi-hour one leaves a
+    /// request the rider has long since given up on still reaching drivers.
+    /// </summary>
+    [Range(MatchRules.MinHailTtlMinutes, MatchRules.MaxHailTtlMinutes)]
+    public int HailRequestTtlMinutes { get; set; } = MatchRules.DefaultHailTtlMinutes;
 
     // ── Support contact ──
     //

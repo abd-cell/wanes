@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
+import '../core/app_config.dart';
+import '../core/error_messages.dart';
 import '../core/l10n.dart';
 import '../core/sse_client.dart';
 import '../core/theme.dart';
@@ -21,6 +23,7 @@ class SearchingScreen extends StatefulWidget {
     super.key,
     this.rideRequestId,
     this.driversNotified = 0,
+    this.expiresAt,
     this.originLat,
     this.originLng,
     this.destLat,
@@ -31,6 +34,10 @@ class SearchingScreen extends StatefulWidget {
 
   /// How many drivers the search actually reached (from the search response).
   final int driversNotified;
+
+  /// The deadline the server stamped on the hail. Null on an older API, where
+  /// the configured window measured from now is the best guess available.
+  final DateTime? expiresAt;
 
   /// What the rider asked for. With these the screen draws a real map; without
   /// them it falls back to the prototype's illustration.
@@ -48,6 +55,7 @@ class _SearchingScreenState extends State<SearchingScreen>
   final _sse = SseClient();
   final _trips = TripService();
   final _bookings = BookingService();
+  final _requests = RideRequestService();
   StreamSubscription<Map<String, dynamic>>? _sseSub;
   Timer? _timer;
 
@@ -65,12 +73,32 @@ class _SearchingScreenState extends State<SearchingScreen>
       AnimationController(vsync: this, duration: WanesMotion.bob ~/ 2)
         ..repeat(reverse: true);
 
-  /// A hail lives for 10 minutes server-side; this is the time left on it.
-  static const _ttl = Duration(minutes: 10);
-  late final DateTime _expiresAt = DateTime.now().add(_ttl);
-  Duration _left = _ttl;
+  /// The hail's deadline, and the time left on it.
+  ///
+  /// The server's stamp wins: the window is admin-set, so a screen counting
+  /// down its own idea of the TTL would keep saying "still looking" after the
+  /// request had closed.
+  late final DateTime _expiresAt =
+      widget.expiresAt?.toLocal() ?? DateTime.now().add(AppConfigController.value.hailTtl);
+  late Duration _left = _expiresAt.difference(DateTime.now());
+
+  /// The full window the bar measures against — from when this screen opened
+  /// to the deadline, so the strip starts full however long the hail was given.
+  late final Duration _window = () {
+    final span = _expiresAt.difference(DateTime.now());
+    return span > Duration.zero ? span : AppConfigController.value.hailTtl;
+  }();
 
   bool _accepted = false;
+
+  /// Set when the server closed the hail out from under us — the rider took too
+  /// long, or an admin ended it. Distinct from [_accepted], and from the local
+  /// countdown, which is only ever an estimate of the same thing.
+  bool _closed = false;
+
+  /// True while the withdrawal call is in flight, so Cancel cannot be
+  /// double-tapped into two requests.
+  bool _cancelling = false;
 
   @override
   void initState() {
@@ -85,6 +113,24 @@ class _SearchingScreenState extends State<SearchingScreen>
   Future<void> _listenForAccept() async {
     _sseSub = _sse.events.listen((event) {
       if (!mounted) return;
+      // The server closes a hail on every client at once. For the rider that
+      // means their own request ended without a driver — usually the window
+      // running out, which their countdown was only guessing at.
+      if (event['event'] == 'rideRequestClosed') {
+        final id = (event['requestId'] as num?)?.toInt();
+        final reason = RideRequestClosedReason.fromWire(event['reason'] as String?);
+        if (id != null &&
+            id == widget.rideRequestId &&
+            reason != RideRequestClosedReason.matched) {
+          _timer?.cancel();
+          setState(() {
+            _closed = true;
+            _left = Duration.zero;
+          });
+        }
+        return;
+      }
+
       if (event['type'] == 'DriverAccepted') {
         // The payload carries the trip the driver just created for this hail —
         // that is what lets us follow them, and hand over to live tracking.
@@ -114,6 +160,35 @@ class _SearchingScreenState extends State<SearchingScreen>
     if (!mounted) return;
     final fix = res.data;
     setState(() => _driverAt = fix != null && fix.isUsable ? fix : null);
+  }
+
+  /// Withdraws the hail before leaving.
+  ///
+  /// Backing out used to just pop the screen, which left the request Open: the
+  /// drivers it was pushed to kept the card, and one of them could still accept
+  /// a ride the rider had walked away from. Telling the server first is what
+  /// takes the card off their screens.
+  Future<void> _cancel() async {
+    final id = widget.rideRequestId;
+    // Nothing to withdraw: no request was opened, or it has already closed.
+    if (id == null || _expired) {
+      Navigator.pop(context);
+      return;
+    }
+
+    setState(() => _cancelling = true);
+    final res = await _requests.cancel(id);
+    if (!mounted) return;
+    setState(() => _cancelling = false);
+
+    // A hail that closed while the tap was in flight is not a failure — the
+    // rider wanted it gone and it is gone.
+    if (res.success || res.errorCode == ServerErrorCode.requestNotOpen) {
+      Navigator.pop(context);
+      return;
+    }
+    WanesAlerts.failure(context, res,
+        title: context.tr('hail.cancelFailed'), onRetry: _cancel);
   }
 
   /// Hands over to live tracking. Accepting a hail creates both the trip and a
@@ -159,7 +234,7 @@ class _SearchingScreenState extends State<SearchingScreen>
     return '${_left.inMinutes}:${(_left.inSeconds % 60).toString().padLeft(2, '0')}';
   }
 
-  bool get _expired => !_accepted && _left.isNegative;
+  bool get _expired => !_accepted && (_closed || _left.isNegative);
 
   /// The real map needs somewhere real to be. Without coordinates (an older
   /// entry point) the prototype illustration still stands in.
@@ -230,14 +305,16 @@ class _SearchingScreenState extends State<SearchingScreen>
                 width: double.infinity,
                 height: 50,
                 child: OutlinedButton(
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: _cancelling ? null : _cancel,
                   style: OutlinedButton.styleFrom(
                     foregroundColor: t.ink,
                     side: BorderSide(color: t.border),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   ),
-                  child: Text(context.tr(_expired ? 'common.back' : 'hail.cancelRequest'),
-                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+                  child: _cancelling
+                      ? WanesSpinner.mono(t.ink2, size: 18)
+                      : Text(context.tr(_expired ? 'common.back' : 'hail.cancelRequest'),
+                          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
                 ),
               ),
           ]),
@@ -362,7 +439,7 @@ class _SearchingScreenState extends State<SearchingScreen>
         GrowBar(
           value: _left.isNegative
               ? 0
-              : _left.inMilliseconds / _ttl.inMilliseconds,
+              : _left.inMilliseconds / _window.inMilliseconds,
           color: t.amber,
           track: t.amberInk.withValues(alpha: .16),
           height: 5,

@@ -13,12 +13,17 @@
 	<!-- iOS 14+ prompts before an app may talk to devices on the local network. -->
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Wanes connects to the development server on your local network.</string>
+	<!-- Shown when the rider taps "Use my current location" in the place
+	     picker. Wanes only ever reads the position in the foreground, so the
+	     "when in use" key is the only one declared. -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Wanes uses your location to set your pick-up point and show nearby places first.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Wanes</string>
+	<string>&#x2066;Wanees ع&#x200E; الطريق&#x2069;</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>

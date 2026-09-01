@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../core/l10n.dart';
+import '../core/notification_router.dart';
 import '../core/session.dart';
 import '../core/theme.dart';
 import '../models/models.dart';
@@ -60,6 +61,8 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
     if (res.success) {
       Navigator.pushAndRemoveUntil(
           context, MaterialPageRoute(builder: (_) => const RiderShell()), (_) => false);
+      // A notification tapped on the way in, held while this gate was up.
+      NotificationRouter.drainPending();
       return;
     }
     setState(() => _busy = false);

@@ -1,10 +1,16 @@
 using Wanes.Areas.Domain.Requests;
+using Wanes.Areas.Domain.Trips;
+using Wanes.Areas.Domain.Users;
 using Wanes.Areas.Services.Audit;
+using Wanes.Areas.Services.Configuration;
+using Wanes.Areas.Services.Configuration.Models;
 using Wanes.Areas.Services.Notifications;
 using Wanes.Areas.Services.Notifications.Models;
+using Wanes.Shareds.Constants;
 using Wanes.Shareds.Enums;
 using Wanes.Shareds.Models;
 using Wanes.Shareds.Notifications;
+using Wanes.Shareds.Notifications.Fcm;
 using Wanes.Shareds.Notifications.Sms;
 using Wanes.Shareds.Security;
 using Wanes.Shareds.Security.Token;
@@ -77,6 +83,23 @@ public class FakeNotificationService : INotificationService
     public Task<int> NotifyNearbyDrivers(RideRequest request) =>
         Task.FromResult(NearbyDriverCount);
 
+    /// <summary>
+    /// Records that the reverse match was asked for, and for which trip. Which
+    /// riders it would actually reach is the real service's business — see
+    /// <c>ReverseMatchTests</c> — so the fake only pins whether the caller asked.
+    /// </summary>
+    public Task NotifyWaitingRiders(Trip trip, User driver)
+    {
+        Sent.Add($"waiting:{trip.Id}");
+        return Task.CompletedTask;
+    }
+
+    public Task NotifyRideRequestClosed(int requestId, RideRequestStatus reason)
+    {
+        Sent.Add($"request-{requestId}:{reason}");
+        return Task.CompletedTask;
+    }
+
     public Task<BaseResponse<NotificationFeed>> GetUserNotifications() =>
         Task.FromResult(new BaseResponse<NotificationFeed>(new NotificationFeed()));
 
@@ -84,6 +107,24 @@ public class FakeNotificationService : INotificationService
     public Task<BaseResponse> MarkAllRead() => Task.FromResult(new BaseResponse());
     public Task<BaseResponse> RegisterDevice(RegisterDeviceInput input) => Task.FromResult(new BaseResponse());
     public Task<BaseResponse> ClearDevice() => Task.FromResult(new BaseResponse());
+}
+
+/// <summary>The shipped defaults, with the hail TTL a test can move.</summary>
+public class FakeAppConfigurationService : IAppConfigurationService
+{
+    public int HailRequestTtlMinutes { get; set; } = MatchRules.DefaultHailTtlMinutes;
+
+    public Task<BaseResponse<AppConfigurationOutput>> Get() =>
+        Task.FromResult(new BaseResponse<AppConfigurationOutput>(new AppConfigurationOutput
+        {
+            HailRequestTtlMinutes = HailRequestTtlMinutes,
+        }));
+
+    public Task<BaseResponse<AppConfigurationOutput>> Update(AppConfigurationInput input) =>
+        Task.FromResult(new BaseResponse<AppConfigurationOutput>(new AppConfigurationOutput
+        {
+            HailRequestTtlMinutes = input.HailRequestTtlMinutes,
+        }));
 }
 
 public class FakeSmsSender : ISmsSender
@@ -111,4 +152,14 @@ public class FakeTokenGenerator : ITokenGenerator
     }
 
     public string HashRefreshToken(string token) => $"hash:{token}";
+}
+
+/// <summary>Push turned off, the way a machine with no Firebase credentials runs.</summary>
+public class FakeFcmSender : IFcmSender
+{
+    public bool IsConfigured => false;
+
+    public Task<FcmSendResult> SendAsync(IEnumerable<string> deviceTokens, string title, string body,
+        IDictionary<string, string>? data = null) =>
+        Task.FromResult(new FcmSendResult());
 }

@@ -184,6 +184,7 @@ class _HomeScreenState extends State<HomeScreen> {
         builder: (_) => SearchingScreen(
           rideRequestId: result.rideRequestId,
           driversNotified: result.driversNotified,
+          expiresAt: result.rideRequestExpiresAt,
           originLat: from.lat,
           originLng: from.lng,
           destLat: to.lat,

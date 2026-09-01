@@ -1,4 +1,4 @@
-using Wanes.Areas.Domain.Requests;
+﻿using Wanes.Areas.Domain.Requests;
 using Wanes.Shareds.Enums;
 
 namespace Wanes.Areas.Services.Management.Models;
@@ -21,6 +21,10 @@ public class RideRequestRow
     public int? MatchedTripId { get; set; }
     public string? MatchedTripSummary { get; set; }
     public DateTime RequestedAt { get; set; }
+
+    /// <summary>The departure the rider searched for (see the domain field).</summary>
+    public DateTime WantedDepartAt { get; set; }
+
     public DateTime? ExpiresAt { get; set; }
     public DateTime CreationDate { get; set; }
 
@@ -41,6 +45,7 @@ public class RideRequestRow
         Status = r.Status;
         MatchedTripId = r.MatchedTripId;
         RequestedAt = r.RequestedAt;
+        WantedDepartAt = r.WantedDepartAt;
         ExpiresAt = r.ExpiresAt;
         CreationDate = r.CreationDate;
     }
@@ -60,5 +65,6 @@ public class RideRequestInput
     public int RadiusMeters { get; set; } = 2000;
     public RideRequestStatus Status { get; set; } = RideRequestStatus.Open;
     public int? MatchedTripId { get; set; }
+    public DateTime? WantedDepartAt { get; set; }
     public DateTime? ExpiresAt { get; set; }
 }

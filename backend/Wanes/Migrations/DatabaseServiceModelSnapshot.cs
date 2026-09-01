@@ -164,6 +164,12 @@ namespace Wanes.Migrations
                     b.Property<DateTime?>("DeletionDate")
                         .HasColumnType("datetime2");
 
+                    b.Property<int>("FontFamily")
+                        .HasColumnType("int");
+
+                    b.Property<int>("HailRequestTtlMinutes")
+                        .HasColumnType("int");
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
@@ -434,6 +440,9 @@ namespace Wanes.Migrations
 
                     b.Property<int>("Status")
                         .HasColumnType("int");
+
+                    b.Property<DateTime>("WantedDepartAt")
+                        .HasColumnType("datetime2");
 
                     b.HasKey("Id");
 

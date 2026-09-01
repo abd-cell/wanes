@@ -217,9 +217,7 @@ class _PrimaryButtonState extends State<PrimaryButton> {
               alignment: Alignment.center,
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: busy
-                  ? SizedBox(
-                      height: 22, width: 22,
-                      child: CircularProgressIndicator(strokeWidth: 2.4, valueColor: AlwaysStoppedAnimation(fg)))
+                  ? WanesSpinner.mono(fg, size: 22)
                   : Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -425,8 +423,8 @@ class RatingStars extends StatelessWidget {
 }
 
 /// The bottom navigation — pill highlight on the active item, matching the
-/// prototype's floating tab bar. Three items by default (the driver shell),
-/// four for the rider ([riderItems]).
+/// prototype's floating tab bar. Three items either way: the driver shell's
+/// [defaultItems] and the rider's [riderItems].
 class WanesBottomNav extends StatelessWidget {
   const WanesBottomNav({super.key, required this.index, required this.onSelect, this.items});
 
@@ -443,12 +441,11 @@ class WanesBottomNav extends StatelessWidget {
         WanesNavItem(Icons.person_outline_rounded, context.tr('nav.profile')),
       ];
 
-  /// Home · Bookings · Trips · Profile — the rider shell, where a booking (your
-  /// seat) and a trip (the journey it is on) are two different things.
+  /// Home · Bookings · Profile — the rider shell. The rider's bookings carry
+  /// the journey with them, so there is no separate trips tab.
   static List<WanesNavItem> riderItems(BuildContext context) => [
         WanesNavItem(Icons.home_outlined, context.tr('nav.home')),
         WanesNavItem(Icons.confirmation_number_outlined, context.tr('nav.bookings')),
-        WanesNavItem(Icons.subject_rounded, context.tr('nav.trips')),
         WanesNavItem(Icons.person_outline_rounded, context.tr('nav.profile')),
       ];
 
@@ -676,11 +673,7 @@ class WanesPillSwitch extends StatelessWidget {
               alignment: Alignment.center,
               decoration: BoxDecoration(color: knob, shape: BoxShape.circle),
               child: busy
-                  ? Padding(
-                      padding: const EdgeInsets.all(5),
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, valueColor: AlwaysStoppedAnimation(track)),
-                    )
+                  ? WanesSpinner.mono(track, size: knobSize - 10)
                   : null,
             ),
           ),
@@ -1294,72 +1287,118 @@ class AvatarStack extends StatelessWidget {
   }
 }
 
-/// The horizontal trip-progress rail from screen 06: a node per stage with its
-/// caption underneath and a connecting bar that fills as the trip advances.
-class TripStepper extends StatelessWidget {
-  const TripStepper({super.key, required this.steps, required this.current});
-  final List<String> steps;
+/// One stage on the active-trip rail — a title with an optional mono detail
+/// line under it, exactly as screen 06 draws it.
+class TripStage {
+  const TripStage(this.title, [this.detail]);
+
+  final String title;
+
+  /// The small monospaced line beneath — a time, an address, an estimate. Null
+  /// leaves the stage as a bare title.
+  final String? detail;
+}
+
+/// The vertical trip-progress rail from screen 06: a node per stage down the
+/// left, its title and detail to the right, and a connector that runs teal
+/// behind the trip and hairline ahead of it.
+///
+/// The node the trip is *on* keeps a white core beating inside it
+/// (`@keyframes wanelive`) — the one thing on the screen that says the rail is
+/// live rather than a receipt. [muted] takes that away: a cancelled trip has
+/// no live stage, so nothing on it should pulse.
+class TripTimeline extends StatelessWidget {
+  const TripTimeline({
+    super.key,
+    required this.stages,
+    required this.current,
+    this.muted = false,
+  });
+
+  final List<TripStage> stages;
+
+  /// Index of the stage the trip has reached. Everything before it is done.
   final int current;
+
+  /// The trip ended early — draw the rail as history, with no beating node.
+  final bool muted;
 
   @override
   Widget build(BuildContext context) {
     final t = WanesTokens.of(context);
-    return SizedBox(
-      height: 46,
-      child: Row(
-        children: List.generate(steps.length, (i) {
-          final done = i <= current;
-          final last = i == steps.length - 1;
-          return Expanded(
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                // Connector runs from this node's centre to the next one's.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: List.generate(stages.length, (i) {
+        final stage = stages[i];
+        final last = i == stages.length - 1;
+        final done = i < current;
+        final here = i == current && !muted;
+        final ahead = i > current;
+
+        return IntrinsicHeight(
+          child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            SizedBox(
+              width: 18,
+              child: Column(children: [
+                _node(t, done: done, here: here, ahead: ahead, muted: muted),
                 if (!last)
-                  Positioned(
-                    top: 7,
-                    left: 0,
-                    right: 0,
-                    child: Row(children: [
-                      const Spacer(),
-                      Expanded(
-                        flex: 2,
-                        child: Container(height: 2, color: i < current ? t.teal : t.border),
+                  Expanded(
+                    child: Center(
+                      child: Container(
+                        width: 2,
+                        constraints: const BoxConstraints(minHeight: 34),
+                        color: done && !muted ? t.teal : t.border,
                       ),
-                    ]),
-                  ),
-                Column(mainAxisSize: MainAxisSize.min, children: [
-                  Container(
-                    width: done ? 16 : 14,
-                    height: done ? 16 : 14,
-                    margin: EdgeInsets.only(top: done ? 0 : 1),
-                    decoration: BoxDecoration(
-                      color: done ? t.teal : t.surface,
-                      shape: BoxShape.circle,
-                      border: done ? null : Border.all(color: t.border, width: 2),
-                      boxShadow: i == current
-                          ? [BoxShadow(color: t.tealTint, spreadRadius: 4)]
-                          : null,
                     ),
                   ),
-                  const SizedBox(height: 6),
-                  Text(
-                    steps[i],
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    style: TextStyle(
-                      fontSize: 9.5,
-                      height: 1.2,
-                      fontWeight: done ? FontWeight.w700 : FontWeight.w600,
-                      color: done ? t.ink : t.ink2,
-                    ),
-                  ),
-                ]),
-              ],
+              ]),
             ),
-          );
-        }),
+            const SizedBox(width: 15),
+            Expanded(
+              child: Padding(
+                padding: EdgeInsets.only(bottom: last ? 0 : 14),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(
+                    stage.title,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                      height: 1.25,
+                      color: here ? t.tealInk : (ahead || muted ? t.ink2 : t.ink),
+                    ),
+                  ),
+                  if (stage.detail != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      stage.detail!,
+                      style: WanesTheme.mono(size: 11, weight: FontWeight.w500, color: t.ink2),
+                    ),
+                  ],
+                ]),
+              ),
+            ),
+          ]),
+        );
+      }),
+    );
+  }
+
+  /// The 18px node. Reached stages are solid teal inside a 4px tint ring; the
+  /// stages still to come are hollow with a hairline border.
+  Widget _node(WanesTokens t,
+      {required bool done, required bool here, required bool ahead, required bool muted}) {
+    final reached = (done || here) && !muted;
+    return Container(
+      width: 18,
+      height: 18,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: reached ? t.teal : t.surface,
+        shape: BoxShape.circle,
+        border: reached ? null : Border.all(color: t.border, width: 2),
+        boxShadow: reached ? [BoxShadow(color: t.tealTint, spreadRadius: 4)] : null,
       ),
+      child: here ? const PulseDot(color: Colors.white, size: 7) : null,
     );
   }
 }

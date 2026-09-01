@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Wanes.Areas.Domain.Bookings;
 using Wanes.Areas.Domain.Requests;
 using Wanes.Areas.Domain.Trips;
@@ -7,6 +7,7 @@ using Wanes.Areas.Domain.Vehicles;
 using Wanes.Areas.Services.Audit;
 using Wanes.Areas.Services.Notifications;
 using Wanes.Areas.Services.Trips.Models;
+using Wanes.Areas.Services.Users.Availability;
 using Wanes.DataAccess.Repositories;
 using Wanes.DataAccess.UnitOfWorks;
 using Wanes.Shareds.Constants;
@@ -24,6 +25,7 @@ public class TripService : ITripService
     private readonly ISecurityManager securityManager;
     private readonly IAuditService auditService;
     private readonly INotificationService notificationService;
+    private readonly IDriverAvailabilityService driverAvailabilityService;
     private readonly IRepository<Trip> tripRepository;
     private readonly IRepository<TripStatusHistory> tripHistoryRepository;
     private readonly IRepository<Vehicle> vehicleRepository;
@@ -36,6 +38,7 @@ public class TripService : ITripService
         ISecurityManager securityManager,
         IAuditService auditService,
         INotificationService notificationService,
+        IDriverAvailabilityService driverAvailabilityService,
         IRepository<Trip> tripRepository,
         IRepository<TripStatusHistory> tripHistoryRepository,
         IRepository<Vehicle> vehicleRepository,
@@ -47,6 +50,7 @@ public class TripService : ITripService
         this.securityManager = securityManager;
         this.auditService = auditService;
         this.notificationService = notificationService;
+        this.driverAvailabilityService = driverAvailabilityService;
         this.tripRepository = tripRepository;
         this.tripHistoryRepository = tripHistoryRepository;
         this.vehicleRepository = vehicleRepository;
@@ -71,6 +75,12 @@ public class TripService : ITripService
             return new BaseResponse<TripOutput>(default, ErrorCode.DepartureMustBeFuture);
         if (IsSamePoint(input.Origin, input.Destination))
             return new BaseResponse<TripOutput>(default, ErrorCode.OriginEqualsDestination);
+
+        // One driver, one car: they cannot post a trip while out on one, nor two
+        // trips leaving at about the same time. A posted trip is a promise to
+        // riders, so this is guarded when it is made rather than when it breaks.
+        if (await driverAvailabilityService.CheckCanCommit(driverId, input.DepartAt) is { } busy)
+            return new BaseResponse<TripOutput>(default, busy);
 
         // seats offered defaults to capacity, and must never exceed it
         var seats = input.SeatsTotal <= 0 ? vehicle.SeatCapacity : input.SeatsTotal;
@@ -105,7 +115,7 @@ public class TripService : ITripService
         // The other half of matching: riders who searched a minute ago and found
         // nothing are sitting on an open hail. This trip may be exactly what they
         // asked for, and without this they would never hear about it.
-        await NotifyWaitingRiders(trip, driver);
+        await notificationService.NotifyWaitingRiders(trip, driver);
 
         return new BaseResponse<TripOutput>(new TripOutput(trip, driver, vehicle));
     }
@@ -135,6 +145,12 @@ public class TripService : ITripService
             return new BaseResponse<TripOutput>(default, ErrorCode.DepartureMustBeFuture);
         if (IsSamePoint(input.Origin, input.Destination))
             return new BaseResponse<TripOutput>(default, ErrorCode.OriginEqualsDestination);
+
+        // Moving a departure can walk it into another of the driver's trips, so
+        // the same clash check runs here — against everything but this trip.
+        if (await driverAvailabilityService.CheckCanCommit(driverId, input.DepartAt, ignoreTripId: trip.Id)
+            is { } busy)
+            return new BaseResponse<TripOutput>(default, busy);
 
         var seats = input.SeatsTotal <= 0 ? vehicle.SeatCapacity : input.SeatsTotal;
         if (seats > vehicle.SeatCapacity)
@@ -423,6 +439,16 @@ public class TripService : ITripService
 
         AddHistory(trip.Id, trip.Status, driverId);
 
+        // Setting out takes the driver off the hail board. The presence flag is
+        // what the dashboard, the admin count and the push targeting all read,
+        // so a driver on the road has to stop reading as "available" — they get
+        // to go online again themselves once they are free.
+        if (trip.Driver != null && DriverAvailabilityRules.IsEngaged(trip.Status) && trip.Driver.IsOnline)
+        {
+            trip.Driver.IsOnline = false;
+            userRepository.Update(trip.Driver);
+        }
+
         if (trip.Status == TripStatus.Completed && trip.Driver != null)
         {
             trip.Driver.TripsAsDriver++;
@@ -474,44 +500,6 @@ public class TripService : ITripService
             Status = status,
             ChangedBy = changedBy,
         });
-
-    /// <summary>
-    /// Reverse match: open hails whose two ends both sit inside the radius that
-    /// rider asked for, departing inside the same window search uses. Best-effort
-    /// and after the commit — a failed push must never roll back a posted trip.
-    /// </summary>
-    private async Task NotifyWaitingRiders(Trip trip, User driver)
-    {
-        var now = DateTime.UtcNow;
-        var from = trip.DepartAt - MatchRules.TimeWindow;
-        var to = trip.DepartAt + MatchRules.TimeWindow;
-
-        // A hail carries no wanted departure time, so RequestedAt stands in for
-        // it — a hail means "now", and it expires within the window anyway.
-        var riderIds = await rideRequestRepository
-            .Where(r => r.Status == RideRequestStatus.Open
-                        && r.RiderId != trip.DriverId
-                        && (r.ExpiresAt == null || r.ExpiresAt > now)
-                        && r.RequestedAt >= from && r.RequestedAt <= to
-                        && r.Seats <= trip.SeatsLeft
-                        && r.Origin.Distance(trip.Origin) <= r.RadiusMeters
-                        && r.Destination.Distance(trip.Destination) <= r.RadiusMeters)
-            .Select(r => r.RiderId)
-            .Distinct()
-            .ToListAsync();
-
-        if (riderIds.Count == 0) return;
-
-        await notificationService.NotifyMany(riderIds, NotificationTemplate.TripMatchedRider,
-            args: new
-            {
-                name = driver.FirstName,
-                origin = trip.OriginAddress,
-                destination = trip.DestinationAddress,
-            },
-            data:
-            new { tripId = trip.Id });
-    }
 
     private static bool IsSamePoint(GeoPoint a, GeoPoint b) =>
         Math.Abs(a.Lat - b.Lat) < 1e-6 && Math.Abs(a.Lng - b.Lng) < 1e-6;

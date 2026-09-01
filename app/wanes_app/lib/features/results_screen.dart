@@ -128,7 +128,9 @@ class _ResultsScreenState extends State<ResultsScreen> {
                             size: 11.5, weight: FontWeight.w500, color: t.ink2, spacing: 0)),
                   ),
                   const SizedBox(width: 12),
-                  _sortButton(t),
+                  // Nothing to reorder with a single match, and an inert control
+                  // reads as a broken one.
+                  if (_matches.length > 1) _sortButton(t),
                 ]),
                 const SizedBox(height: 10),
                 Expanded(

@@ -1,6 +1,6 @@
 /* Shared admin UI classes (kept global so component CSS stays tiny). */
 
-.admin-page { padding: 24px 28px; max-width: 1200px; margin-inline: auto; }
+.admin-page { padding: 24px 28px; }
 
 .page-head { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; }
 .page-head h1 { font-size: 22px; font-weight: 700; margin: 0; }

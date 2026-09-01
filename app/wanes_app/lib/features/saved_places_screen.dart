@@ -7,6 +7,7 @@ import '../models/models.dart';
 import '../widgets/place_picker.dart';
 import '../widgets/wanes_alerts.dart';
 import '../widgets/wanes_ui.dart';
+import '../widgets/wanes_motion.dart';
 
 
 /// Manage the rider's shortcuts: the single Home and Work entries plus any
@@ -137,15 +138,13 @@ class _SavedPlacesScreenState extends State<SavedPlacesScreen> {
             child: ScreenHeader(
               title: context.tr('places.savedPlaces'),
               trailing: _busy
-                  ? SizedBox(
-                      width: 18, height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: t.teal))
+                  ? WanesSpinner(size: 18, color: t.teal)
                   : null,
             ),
           ),
           Expanded(
             child: _loading
-                ? Center(child: CircularProgressIndicator(color: t.teal))
+                ? Center(child: WanesSpinner(color: t.teal))
                 : RefreshIndicator(
                     onRefresh: _load,
                     child: ListView(

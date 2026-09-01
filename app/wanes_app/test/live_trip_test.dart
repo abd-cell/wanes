@@ -1,15 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wanes_app/core/l10n.dart';
 import 'package:wanes_app/core/theme.dart';
 import 'package:wanes_app/features/live_trip_screen.dart';
 import 'package:wanes_app/models/models.dart';
-import 'package:wanes_app/widgets/live_trip_map.dart';
-import 'package:wanes_app/widgets/map_backdrop.dart';
 import 'package:wanes_app/widgets/wanes_ui.dart';
 
-/// The rider's live-trip screen — the stage rail and the driver row.
+/// The rider's live-trip screen — prototype screen 06: the TRIP STATUS
+/// headline with its ETA card, the vertical stage rail, and the driver sheet.
 ///
 /// The screen reaches for the network in `initState` (a status re-read and the
 /// SSE stream); both fail closed in a test binding, which is the same path a
@@ -32,15 +30,15 @@ void main() {
         driverRating: 4.8,
         originAddress: 'Abdoun Circle',
         destinationAddress: 'Sweifieh',
-        departAt: DateTime.now().add(const Duration(minutes: 6)),
+        departAt: DateTime.now().add(const Duration(minutes: 6, seconds: 30)),
         seatsLeft: 2,
         seatsTotal: 3,
         vehicleLabel: 'Toyota Prius',
         vehiclePlate: 'WNS-4021',
         status: status,
         startedAt: startedAt,
-        // Real coordinates: a zero-length route has no progress to measure, so
-        // the mid-trip position would have nothing to work from.
+        // Real coordinates: a zero-length route has no ride to estimate, so the
+        // "In trip" row would have nothing to say.
         originLat: 31.9539,
         originLng: 35.9106,
         destinationLat: 31.9800,
@@ -64,6 +62,9 @@ void main() {
     await tester.pump();
   }
 
+  TripTimeline rail(WidgetTester tester) =>
+      tester.widget<TripTimeline>(find.byType(TripTimeline));
+
   group('the driver row', () {
     testWidgets('offers a call button and no messaging', (tester) async {
       await pump(tester, t: trip(), b: booking());
@@ -73,6 +74,7 @@ void main() {
       expect(find.byIcon(Icons.chat_bubble_outline_rounded), findsNothing);
       expect(find.byIcon(Icons.message_outlined), findsNothing);
       expect(find.text('Omar Haddad'), findsOneWidget);
+      expect(find.text('Toyota Prius · WNS-4021'), findsOneWidget);
     });
 
     testWidgets('drops the call button once the seat is no longer live',
@@ -86,37 +88,55 @@ void main() {
   });
 
   group('the stage rail', () {
-    /// The rail marks every stage up to and including the current one.
-    int stagesDone(WidgetTester tester) {
-      final stepper = tester.widget<TripStepper>(find.byType(TripStepper));
-      return stepper.current;
-    }
-
-    testWidgets('a posted trip sits on "on the way"', (tester) async {
+    /// The rail opens with the booking, so the trip's own four stages sit one
+    /// row further down than the screen's internal step index.
+    testWidgets('always opens on the confirmed booking', (tester) async {
       await pump(tester, t: trip(status: 1), b: booking());
-      expect(stagesDone(tester), 0);
+
+      expect(find.text('Booking confirmed'), findsOneWidget);
+      expect(find.text('Seat with Omar Haddad'), findsOneWidget);
+      // Every stage is drawn, whether reached or not — it is a rail, not a log.
+      expect(find.text('On the way to pickup'), findsOneWidget);
+      expect(find.text('Driver at pickup'), findsOneWidget);
+      expect(find.text('In trip'), findsOneWidget);
+      expect(find.text('Completed'), findsOneWidget);
+      expect(rail(tester).stages, hasLength(5));
+    });
+
+    testWidgets('a posted trip sits on "on the way to pickup"', (tester) async {
+      await pump(tester, t: trip(status: 1), b: booking());
+      expect(rail(tester).current, 1);
+      expect(find.text('Driver on the way'), findsOneWidget);
     });
 
     testWidgets('a full trip is still only "on the way"', (tester) async {
       await pump(tester, t: trip(status: 2), b: booking());
-      expect(stagesDone(tester), 0);
+      expect(rail(tester).current, 1);
     });
 
-    testWidgets('an arrived trip moves the rail to "arrived"', (tester) async {
-      await pump(tester, t: trip(status: 6), b: booking());
-      expect(stagesDone(tester), 1);
+    testWidgets('an arrived trip moves the rail to the pickup', (tester) async {
+      await pump(tester, t: trip(status: 6), b: booking(status: 6));
+
+      expect(rail(tester).current, 2);
+      expect(find.text('Driver is here'), findsOneWidget);
+      expect(find.text('Waiting for you'), findsOneWidget);
+      // Nothing left to count down to — the driver is standing there.
+      expect(find.text('ETA'), findsNothing);
     });
 
     testWidgets('an active trip moves the rail to "in trip"', (tester) async {
       await pump(tester, t: trip(status: 3), b: booking(status: 3));
-      expect(stagesDone(tester), 2);
+
+      expect(rail(tester).current, 3);
+      expect(find.text('On your way'), findsOneWidget);
     });
 
-    testWidgets('a completed trip reaches "done" and offers the rating',
+    testWidgets('a completed trip reaches the end and offers the rating',
         (tester) async {
       await pump(tester, t: trip(status: 4), b: booking(status: 4, phone: null));
 
-      expect(stagesDone(tester), 3);
+      expect(rail(tester).current, 4);
+      expect(find.text('Trip complete'), findsOneWidget);
       expect(find.text('Rate your trip'), findsOneWidget);
       expect(find.text('Cancel trip'), findsNothing);
     });
@@ -128,279 +148,84 @@ void main() {
       expect(find.text('Cancel trip'), findsOneWidget);
       expect(find.text('Rate your trip'), findsNothing);
     });
-  });
 
-  group('the map', () {
-    /// How the map has been told to draw itself for the stage on screen.
-    ///
-    /// The live-trip screen now renders a real, pannable OpenStreetMap
-    /// ([LiveTripMap]) rather than the prototype illustration, but the stage
-    /// logic it is driven by is unchanged — same [MapProgress] contract.
-    MapProgress progress(WidgetTester tester) {
-      final map = tester.widget<LiveTripMap>(find.byType(LiveTripMap));
-      return map.progress;
-    }
-
-    testWidgets('before pickup the leg down to the rider is the dashed one',
-        (tester) async {
-      await pump(tester, t: trip(status: 1), b: booking());
-      final p = progress(tester);
-
-      // The car is up the road, not on the dot, with the ride beyond it drawn
-      // as context only.
-      expect(p.at, greaterThan(0));
-      expect(p.behind, MapLegStyle.dashed);
-      expect(p.ahead, MapLegStyle.faint);
-    });
-
-    testWidgets('a nearer pickup puts the car closer to the dot', (tester) async {
-      await pump(tester, t: trip(status: 1), b: booking());
-      final far = progress(tester).at;
-
-      await tester.pumpWidget(host(LiveTripScreen(
-        trip: Trip(
-          id: 7,
-          driverName: 'Omar Haddad',
-          driverRating: 4.8,
-          originAddress: 'Abdoun Circle',
-          destinationAddress: 'Sweifieh',
-          // Due now rather than in six minutes.
-          departAt: DateTime.now(),
-          seatsLeft: 2,
-          seatsTotal: 3,
-          status: 1,
-        ),
-        booking: booking(),
-      )));
-      await tester.pump();
-
-      expect(progress(tester).at, lessThan(far));
-    });
-
-    testWidgets('an arrived driver sits on the pickup dot, pinging',
-        (tester) async {
-      await pump(tester, t: trip(status: 6), b: booking());
-      // The real map fixes its camera on the first frame; its marker layer only
-      // knows what is in view — and so builds the car — on the next one.
-      await tester.pump();
-
-      expect(progress(tester).at, 0);
-      expect(find.byType(PingRings), findsOneWidget);
-    });
-
-    testWidgets('once under way the covered road is solid and the drop-off dashed',
-        (tester) async {
-      await pump(
-          tester,
-          t: trip(
-              status: 3,
-              startedAt: DateTime.now().toUtc().subtract(const Duration(minutes: 2))),
-          b: booking(status: 3));
-      final p = progress(tester);
-
-      expect(p.at, greaterThan(0));
-      expect(p.behind, MapLegStyle.solid);
-      expect(p.ahead, MapLegStyle.dashed);
-      // The rings belong at the pickup, not mid-journey.
-      expect(find.byType(PingRings), findsNothing);
-    });
-
-    testWidgets('a completed trip draws the whole route solid, car at the end',
-        (tester) async {
-      await pump(tester, t: trip(status: 4), b: booking(status: 4, phone: null));
-      final p = progress(tester);
-
-      expect(p.at, greaterThan(0.9));
-      expect(p.behind, MapLegStyle.solid);
-      expect(p.ahead, MapLegStyle.solid);
-    });
-
-    testWidgets('a cancelled trip fades both legs', (tester) async {
+    testWidgets('a cancelled trip stops the rail and says so', (tester) async {
       await pump(tester, t: trip(status: 5), b: booking(status: 5, phone: null));
-      final p = progress(tester);
 
-      expect(p.behind, MapLegStyle.faint);
-      expect(p.ahead, MapLegStyle.faint);
+      // Nothing on the rail is live any more, so no node may beat.
+      expect(rail(tester).muted, isTrue);
+      expect(find.byType(PulseDot), findsNothing);
+      expect(find.text('Trip cancelled'), findsOneWidget);
     });
 
-    testWidgets('offers a refresh, for when the SSE stream has dropped',
-        (tester) async {
-      await pump(tester, t: trip(status: 6), b: booking());
+    testWidgets('a no-show ends the rail in its own words', (tester) async {
+      await pump(tester, t: trip(status: 3), b: booking(status: 7, phone: null));
 
-      // The opening status re-read is already in flight, so the button starts
-      // busy and only offers itself once that has come back (failed closed, in
-      // a test binding).
-      expect(find.byType(CircularProgressIndicator), findsOneWidget);
-      await tester.pump(const Duration(milliseconds: 50));
-
-      final refresh = find.byIcon(Icons.refresh_rounded);
-      expect(refresh, findsOneWidget);
-
-      // Asking again with no connection is harmless, and leaves the rail where
-      // the trip's own status put it.
-      await tester.tap(refresh);
-      await tester.pump(const Duration(milliseconds: 50));
-
-      expect(refresh, findsOneWidget);
-      expect(tester.widget<TripStepper>(find.byType(TripStepper)).current, 1);
-    });
-  });
-
-  group('the real map', () {
-    LiveTripMap map(WidgetTester tester) =>
-        tester.widget<LiveTripMap>(find.byType(LiveTripMap));
-
-    testWidgets('is plotted on the real trip coordinates, and is pannable',
-        (tester) async {
-      await pump(
-        tester,
-        t: Trip(
-          id: 7,
-          driverName: 'Omar Haddad',
-          driverRating: 4.8,
-          originAddress: 'Abdoun Circle',
-          destinationAddress: 'Sweifieh',
-          departAt: DateTime.now().add(const Duration(minutes: 6)),
-          seatsLeft: 2,
-          seatsTotal: 3,
-          originLat: 31.9539,
-          originLng: 35.9106,
-          destinationLat: 31.9800,
-          destinationLng: 35.8600,
-        ),
-        b: booking(),
-      );
-
-      final m = map(tester);
-      // The old illustration ignored these entirely and drew the same curve
-      // for every trip.
-      expect(m.origin.latitude, 31.9539);
-      expect(m.origin.longitude, 35.9106);
-      expect(m.destination.latitude, 31.9800);
-      expect(m.destination.longitude, 35.8600);
-
-      final opts = tester.widget<FlutterMap>(find.byType(FlutterMap)).options;
-      expect(opts.interactionOptions.flags & InteractiveFlag.drag, isNot(0));
-      expect(opts.interactionOptions.flags & InteractiveFlag.pinchZoom, isNot(0));
-      // North-up: the markers are not rotation-aware.
-      expect(opts.interactionOptions.flags & InteractiveFlag.rotate, 0);
-    });
-
-    testWidgets('credits OpenStreetMap, as its tile policy requires',
-        (tester) async {
-      await pump(tester, t: trip(), b: booking());
-      await tester.pump();
-      expect(find.byType(RichAttributionWidget), findsOneWidget);
-    });
-
-    testWidgets('has no driver fix to place the car on until one is reported',
-        (tester) async {
-      await pump(tester, t: trip(status: 1), b: booking());
-      // Nothing reported in a test binding, so the car falls back to the
-      // stage-derived position rather than showing a bogus 0,0 fix.
-      expect(map(tester).driverAt, isNull);
-    });
-
-    testWidgets('greys the route out when the trip is cancelled', (tester) async {
-      await pump(tester, t: trip(status: 5), b: booking(status: 5, phone: null));
-      expect(map(tester).dimmed, isTrue);
-    });
-  });
-
-  group('the car keeps moving', () {
-    LiveTripMap map(WidgetTester tester) =>
-        tester.widget<LiveTripMap>(find.byType(LiveTripMap));
-
-    testWidgets('mid-trip it advances with the clock, not a fixed fraction',
-        (tester) async {
-      // Two identical trips, started at different times. The one that has been
-      // going longer must be further along; the old build parked both at 0.45.
-      await tester.pumpWidget(host(LiveTripScreen(
-        key: const ValueKey('early'),
-        trip: trip(
-            status: 3,
-            startedAt: DateTime.now().toUtc().subtract(const Duration(minutes: 1))),
-        booking: booking(status: 3),
-      )));
-      await tester.pump();
-      final early = map(tester).progress.at;
-
-      // A distinct key so the screen is rebuilt from scratch rather than
-      // reusing the state — and the trip — of the one above.
-      await tester.pumpWidget(host(LiveTripScreen(
-        key: const ValueKey('later'),
-        trip: trip(
-            status: 3,
-            startedAt: DateTime.now().toUtc().subtract(const Duration(minutes: 4))),
-        booking: booking(status: 3),
-      )));
-      await tester.pump();
-      final later = map(tester).progress.at;
-
-      expect(later, greaterThan(early));
-      expect(early, greaterThan(0));
-    });
-
-    testWidgets('mid-trip it never runs past the drop-off on its own estimate',
-        (tester) async {
-      await pump(tester,
-          t: trip(
-              status: 3,
-              startedAt: DateTime.now().toUtc().subtract(const Duration(hours: 4))),
-          b: booking(status: 3));
-      // Only the driver's own "completed" puts the car on the pin.
-      expect(map(tester).progress.at, lessThan(1.0));
-      expect(map(tester).progress.at, greaterThan(0.5));
-    });
-
-    testWidgets('with no start time it waits at the pickup rather than guessing',
-        (tester) async {
-      await pump(tester, t: trip(status: 3), b: booking(status: 3));
-      expect(map(tester).progress.at, 0.0);
-    });
-
-    testWidgets('the approach still closes on the pickup as the clock runs down',
-        (tester) async {
-      await pump(tester, t: trip(status: 1), b: booking());
-      final far = map(tester).progress.at;
-
-      await tester.pumpWidget(host(LiveTripScreen(
-        key: const ValueKey('due-now'),
-        trip: Trip(
-          id: 7,
-          driverName: 'Omar Haddad',
-          driverRating: 4.8,
-          originAddress: 'Abdoun Circle',
-          destinationAddress: 'Sweifieh',
-          departAt: DateTime.now(), // due now
-          seatsLeft: 2,
-          seatsTotal: 3,
-          originLat: 31.9539,
-          originLng: 35.9106,
-          destinationLat: 31.9800,
-          destinationLng: 35.8600,
-        ),
-        booking: booking(),
-      )));
-      await tester.pump();
-
-      expect(map(tester).progress.at, lessThan(far));
+      expect(rail(tester).muted, isTrue);
+      expect(find.text('Marked as a no-show'), findsOneWidget);
     });
   });
 
   group('the ETA card', () {
     testWidgets('counts down to pickup before the trip starts', (tester) async {
       await pump(tester, t: trip(status: 1), b: booking());
+
       // Departure is 6 minutes out; the countdown is real, not a fake timer.
-      expect(find.textContaining('min'), findsOneWidget);
-      expect(find.text('to pickup'), findsOneWidget);
+      expect(find.text('6 min'), findsOneWidget);
+      expect(find.text('ETA'), findsOneWidget);
     });
 
-    testWidgets('drops the countdown once under way, showing the stage',
+    testWidgets('switches to the drop-off once under way', (tester) async {
+      await pump(
+        tester,
+        t: trip(
+            status: 3,
+            startedAt: DateTime.now().toUtc().subtract(const Duration(minutes: 2))),
+        b: booking(status: 3),
+      );
+
+      // Still an ETA, but now the one that matters — and the rail's own
+      // estimate for the ride is on the "In trip" row.
+      expect(find.text('ETA'), findsOneWidget);
+      expect(find.textContaining('arrive'), findsOneWidget);
+    });
+
+    testWidgets('goes away once there is nothing left to count', (tester) async {
+      await pump(tester, t: trip(status: 4), b: booking(status: 4, phone: null));
+      expect(find.text('ETA'), findsNothing);
+    });
+
+    testWidgets('goes away when the trip is called off', (tester) async {
+      await pump(tester, t: trip(status: 5), b: booking(status: 5, phone: null));
+      expect(find.text('ETA'), findsNothing);
+    });
+  });
+
+  group('the panel', () {
+    testWidgets('is the prototype panel, with no map on it', (tester) async {
+      await pump(tester, t: trip(), b: booking());
+
+      expect(find.text('TRIP STATUS'), findsOneWidget);
+      expect(find.byType(TripTimeline), findsOneWidget);
+      expect(find.byType(MapSheet), findsOneWidget);
+    });
+
+    testWidgets('pulls to refresh, for when the SSE stream has dropped',
         (tester) async {
-      await pump(tester, t: trip(status: 3), b: booking(status: 3));
-      expect(find.text('to drop-off'), findsOneWidget);
-      expect(find.textContaining('min'), findsNothing);
+      await pump(tester, t: trip(status: 6), b: booking(status: 6));
+
+      expect(find.byType(RefreshIndicator), findsOneWidget);
+
+      // Asking again with no connection is harmless, and leaves the rail where
+      // the trip's own status put it.
+      // Pumped by hand rather than settled: the live node beats forever, so
+      // nothing on this screen ever comes to rest.
+      await tester.drag(find.byType(ListView), const Offset(0, 300));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump(const Duration(seconds: 1));
+
+      expect(rail(tester).current, 2);
     });
   });
 }

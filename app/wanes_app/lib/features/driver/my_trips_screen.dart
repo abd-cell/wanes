@@ -9,6 +9,7 @@ import '../../widgets/wanes_ui.dart';
 import 'driver_trip_details_screen.dart';
 import 'post_trip_screen.dart';
 import 'trip_lifecycle.dart';
+import '../../widgets/wanes_motion.dart';
 
 /// A driver's posted trips. Reskinned to the Wanes card language; used as the
 /// Trips tab in the driver shell.
@@ -63,7 +64,7 @@ class MyTripsScreenState extends State<MyTripsScreen> {
     return SafeArea(
       bottom: false,
       child: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: WanesSpinner())
           : RefreshIndicator(
               onRefresh: _load,
               child: ListView(

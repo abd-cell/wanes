@@ -66,6 +66,12 @@ class PushService {
   final _received = StreamController<AppNotification>.broadcast();
   Stream<AppNotification> get received => _received.stream;
 
+  /// Fires when a hail stops being answerable — the rider cancelled it, another
+  /// driver took it, or its window ran out. A driver screen holding that card
+  /// drops it instead of offering an Accept that can only fail.
+  final _requestClosed = StreamController<RideRequestClosed>.broadcast();
+  Stream<RideRequestClosed> get requestClosed => _requestClosed.stream;
+
   /// Fires when the user taps a notification, carrying its payload so the app
   /// can route to the trip or booking it refers to.
   final _opened = StreamController<AppNotification>.broadcast();
@@ -107,6 +113,16 @@ class PushService {
       FirebaseMessaging.onBackgroundMessage(wanesBackgroundMessageHandler);
       FirebaseMessaging.onMessage.listen(_onForegroundMessage);
       FirebaseMessaging.onMessageOpenedApp.listen(_onOpened);
+
+      // A notification this app drew itself (see _onForegroundMessage) outlives
+      // the process: background the app, let Android reclaim it, then tap the
+      // tray entry. getInitialMessage knows nothing about those — it only
+      // reports notifications the *system* built from an FCM payload — so the
+      // local plugin has to be asked separately or the tap is lost.
+      final launch = await _local.getNotificationAppLaunchDetails();
+      if (launch?.didNotificationLaunchApp ?? false) {
+        _pendingOpen = _fromPayload(launch!.notificationResponse?.payload);
+      }
 
       // The app may have been launched by tapping a notification.
       final initial = await FirebaseMessaging.instance.getInitialMessage();
@@ -183,6 +199,16 @@ class PushService {
   }
 
   void _onStreamEvent(Map<String, dynamic> event) {
+    // Control frames carry an `event` name; notification frames never do. They
+    // are not notifications and must not be treated as one — routing a control
+    // frame through _ingest would add a phantom to the unread badge and push an
+    // empty row at every screen listening for arrivals.
+    final control = event['event'];
+    if (control is String && control.isNotEmpty) {
+      _onControlEvent(control, event);
+      return;
+    }
+
     _ingest(
       AppNotification(
         id: event['id'] as int? ?? 0,
@@ -197,6 +223,23 @@ class PushService {
       ),
       dedupeKey: event['dedupe'] as String?,
     );
+  }
+
+  void _onControlEvent(String name, Map<String, dynamic> event) {
+    switch (name) {
+      case 'rideRequestClosed':
+        final id = (event['requestId'] as num?)?.toInt();
+        if (id != null) {
+          _requestClosed.add(RideRequestClosed(
+            requestId: id,
+            reason: RideRequestClosedReason.fromWire(event['reason'] as String?),
+          ));
+        }
+      default:
+        // A frame from a newer server. Ignoring it is the whole point of naming
+        // them: an unknown control event costs this build nothing.
+        break;
+    }
   }
 
   /// Single entry point for an incoming notification, whichever transport it
@@ -250,7 +293,14 @@ class PushService {
   /// while the auth token is still valid.
   Future<void> clearToken() async {
     unreadCount.value = 0;
+    // A tap that arrived just before sign-out belongs to the account that is
+    // leaving; routing it would open the previous user's trip for the next one.
+    _pendingOpen = null;
     _seen.clear();
+    // Broadcasts dedupe on a shared key rather than a row id. Leaving those
+    // behind means the next account on this handset silently drops any
+    // broadcast this one already saw.
+    _seenKeys.clear();
     disconnectStream();
     if (!isAvailable) return;
     try {
@@ -307,8 +357,9 @@ class PushService {
     );
   }
 
-  void _onOpened(RemoteMessage message) {
-    final notification = _toNotification(message);
+  void _onOpened(RemoteMessage message) => _dispatchOpen(_toNotification(message));
+
+  void _dispatchOpen(AppNotification notification) {
     if (_opened.hasListener) {
       _opened.add(notification);
     } else {
@@ -318,15 +369,22 @@ class PushService {
 
   /// Tap on a notification we drew ourselves while in the foreground.
   void _onLocalTap(NotificationResponse response) {
-    final raw = response.payload;
-    if (raw == null || raw.isEmpty) return;
+    final notification = _fromPayload(response.payload);
+    if (notification == null) return;
+    _dispatchOpen(notification);
+  }
+
+  /// The `payload` string a locally-drawn notification carries — the FCM
+  /// `message.data` map, JSON-encoded. Null for anything unreadable: a
+  /// malformed payload should cost the routing, not the tap.
+  AppNotification? _fromPayload(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
     try {
       final data = jsonDecode(raw);
-      if (data is Map) {
-        _onOpened(RemoteMessage(data: data.map((k, v) => MapEntry('$k', v))));
-      }
+      if (data is! Map) return null;
+      return _toNotification(RemoteMessage(data: data.map((k, v) => MapEntry('$k', v))));
     } catch (_) {
-      // malformed payload — the tap still opened the app, which is enough
+      return null;
     }
   }
 

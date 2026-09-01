@@ -1,4 +1,5 @@
-﻿using Wanes.Shareds.Enums;
+﻿using Wanes.Shareds.Constants;
+using Wanes.Shareds.Enums;
 using Wanes.Shareds.Models.Base;
 
 namespace Wanes.Areas.Domain.Configuration;
@@ -33,6 +34,28 @@ public class AppConfiguration : AuditableEntity
     /// a solid fill), so this single value re-skins both the app and the CMS.
     /// </summary>
     public string PrimaryColor { get; set; } = "#0FAE9E";
+
+    /// <summary>
+    /// The display/body typeface, as one of a closed set of script pairings —
+    /// see <see cref="AppFont"/> for why it is an enum and not a family name.
+    /// Together with <see cref="PrimaryColor"/> this is the whole re-skin
+    /// surface: colour and type.
+    /// </summary>
+    public AppFont FontFamily { get; set; } = AppFont.Jakarta;
+
+    // ── Matching ──
+
+    /// <summary>
+    /// How many minutes an unanswered hail stays open for drivers to pick up.
+    ///
+    /// The admin owns this because it is a market decision, not a technical one:
+    /// a dense city wants a short window so a stale request stops occupying
+    /// drivers, and a thin one wants a long window so a request survives until
+    /// someone comes online. Clamped to
+    /// <see cref="Wanes.Shareds.Constants.MatchRules.MinHailTtlMinutes"/>..<see
+    /// cref="Wanes.Shareds.Constants.MatchRules.MaxHailTtlMinutes"/> on save.
+    /// </summary>
+    public int HailRequestTtlMinutes { get; set; } = MatchRules.DefaultHailTtlMinutes;
 
     // ── Support contact ──
     //

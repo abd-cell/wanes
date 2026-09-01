@@ -4,6 +4,7 @@ import '../../core/theme.dart';
 import '../../models/models.dart';
 import '../../services/services.dart';
 import '../../widgets/wanes_ui.dart';
+import '../../widgets/wanes_motion.dart';
 
 /// A driver's vehicles. Reskinned to the Wanes card language.
 class VehiclesScreen extends StatefulWidget {
@@ -104,7 +105,7 @@ class _VehiclesScreenState extends State<VehiclesScreen> {
             style: const TextStyle(fontWeight: FontWeight.w700)),
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: WanesSpinner())
           : _vehicles.isEmpty
               ? _empty(t)
               : ListView.separated(

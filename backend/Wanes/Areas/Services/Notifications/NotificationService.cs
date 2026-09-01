@@ -1,12 +1,15 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.EntityFrameworkCore;
 using Wanes.Areas.Domain.Notifications;
 using Wanes.Areas.Domain.Requests;
+using Wanes.Areas.Domain.Trips;
 using Wanes.Areas.Domain.Users;
 using Wanes.Areas.Services.Notifications.Models;
+using Wanes.Areas.Services.Users.Availability;
 using Wanes.DataAccess.Repositories;
 using Wanes.DataAccess.UnitOfWorks;
+using Wanes.Shareds.Constants;
 using Wanes.Shareds.Enums;
 using Wanes.Shareds.Models;
 using Wanes.Shareds.Notifications;
@@ -21,6 +24,13 @@ public class NotificationService : INotificationService
     /// <summary>Newest-first page size for the in-app inbox.</summary>
     private const int FeedSize = 50;
 
+    /// <summary>
+    /// Frame name for the hail-closed broadcast. Control frames carry an
+    /// <c>event</c> key that notification frames never have, which is how a
+    /// client tells the two apart on one stream — see <see cref="Stream"/>.
+    /// </summary>
+    private const string RideRequestClosedEvent = "rideRequestClosed";
+
     private readonly IUnitOfWork unitOfWork;
     private readonly ISecurityManager securityManager;
     private readonly IFcmSender fcmSender;
@@ -29,6 +39,8 @@ public class NotificationService : INotificationService
     private readonly IRepository<UserNotification> notificationRepository;
     private readonly IRepository<UserLogin> userLoginRepository;
     private readonly IRepository<User> userRepository;
+    private readonly IRepository<RideRequest> rideRequestRepository;
+    private readonly IDriverAvailabilityService driverAvailabilityService;
 
     public NotificationService(
         IUnitOfWork unitOfWork,
@@ -38,7 +50,9 @@ public class NotificationService : INotificationService
         ILogger<NotificationService> logger,
         IRepository<UserNotification> notificationRepository,
         IRepository<UserLogin> userLoginRepository,
-        IRepository<User> userRepository)
+        IRepository<User> userRepository,
+        IRepository<RideRequest> rideRequestRepository,
+        IDriverAvailabilityService driverAvailabilityService)
     {
         this.unitOfWork = unitOfWork;
         this.securityManager = securityManager;
@@ -48,6 +62,8 @@ public class NotificationService : INotificationService
         this.notificationRepository = notificationRepository;
         this.userLoginRepository = userLoginRepository;
         this.userRepository = userRepository;
+        this.rideRequestRepository = rideRequestRepository;
+        this.driverAvailabilityService = driverAvailabilityService;
     }
 
     public Task Notify(int userId, NotificationTemplate template, object? args = null, object? data = null)
@@ -182,7 +198,11 @@ public class NotificationService : INotificationService
         {
             ["notificationId"] = notification.Id.ToString(),
             ["type"] = notification.Type.ToString(),
-            // Required for a tap to reach the Flutter handler on Android.
+            // Legacy Flutter/FCM convention, kept because older clients look for
+            // it. Modern firebase_messaging ignores it -- and FCM only acts on
+            // click_action inside the *notification* block, not here in data --
+            // so it is inert, not load-bearing. The tap reaches Dart through
+            // onMessageOpenedApp on the launcher activity either way.
             ["click_action"] = "FLUTTER_NOTIFICATION_CLICK",
         };
         if (!string.IsNullOrEmpty(notification.DataJson)) push["data"] = notification.DataJson;
@@ -375,7 +395,7 @@ public class NotificationService : INotificationService
 
     public async Task<int> NotifyNearbyDrivers(RideRequest request)
     {
-        var driverIds = await userRepository
+        var candidates = await userRepository
             .Where(u => u.IsDriver
                         && u.DriverStatus == DriverStatus.Verified
                         && u.IsOnline
@@ -385,11 +405,84 @@ public class NotificationService : INotificationService
             .Select(u => u.Id)
             .ToListAsync();
 
+        // A driver already driving — or already promised to a departure this
+        // close to the one being asked for — cannot serve this hail. The moment
+        // to ask about is the rider's wanted departure, not now: a hail for six
+        // this evening should still reach a driver whose only other trip is at
+        // three. Filtering here rather than only on accept keeps a busy driver's
+        // phone quiet instead of buzzing them about a ride the API would refuse.
+        var departAt = MatchRules.HailDepartureFor(request.WantedDepartAt, DateTime.UtcNow);
+        var busy = await driverAvailabilityService.BusyDrivers(candidates, departAt);
+        var driverIds = candidates.Where(id => !busy.Contains(id)).ToList();
+
         await NotifyMany(driverIds, NotificationTemplate.RideRequestNearbyDriver,
             args: new { origin = request.OriginAddress, destination = request.DestinationAddress },
-            data: new { requestId = request.Id, seats = request.Seats });
+            data: new { requestId = request.Id, seats = request.Seats, departAt });
 
         return driverIds.Count;
+    }
+
+    /// <summary>
+    /// Open hails whose two ends both sit inside the radius that rider asked for,
+    /// departing inside the same window search uses.
+    ///
+    /// Matched on the hail's own wanted departure, which is the departure the
+    /// rider searched for. While a hail was assumed to mean "now" this compared
+    /// RequestedAt instead, so a rider hailing for this evening was never told
+    /// about the evening trip a driver had just posted — the only hails the
+    /// reverse match could ever reach were the ones opened in the last half hour.
+    /// </summary>
+    public async Task NotifyWaitingRiders(Trip trip, User driver)
+    {
+        var now = DateTime.UtcNow;
+        var from = trip.DepartAt - MatchRules.TimeWindow;
+        var to = trip.DepartAt + MatchRules.TimeWindow;
+
+        var riderIds = await rideRequestRepository
+            .Where(r => r.Status == RideRequestStatus.Open
+                        && r.RiderId != trip.DriverId
+                        && (r.ExpiresAt == null || r.ExpiresAt > now)
+                        && r.WantedDepartAt >= from && r.WantedDepartAt <= to
+                        && r.Seats <= trip.SeatsLeft
+                        && r.Origin.Distance(trip.Origin) <= r.RadiusMeters
+                        && r.Destination.Distance(trip.Destination) <= r.RadiusMeters)
+            .Select(r => r.RiderId)
+            .Distinct()
+            .ToListAsync();
+
+        if (riderIds.Count == 0) return;
+
+        await NotifyMany(riderIds, NotificationTemplate.TripMatchedRider,
+            args: new
+            {
+                name = driver.FirstName,
+                origin = trip.OriginAddress,
+                destination = trip.DestinationAddress,
+            },
+            data:
+            new { tripId = trip.Id });
+    }
+
+    public async Task NotifyRideRequestClosed(int requestId, RideRequestStatus reason)
+    {
+        // Best-effort like every other delivery path: a client that misses this
+        // still drops the card when its own countdown runs out, and picks up the
+        // truth on the next refresh. Losing the frame must never fail the cancel
+        // or the accept that produced it.
+        try
+        {
+            var payload = JsonSerializer.Serialize(new
+            {
+                @event = RideRequestClosedEvent,
+                requestId,
+                reason = reason.ToString(),
+            });
+            await sseConnectionManager.BroadcastAsync(payload);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Broadcasting the close of ride request {RequestId} failed.", requestId);
+        }
     }
 
     public async Task<BaseResponse<NotificationFeed>> GetUserNotifications()

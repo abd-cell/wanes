@@ -5,6 +5,7 @@ import '../../core/fare.dart';
 import '../../core/geo.dart';
 import '../../core/l10n.dart';
 import '../../core/places.dart';
+import '../../core/push_service.dart';
 import '../../core/session.dart';
 import '../../core/theme.dart';
 import '../../models/models.dart';
@@ -72,59 +73,146 @@ class _DriverDashboardState extends State<DriverDashboard> {
 
   bool _online = true;
   bool _busyToggle = false;
+  bool _accepting = false;
+  bool _refreshing = false;
   DateTime? _onlineSince;
   List<Trip> _myTrips = [];
   List<RideRequestRow> _incoming = [];
 
+  /// Hails this driver waved away. The server has no decline verb — passing is
+  /// only ever a local act — so remembering them here is the only thing that
+  /// stops the next refresh handing the same card straight back.
+  final Set<int> _declined = {};
+
+  /// The last "online for" figure that reached the screen. The ticker runs once
+  /// a second; this moves once a minute, so it is the cheap test for whether a
+  /// repaint would show anything new.
+  String _onlineLabel = '';
+
   /// Drives the per-request countdown and drops hails once their TTL is up.
   Timer? _tick;
+
+  /// A hail can also end before its countdown does — withdrawn by the rider or
+  /// taken by another driver. The server pushes that; the timer cannot see it.
+  StreamSubscription<RideRequestClosed>? _closed;
 
   @override
   void initState() {
     super.initState();
-    _onlineSince = DateTime.now();
     _refresh();
     _tick = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
-      final before = _incoming.length;
-      _incoming = _incoming.where((r) => r.expiresAt.isAfter(DateTime.now())).toList();
-      setState(() {}); // countdown labels + online hours re-render each second
-      if (before != _incoming.length) _refresh();
+      final live = _incoming.where((r) => r.expiresAt.isAfter(DateTime.now())).toList();
+      final expired = live.length != _incoming.length;
+      final label = _onlineFor;
+      // Repaint only when something on screen actually moved: a countdown is
+      // running, a hail just timed out, or the online-for figure ticked over.
+      // The shell keeps this tab alive in an IndexedStack, so the unconditional
+      // rebuild ran once a second for as long as the app was open — including
+      // while the driver sat on Trips or Profile.
+      if (!expired && live.isEmpty && label == _onlineLabel) return;
+      setState(() {
+        _incoming = live;
+        _onlineLabel = label;
+      });
+      if (expired) _refresh();
+    });
+    _closed = PushService.instance.requestClosed.listen((closed) {
+      if (!mounted) return;
+      if (!_incoming.any((r) => r.id == closed.requestId)) return;
+      setState(() => _incoming.removeWhere((r) => r.id == closed.requestId));
     });
   }
 
   @override
   void dispose() {
     _tick?.cancel();
+    _closed?.cancel();
     super.dispose();
   }
 
-  Future<void> _refresh() async {
-    if (_online) {
-      await _presence.updateLocation(_here.lat, _here.lng, online: true);
+  /// The trip the driver is out on, if any. One driver drives one car, so while
+  /// this is set they are not available for a second ride — the same rule the
+  /// server enforces, mirrored here so the dashboard never offers a tap the API
+  /// would refuse.
+  Trip? get _tripUnderway {
+    for (final trip in _myTrips) {
+      if (trip.isUnderway) return trip;
     }
-    final trips = await _trips.myTrips();
-    final reqs = _online ? await _requests.nearby(_here.lat, _here.lng) : null;
-    if (!mounted) return;
-    setState(() {
-      _myTrips = trips.data ?? [];
-      _incoming = (reqs?.data ?? [])
-          .where((r) => r.expiresAt.isAfter(DateTime.now()))
-          .toList();
-    });
+    return null;
   }
+
+  Future<void> _refresh() async {
+    // The ticker fires a refresh whenever a hail times out, which can land on
+    // top of a pull-to-refresh. Two runs race their responses into the same
+    // fields, and the loser can put an already-expired hail back on screen.
+    if (_refreshing) return;
+    _refreshing = true;
+    try {
+      // Trips first: whether the driver is out on one decides both calls below.
+      final trips = await _trips.myTrips();
+      // A failed read is not an empty garage. Keeping the last good list matters
+      // most for [_tripUnderway]: dropping it would clear the on-trip banner and
+      // unlock "Post a trip" in the middle of a ride, over a single timeout.
+      final myTrips = trips.success ? (trips.data ?? []) : _myTrips;
+      final underway = myTrips.any((t) => t.isUnderway);
+
+      // The location still goes up while driving — that is what the riders in
+      // the car are tracking. Only the *online* claim is withdrawn: a driver on
+      // the road is not available for another ride, and the server refuses to
+      // raise the flag anyway.
+      var online = _online;
+      if (online || underway) {
+        final claiming = online && !underway;
+        final presence =
+            await _presence.updateLocation(_here.lat, _here.lng, online: claiming);
+        // The banner states the server's view of this driver, not this screen's.
+        // A claim the server would not take must not leave it reading
+        // "accepting requests" when no hail can ever arrive.
+        if (claiming && !presence.success) online = false;
+      }
+      final reqs = online && !underway ? await _requests.nearby(_here.lat, _here.lng) : null;
+      if (!mounted) return;
+      setState(() {
+        _myTrips = myTrips;
+        _online = online;
+        _onlineSince = online ? (_onlineSince ?? DateTime.now()) : null;
+        _incoming = _answerable(reqs == null
+            ? const <RideRequestRow>[]
+            : reqs.success
+                ? (reqs.data ?? [])
+                : _incoming);
+      });
+    } finally {
+      _refreshing = false;
+    }
+  }
+
+  /// Hails still worth showing: inside their window, and not one already passed
+  /// on. Both filters have to run over every list the server hands back, or a
+  /// declined card comes straight back on the next refresh.
+  List<RideRequestRow> _answerable(List<RideRequestRow> rows) => rows
+      .where((r) => !_declined.contains(r.id) && r.expiresAt.isAfter(DateTime.now()))
+      .toList();
 
   Future<void> _toggleOnline(bool value) async {
     setState(() => _busyToggle = true);
-    if (value) {
-      await _presence.updateLocation(_here.lat, _here.lng, online: true);
-    } else {
-      await _presence.goOffline();
-    }
+    final res = value
+        ? await _presence.updateLocation(_here.lat, _here.lng, online: true)
+        : await _presence.goOffline();
     if (!mounted) return;
+    setState(() => _busyToggle = false);
+    // The switch reports the server's answer, not the tap. A refused go-online
+    // (unverified driver, no vehicle, already out on a trip) used to flip it
+    // anyway and leave the driver waiting on hails that could never arrive.
+    if (!res.success) {
+      WanesAlerts.failure(context, res,
+          title: context.tr(value ? 'driver.goOnlineFailed' : 'driver.goOfflineFailed'),
+          onRetry: () => _toggleOnline(value));
+      return;
+    }
     setState(() {
       _online = value;
-      _busyToggle = false;
       _onlineSince = value ? DateTime.now() : null;
       if (!value) _incoming = [];
     });
@@ -210,8 +298,8 @@ class _DriverDashboardState extends State<DriverDashboard> {
                     child: HailCard(
                       request: r,
                       from: _here,
-                      onAccept: () => _acceptRequest(r),
-                      onDecline: () => setState(() => _incoming.removeWhere((x) => x.id == r.id)),
+                      onAccept: _accepting ? null : () => _acceptRequest(r),
+                      onDecline: _accepting ? null : () => _decline(r),
                       onTap: _openRequests,
                     ),
                   )),
@@ -236,65 +324,100 @@ class _DriverDashboardState extends State<DriverDashboard> {
       Navigator.push(context, MaterialPageRoute(builder: (_) => const RequestsScreen())).then((_) => _refresh());
 
   Future<void> _acceptRequest(RideRequestRow r) async {
+    // One driver drives one car: a double tap, or a tap on a second card while
+    // the first is still in flight, is an accept the server is bound to refuse.
+    if (_accepting) return;
+    setState(() => _accepting = true);
     final res = await _requests.accept(r.id);
     if (!mounted) return;
+    setState(() {
+      _accepting = false;
+      if (res.success) _incoming.removeWhere((x) => x.id == r.id);
+    });
     if (res.success) {
       WanesAlerts.success(context, context.tr('driver.requestAccepted'),
           message: context.tr('driver.requestAcceptedBody'));
+      _refresh();
     } else {
       WanesAlerts.failure(context, res,
           title: context.tr('driver.acceptFailed'),
           onRetry: () => _acceptRequest(r));
     }
-    if (res.success) {
-      setState(() => _incoming.removeWhere((x) => x.id == r.id));
-      _refresh();
-    }
   }
 
-  /// Solid-teal "You're online" banner with the pill toggle (design 08).
+  /// Passing on a hail. Local by design — there is no decline verb — but it has
+  /// to outlive the card, so the id goes into [_declined] as well.
+  void _decline(RideRequestRow r) => setState(() {
+        _declined.add(r.id);
+        _incoming.removeWhere((x) => x.id == r.id);
+      });
+
+  /// Solid-teal "You're online" banner with the pill toggle (design 08), plus a
+  /// third state the design did not have: out on a trip, where availability is
+  /// not the driver's to set until they finish. Tapping that one opens Trips.
   Widget _onlineBanner(WanesTokens t) {
-    final on = _online;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-      decoration: BoxDecoration(
-        color: on ? t.teal : t.surface,
+    final busy = _tripUnderway != null;
+    final on = _online && !busy;
+    return Material(
+      color: on ? t.teal : t.surface,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        border: on ? null : Border.all(color: t.border),
-        boxShadow: on
-            ? [BoxShadow(color: t.teal, blurRadius: 26, offset: const Offset(0, 12), spreadRadius: -12)]
-            : null,
-      ),
-      child: Row(children: [
-        if (on)
-          PulseDot(color: t.onTeal, size: 10, duration: const Duration(milliseconds: 1400))
-        else
-          Container(width: 10, height: 10, decoration: BoxDecoration(color: t.ink2, shape: BoxShape.circle)),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(context.tr(on ? 'driver.online' : 'driver.offline'),
-                style: TextStyle(
-                    fontWeight: FontWeight.w800, fontSize: 15, color: on ? t.onTeal : t.ink)),
-            Text(context.tr(on ? 'driver.acceptingRequests' : 'driver.notReceivingRequests'),
-                style: WanesTheme.mono(
-                    size: 11,
-                    weight: FontWeight.w500,
-                    color: on ? const Color(0xFF0A3B33) : t.ink2,
-                    spacing: 0)),
+        onTap: busy ? widget.onGoTrips : null,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: on ? null : Border.all(color: busy ? t.amber : t.border),
+            boxShadow: on
+                ? [BoxShadow(color: t.teal, blurRadius: 26, offset: const Offset(0, 12), spreadRadius: -12)]
+                : null,
+          ),
+          child: Row(children: [
+            if (on || busy)
+              PulseDot(
+                  color: busy ? t.amber : t.onTeal,
+                  size: 10,
+                  duration: const Duration(milliseconds: 1400))
+            else
+              Container(width: 10, height: 10, decoration: BoxDecoration(color: t.ink2, shape: BoxShape.circle)),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(
+                    context.tr(busy
+                        ? 'driver.onTrip'
+                        : on
+                            ? 'driver.online'
+                            : 'driver.offline'),
+                    style: TextStyle(
+                        fontWeight: FontWeight.w800, fontSize: 15, color: on ? t.onTeal : t.ink)),
+                Text(
+                    context.tr(busy
+                        ? 'driver.onTripHint'
+                        : on
+                            ? 'driver.acceptingRequests'
+                            : 'driver.notReceivingRequests'),
+                    style: WanesTheme.mono(
+                        size: 11,
+                        weight: FontWeight.w500,
+                        color: on ? const Color(0xFF0A3B33) : t.ink2,
+                        spacing: 0)),
+              ]),
+            ),
+            const SizedBox(width: 12),
+            WanesPillSwitch(
+              value: on,
+              busy: _busyToggle,
+              onChanged: _busyToggle || busy ? null : _toggleOnline,
+              onTrack: t.onTeal,
+              onKnob: t.teal,
+              offTrack: t.border,
+              offKnob: t.surface2,
+            ),
           ]),
         ),
-        const SizedBox(width: 12),
-        WanesPillSwitch(
-          value: on,
-          busy: _busyToggle,
-          onChanged: _busyToggle ? null : _toggleOnline,
-          onTrack: t.onTeal,
-          onKnob: t.teal,
-          offTrack: t.border,
-          offKnob: t.surface2,
-        ),
-      ]),
+      ),
     );
   }
 
@@ -341,21 +464,28 @@ class _DriverDashboardState extends State<DriverDashboard> {
   /// The ink (near-black) CTA — deliberately not the teal button; the design
   /// reserves teal for the accept/confirm actions.
   Widget _postTripButton(WanesTokens t) {
+    // The server refuses a new trip while the driver is out on one, so the
+    // button says so rather than opening a form that cannot save.
+    final busy = _tripUnderway != null;
     return Material(
-      color: t.ink,
+      color: busy ? t.surface2 : t.ink,
       borderRadius: BorderRadius.circular(14),
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
-        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PostTripScreen()))
-            .then((_) => _refresh()),
+        onTap: busy
+            ? null
+            : () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PostTripScreen()))
+                .then((_) => _refresh()),
         child: Container(
           height: 52,
           alignment: Alignment.center,
           child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Icon(Icons.add_rounded, size: 18, color: t.bg),
+            Icon(busy ? Icons.lock_outline_rounded : Icons.add_rounded,
+                size: 18, color: busy ? t.ink2 : t.bg),
             const SizedBox(width: 9),
-            Text(context.tr('driver.postTrip'),
-                style: TextStyle(color: t.bg, fontWeight: FontWeight.w800, fontSize: 15)),
+            Text(context.tr(busy ? 'driver.postTripBlocked' : 'driver.postTrip'),
+                style: TextStyle(
+                    color: busy ? t.ink2 : t.bg, fontWeight: FontWeight.w800, fontSize: 15)),
           ]),
         ),
       ),
@@ -370,17 +500,25 @@ class _DriverDashboardState extends State<DriverDashboard> {
     return LiveCaption(context.trPlural('driver.incomingCount', _incoming.length));
   }
 
-  Widget _noRequests(WanesTokens t) => WanesCard(
-        child: Row(children: [
-          Icon(Icons.notifications_none_rounded, color: t.ink2, size: 20),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-                context.tr(_online ? 'driver.noNearbyRequests' : 'driver.goOnlineHint'),
-                style: TextStyle(color: t.ink2, fontSize: 13.5)),
-          ),
-        ]),
-      );
+  Widget _noRequests(WanesTokens t) {
+    final busy = _tripUnderway != null;
+    return WanesCard(
+      child: Row(children: [
+        Icon(busy ? Icons.pause_circle_outline_rounded : Icons.notifications_none_rounded,
+            color: t.ink2, size: 20),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+              context.tr(busy
+                  ? 'driver.requestsPausedOnTrip'
+                  : _online
+                      ? 'driver.noNearbyRequests'
+                      : 'driver.goOnlineHint'),
+              style: TextStyle(color: t.ink2, fontSize: 13.5)),
+        ),
+      ]),
+    );
+  }
 }
 
 /// The amber-edged incoming-request card from screen 08 — rider, route, the
@@ -397,7 +535,9 @@ class HailCard extends StatelessWidget {
 
   final RideRequestRow request;
   final Place from;
-  final VoidCallback onAccept;
+
+  /// Null while another accept is in flight — one driver can only take one.
+  final VoidCallback? onAccept;
   final VoidCallback? onDecline;
   final VoidCallback? onTap;
 

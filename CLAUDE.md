@@ -147,7 +147,7 @@ Standalone components + signals, lazy `loadComponent` routes, SSR enabled.
 ## Flutter app architecture
 
 Lean stack on purpose — no state-management package. `http` + `shared_preferences` + `intl`,
-plus `flutter_map`, `firebase_messaging` and `google_fonts`.
+plus `flutter_map`, `firebase_messaging`, `geolocator` and `google_fonts`.
 
 - **Layers**: `core/` (infrastructure) → `services/` (one class per API area, all in
   `services/services.dart`) → `features/` (screens) → `widgets/` (the UI kit).
@@ -162,7 +162,17 @@ plus `flutter_map`, `firebase_messaging` and `google_fonts`.
   `WanesTokens.of(context)`. Don't hardcode colours in screens.
 - **UI kit**: `widgets/wanes_ui.dart` (components), `wanes_motion.dart` (the prototype's
   animations), `wanes_alerts.dart` (toasts / error panel / inline banner). **Never use
-  `SnackBar`** — go through `WanesAlerts`.
+  `SnackBar`** — go through `WanesAlerts` — and **never `CircularProgressIndicator`**: the
+  app's loader is `WanesSpinner` (`WanesSpinner.mono(colour)` inside a filled button), with
+  `WanesOrbitLoader` ringing the mark on the splash.
+- **Location**: `core/device_location.dart` wraps `geolocator` and never throws — every
+  outcome is a `LocationFix` carrying either coordinates or a typed
+  `LocationFailure` with its own copy. A good fix is cached for two minutes and shared
+  between concurrent callers, so two taps can't raise two OS prompts. Nothing prompts
+  on its own: only the picker's explicit "use my current location" row asks. Search is
+  geocoded through `core/geocoding.dart` (Nominatim `/search` + `/reverse`, the reverse
+  URL derived from `GEOCODER_URL`), biased to a viewbox around the rider and re-ranked
+  by distance when a fix is known.
 - **i18n**: flat key→text maps in `lib/l10n/strings_{en,ar}.dart`, looked up with
   `context.tr('some.key')` and `{placeholder}` interpolation; counted nouns go through
   `AppLocalizations.plural` (full CLDR categories for Arabic). Add every key to **both** maps —

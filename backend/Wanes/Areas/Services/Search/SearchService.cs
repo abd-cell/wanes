@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using NetTopologySuite.Geometries;
 using Wanes.Areas.Domain.Bookings;
 using Wanes.Areas.Domain.Requests;
@@ -6,6 +6,7 @@ using Wanes.Areas.Domain.Trips;
 using Wanes.Areas.Domain.Users;
 using Wanes.Areas.Domain.Vehicles;
 using Wanes.Areas.Services.Audit;
+using Wanes.Areas.Services.Configuration;
 using Wanes.Areas.Services.Notifications;
 using Wanes.Areas.Services.Search.Models;
 using Wanes.Areas.Services.Trips.Models;
@@ -30,6 +31,7 @@ public class SearchService : ISearchService
     private readonly ISecurityManager securityManager;
     private readonly IAuditService auditService;
     private readonly INotificationService notificationService;
+    private readonly IAppConfigurationService appConfigurationService;
     private readonly IRepository<Trip> tripRepository;
     private readonly IRepository<User> userRepository;
     private readonly IRepository<Vehicle> vehicleRepository;
@@ -41,6 +43,7 @@ public class SearchService : ISearchService
         ISecurityManager securityManager,
         IAuditService auditService,
         INotificationService notificationService,
+        IAppConfigurationService appConfigurationService,
         IRepository<Trip> tripRepository,
         IRepository<User> userRepository,
         IRepository<Vehicle> vehicleRepository,
@@ -51,6 +54,7 @@ public class SearchService : ISearchService
         this.securityManager = securityManager;
         this.auditService = auditService;
         this.notificationService = notificationService;
+        this.appConfigurationService = appConfigurationService;
         this.tripRepository = tripRepository;
         this.userRepository = userRepository;
         this.vehicleRepository = vehicleRepository;
@@ -70,6 +74,7 @@ public class SearchService : ISearchService
         var destination = GeoFactory.Point(input.Destination.Lat, input.Destination.Lng);
 
         var now = DateTime.UtcNow;
+        var boardingFloor = now - MatchRules.BoardingGrace;
         var from = input.When - MatchRules.TimeWindow;
         var to = input.When + MatchRules.TimeWindow;
 
@@ -94,10 +99,16 @@ public class SearchService : ISearchService
                         && !bookedTripIds.Contains(t.Id)
                         // A disabled account is not driving anyone anywhere.
                         && (t.Driver == null || !t.Driver.IsDisabled)
-                        // The window reaches half an hour into the past, so a trip
-                        // that already left -- and whose driver simply never pressed
-                        // start -- would otherwise still be offered as bookable.
-                        && t.DepartAt > now
+                        // The search window reaches half an hour into the past, so
+                        // without a floor here a trip from this morning that was
+                        // never started would still be offered as bookable.
+                        //
+                        // The floor is a short grace rather than "now": a Posted
+                        // trip a few minutes past its departure has not left, it is
+                        // boarding — the driver is late, or is a hail-accepted
+                        // driver still on their way to the first pickup. Excluding
+                        // those made the hail trip unjoinable by anyone else.
+                        && t.DepartAt > boardingFloor
                         && t.DepartAt >= from && t.DepartAt <= to
                         && t.Origin.IsWithinDistance(origin, matchRadius)
                         && t.Destination.IsWithinDistance(destination, matchRadius));
@@ -137,6 +148,15 @@ public class SearchService : ISearchService
         }
 
         // no match → open a ride request (HAIL)
+        //
+        // How long it stays open is the admin's call, not a constant: a dense
+        // city wants a short window, a thin one a long window. Get() never fails
+        // and falls back to the shipped default, so a missing settings row costs
+        // the hail nothing.
+        var settings = await appConfigurationService.Get();
+        var ttl = MatchRules.HailTtlFor(
+            settings.Data?.HailRequestTtlMinutes ?? MatchRules.DefaultHailTtlMinutes);
+
         var request = new RideRequest
         {
             RiderId = riderId,
@@ -145,10 +165,17 @@ public class SearchService : ISearchService
             DestinationAddress = input.Destination.Address,
             Destination = destination,
             RequestedAt = DateTime.UtcNow,
+            // The departure the rider asked for, not the instant they asked.
+            // Searching for six this evening and matching nothing is a hail for
+            // six — a driver who takes it is agreeing to that departure, and the
+            // trip Accept creates leaves then. Normalised through MatchRules so
+            // the ordinary "leaving now" hail still carries a departure a driver
+            // can physically reach.
+            WantedDepartAt = MatchRules.HailDepartureFor(input.When, now),
             Seats = input.Seats,
             RadiusMeters = matchRadius,
             Status = RideRequestStatus.Open,
-            ExpiresAt = DateTime.UtcNow.Add(MatchRules.HailTtl),
+            ExpiresAt = DateTime.UtcNow.Add(ttl),
         };
         rideRequestRepository.Create(request);
         await unitOfWork.SaveAsync();
@@ -162,6 +189,7 @@ public class SearchService : ISearchService
             Mode = SearchMode.Hail,
             RideRequestId = request.Id,
             DriversNotified = notified,
+            RideRequestExpiresAt = request.ExpiresAt,
         });
     }
 

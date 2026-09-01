@@ -8,7 +8,17 @@ import 'package:wanes_app/models/models.dart';
 /// The admin-controlled configuration: how a brand colour turns into the theme,
 /// and how the currency settings turn into the strings shown next to a price.
 void main() {
-  tearDown(() => AppConfigController.config.value = AppConfig.fallback);
+  // The typeface tests build real GoogleFonts styles, which reach for the asset
+  // bundle to see whether a face is already on the device. Without a binding
+  // that lookup prints a warning on every call.
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  tearDown(() {
+    AppConfigController.config.value = AppConfig.fallback;
+    // Static, so a test that switched to Arabic type would otherwise leak the
+    // flag into every test that runs after it.
+    WanesTheme.arabic = false;
+  });
 
   group('parseHexColor', () {
     test('accepts the shapes the API and the CMS can produce', () {
@@ -50,6 +60,77 @@ void main() {
       expect(c.currencySymbol, AppConfig.fallback.currencySymbol);
       expect(c.currencyDecimals, 3, reason: 'clamped into 0..3');
       expect(c.primaryColor, AppConfig.fallback.primaryColor);
+    });
+  });
+
+  group('typeface', () {
+    test('fromJson reads the configured font', () {
+      expect(AppConfig.fromJson({'fontFamily': 3}).font, AppFont.rubik);
+      expect(AppConfig.fromJson({'fontFamily': 6}).font, AppFont.system);
+    });
+
+    test('a font this build does not know falls back to the shipped pairing', () {
+      // 99 is a newer server; 0 is a settings row written before the column
+      // existed. Either way the app must still have a face to render with.
+      expect(AppConfig.fromJson({'fontFamily': 99}).font, AppFont.jakarta);
+      expect(AppConfig.fromJson({'fontFamily': 0}).font, AppFont.jakarta);
+      expect(AppConfig.fromJson(const {}).font, AppFont.jakarta);
+    });
+
+    test('the choice survives the shared_preferences round trip', () {
+      const before = AppConfig(font: AppFont.tajawal);
+      expect(AppConfig.fromJson(before.toJson()).font, AppFont.tajawal);
+    });
+
+    /// GoogleFonts names the loaded variant ("Cairo_regular") and lists the
+    /// bare family as the fallback, so the family is what a test can pin. It
+    /// spells the family without spaces ("PlusJakartaSans").
+    List<String> families(TextStyle style) => style.fontFamilyFallback ?? const [];
+
+    test('each language draws in its own half of the configured pairing', () {
+      AppConfigController.config.value = const AppConfig(font: AppFont.inter);
+
+      WanesTheme.arabic = false;
+      expect(families(WanesTheme.display()), contains('Inter'));
+
+      WanesTheme.arabic = true;
+      expect(families(WanesTheme.display()), contains('IBMPlexSansArabic'));
+    });
+
+    test('changing the setting changes the face', () {
+      WanesTheme.arabic = false;
+
+      AppConfigController.config.value = const AppConfig(font: AppFont.jakarta);
+      expect(families(WanesTheme.display()), contains('PlusJakartaSans'));
+
+      AppConfigController.config.value = const AppConfig(font: AppFont.noto);
+      expect(families(WanesTheme.display()), contains('NotoSans'));
+    });
+
+    test('the system font asks for no family at all, so the device picks', () {
+      AppConfigController.config.value = const AppConfig(font: AppFont.system);
+      WanesTheme.arabic = false;
+      expect(WanesTheme.display().fontFamily, isNull);
+      WanesTheme.arabic = true;
+      expect(WanesTheme.display().fontFamily, isNull);
+    });
+
+    test('the mono/data face is fixed — a font choice must not move figures', () {
+      WanesTheme.arabic = false;
+      for (final font in AppFont.values) {
+        AppConfigController.config.value = AppConfig(font: font);
+        expect(families(WanesTheme.mono()), contains('JetBrainsMono'),
+            reason: 'mono should stay put for $font');
+      }
+    });
+
+    test('displayFor draws a named language in its own face', () {
+      AppConfigController.config.value = const AppConfig(font: AppFont.jakarta);
+      // The language picker lists both names at once, so this must not depend
+      // on which language is currently active.
+      WanesTheme.arabic = false;
+      expect(families(WanesTheme.displayFor('ar')), contains('Cairo'));
+      expect(families(WanesTheme.displayFor('en')), contains('PlusJakartaSans'));
     });
   });
 

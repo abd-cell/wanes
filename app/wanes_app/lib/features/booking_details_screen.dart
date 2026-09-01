@@ -10,6 +10,7 @@ import '../widgets/wanes_ui.dart';
 import 'live_trip_screen.dart';
 import 'rate_screen.dart';
 import 'trip_details_screen.dart';
+import '../widgets/wanes_motion.dart';
 
 /// Booking details — one seat the rider holds: the reference they quote to the
 /// driver, the route and time, what it costs, and the actions still open on it
@@ -105,6 +106,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
         destinationAddress: _booking.destinationAddress,
         departAt: _booking.departAt,
         tripStatus: _booking.tripStatus,
+        driverPhone: _booking.driverPhone,
       );
     });
     WanesAlerts.success(context, context.tr('bookings.cancelled'));
@@ -126,12 +128,34 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
         ),
       );
 
-  void _track() => Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => LiveTripScreen(trip: _trip!, booking: _booking),
-        ),
-      );
+  /// Watching the ride is not a read-only errand: the driver arrives, starts
+  /// and finishes the trip while the rider is on that screen. Re-read the seat
+  /// on the way back, or this screen keeps offering "Track trip" — and keeps
+  /// withholding the rating — for a booking that has already finished.
+  Future<void> _track() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LiveTripScreen(trip: _trip!, booking: _booking),
+      ),
+    );
+    if (!mounted) return;
+    await _reloadBooking();
+    if (mounted) _loadTrip();
+  }
+
+  /// The server has no "get one booking" verb, so the rider's own list is the
+  /// only way back to a single seat.
+  Future<void> _reloadBooking() async {
+    final res = await _bookings.myBookings();
+    if (!mounted) return;
+    final fresh = res.data?.where((b) => b.id == _booking.id).firstOrNull;
+    if (fresh == null || fresh.status == _booking.status) return;
+    setState(() {
+      _booking = fresh;
+      _changed = true;
+    });
+  }
 
   void _rate() => Navigator.push(
         context,
@@ -149,9 +173,12 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
   Widget build(BuildContext context) {
     final t = WanesTokens.of(context);
     return PopScope(
-      canPop: false,
+      // Only stand in the way once there is something to report. Blocking every
+      // pop cost the rider the iOS swipe-back gesture and Android's predictive
+      // back on a screen that usually has nothing to hand over.
+      canPop: !_changed,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) Navigator.pop(context, _changed);
+        if (!didPop) Navigator.pop(context, true);
       },
       child: Scaffold(
         backgroundColor: t.bg,
@@ -191,11 +218,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
                     child: _busy
-                        ? SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2.2, valueColor: AlwaysStoppedAnimation(t.alert)))
+                        ? WanesSpinner.mono(t.alert, size: 20)
                         : Text(context.tr('bookings.cancelAction'),
                             style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
                   ),
@@ -334,7 +357,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
             width: 20,
             height: 20,
             child: _loadingTrip
-                ? const CircularProgressIndicator(strokeWidth: 2.2)
+                ? const WanesSpinner(size: 20)
                 : Icon(Icons.person_off_outlined, size: 20, color: t.ink2),
           ),
           const SizedBox(width: 12),

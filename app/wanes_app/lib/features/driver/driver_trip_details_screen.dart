@@ -143,11 +143,16 @@ class _DriverTripDetailsScreenState extends State<DriverTripDetailsScreen> {
                       if (_riders.isNotEmpty)
                         StatusPill(label: '${_riders.length}', color: t.teal, dot: false),
                     ]),
+                    if (_riders.any((r) => r.isLive) && !_trip.isFinished) ...[
+                      const SizedBox(height: 4),
+                      Text(context.tr('driver.seatTracking'),
+                          style: TextStyle(fontSize: 12, color: t.ink2)),
+                    ],
                     const SizedBox(height: 10),
                     if (_loading && _riders.isEmpty)
                       const Padding(
                         padding: EdgeInsets.symmetric(vertical: 28),
-                        child: Center(child: CircularProgressIndicator()),
+                        child: Center(child: WanesSpinner()),
                       )
                     else if (_riders.isEmpty)
                       _noRiders(t)
@@ -372,6 +377,14 @@ class _DriverTripDetailsScreenState extends State<DriverTripDetailsScreen> {
                   icon: Icons.call_outlined, size: 36, onTap: () => _callRider(rider)),
             ),
           ]),
+          // This rider's own progress. Each move notifies just them and is what
+          // the trip's status is then read back from, so a driver working
+          // through a carpool never has to touch the trip-wide button.
+          if (!_trip.isFinished) ...[
+            const SizedBox(height: 10),
+            SeatStepButtons(
+                tripId: _trip.id, seat: rider, onChanged: _onTripChanged),
+          ],
         ],
       ]),
     );

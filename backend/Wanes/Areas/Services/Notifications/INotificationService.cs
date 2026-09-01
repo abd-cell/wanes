@@ -1,4 +1,6 @@
-using Wanes.Areas.Domain.Requests;
+﻿using Wanes.Areas.Domain.Requests;
+using Wanes.Areas.Domain.Trips;
+using Wanes.Areas.Domain.Users;
 using Wanes.Areas.Services.Notifications.Models;
 using Wanes.Shareds.Attributes;
 using Wanes.Shareds.Enums;
@@ -51,8 +53,38 @@ public interface INotificationService
     Task<int> NotifyUsersRaw(IEnumerable<int> userIds, NotificationType type, LocalizedText text,
         string? dataJson);
 
-    /// <summary>Notifies verified, online drivers near the request origin. Returns the count reached.</summary>
+    /// <summary>
+    /// Notifies verified, online drivers near the request origin who are free to
+    /// take it — a driver mid-trip, or already promised to a departure this
+    /// close, is skipped. Returns the count reached.
+    /// </summary>
     Task<int> NotifyNearbyDrivers(RideRequest request);
+
+    /// <summary>
+    /// Tells every connected client that a hail is no longer open, so a driver
+    /// holding its card drops it instead of tapping Accept on something that
+    /// cannot be accepted.
+    ///
+    /// Deliberately not a notification: it writes no inbox row and raises no
+    /// push. A driver does not need to be told, out of app and by name, that a
+    /// request they never answered went away — they need the card gone the
+    /// moment it does. <paramref name="reason"/> is the status the request
+    /// landed on (Cancelled / Matched / Expired), which is what the driver's
+    /// screen words its one-line notice from.
+    /// </summary>
+    Task NotifyRideRequestClosed(int requestId, RideRequestStatus reason);
+
+    /// <summary>
+    /// The reverse of <see cref="NotifyNearbyDrivers"/>: tells riders sitting on
+    /// an open hail that a trip they could take now exists. Best-effort, and
+    /// called after the trip is committed.
+    ///
+    /// Both routes into a new trip use it — a driver posting one, and a driver
+    /// accepting a hail. The second matters as much as the first: that trip has
+    /// the seats the accepting driver did not sell to the hailing rider, and
+    /// without this nobody else ever learns it is there.
+    /// </summary>
+    Task NotifyWaitingRiders(Trip trip, User driver);
 
     Task<BaseResponse<NotificationFeed>> GetUserNotifications();
     Task<BaseResponse> MarkRead(int id);

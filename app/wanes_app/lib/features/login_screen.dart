@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../core/app_response.dart';
 import '../core/l10n.dart';
+import '../core/notification_router.dart';
 import '../core/theme.dart';
 import '../services/services.dart';
 import '../widgets/wanes_logo.dart';
@@ -97,6 +98,10 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
     Navigator.of(context).pushReplacementNamed('/home');
+
+    // A notification tapped before there was a session to act on it — the
+    // router held it rather than dropping the user on the login screen.
+    NotificationRouter.drainPending();
   }
 
   /// Transport problems get the full-screen "Connection lost" card with a

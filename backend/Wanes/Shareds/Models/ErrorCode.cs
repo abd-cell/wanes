@@ -30,6 +30,12 @@ public enum ErrorCode
     DriverNotVerified = 200,
     VehicleNotFound = 202,
 
+    /// <summary>The driver is out on a trip, so cannot take on another ride.</summary>
+    DriverOnActiveTrip = 203,
+
+    /// <summary>The driver already has a trip departing at about the same time.</summary>
+    DriverTripTimeConflict = 204,
+
     // Trips
     TripNotFound = 300,
     TripNotBookable = 301,

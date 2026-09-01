@@ -1,8 +1,9 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Wanes.Areas.Domain.Requests;
 using Wanes.Areas.Domain.Trips;
 using Wanes.Areas.Services.Audit;
 using Wanes.Areas.Services.Management.Models;
+using Wanes.Areas.Services.Notifications;
 using Wanes.DataAccess.Repositories;
 using Wanes.DataAccess.UnitOfWorks;
 using Wanes.Shareds.Enums;
@@ -15,17 +16,20 @@ public class AdminRideRequestService : IAdminRideRequestService
 {
     private readonly IUnitOfWork unitOfWork;
     private readonly IAuditService auditService;
+    private readonly INotificationService notificationService;
     private readonly IRepository<RideRequest> rideRequestRepository;
     private readonly IRepository<Trip> tripRepository;
 
     public AdminRideRequestService(
         IUnitOfWork unitOfWork,
         IAuditService auditService,
+        INotificationService notificationService,
         IRepository<RideRequest> rideRequestRepository,
         IRepository<Trip> tripRepository)
     {
         this.unitOfWork = unitOfWork;
         this.auditService = auditService;
+        this.notificationService = notificationService;
         this.rideRequestRepository = rideRequestRepository;
         this.tripRepository = tripRepository;
     }
@@ -74,10 +78,18 @@ public class AdminRideRequestService : IAdminRideRequestService
         var request = await rideRequestRepository.GetByIdAsync(id);
         if (request == null) return new BaseResponse<RideRequestRow>(default, ErrorCode.NotFound);
 
+        var wasOpen = request.Status == RideRequestStatus.Open;
+
         Apply(request, input);
         rideRequestRepository.Update(request);
         await unitOfWork.SaveAsync();
         await auditService.LogAsync("admin.requests.update", nameof(RideRequest), request.Id);
+
+        // An admin closing a request from the console has to reach the drivers'
+        // screens too, or the card outlives the row it came from.
+        if (wasOpen && request.Status != RideRequestStatus.Open)
+            await notificationService.NotifyRideRequestClosed(request.Id, request.Status);
+
         return await Get(request.Id);
     }
 
@@ -86,9 +98,13 @@ public class AdminRideRequestService : IAdminRideRequestService
         var request = await rideRequestRepository.GetByIdAsync(id);
         if (request == null) return new BaseResponse(ErrorCode.NotFound);
 
+        var wasOpen = request.Status == RideRequestStatus.Open;
+
         rideRequestRepository.SoftDelete(request);
         await unitOfWork.SaveAsync();
         await auditService.LogAsync("admin.requests.delete", nameof(RideRequest), id);
+
+        if (wasOpen) await notificationService.NotifyRideRequestClosed(id, RideRequestStatus.Cancelled);
         return new BaseResponse();
     }
 
@@ -103,6 +119,9 @@ public class AdminRideRequestService : IAdminRideRequestService
         request.RadiusMeters = input.RadiusMeters;
         request.Status = input.Status;
         request.MatchedTripId = input.MatchedTripId;
+        // Nullable on the input so an admin editing an older row -- or one
+        // created before hails carried a departure -- does not silently blank it.
+        if (input.WantedDepartAt != null) request.WantedDepartAt = input.WantedDepartAt.Value;
         request.ExpiresAt = input.ExpiresAt;
     }
 

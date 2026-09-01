@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Wanes.Shareds.Attributes;
 using Wanes.Shareds.Security;
 using Wanes.Shareds.SSE;
@@ -23,12 +23,15 @@ public class SseController : ControllerBase
     public async Task Stream(CancellationToken ct)
     {
         var userId = _security.RequireUserId();
+        // Carried so logout can end this exact stream. Without it a signed-out
+        // device keeps the socket, and with it the account's live notifications.
+        var sessionKey = _security.SessionKey ?? string.Empty;
 
         Response.Headers.Append("Content-Type", "text/event-stream");
         Response.Headers.Append("Cache-Control", "no-cache");
         Response.Headers.Append("Connection", "keep-alive");
 
-        var channel = _sse.Connect(userId);
+        var channel = _sse.Connect(userId, sessionKey);
         try
         {
             await Response.WriteAsync(": connected\n\n", ct);

@@ -46,6 +46,16 @@ export interface AppConfiguration {
   /** Brand primary as `#RRGGBB`; the other brand shades are derived from it. */
   primaryColor: string;
   /**
+   * The display/body typeface, as a pairing of a Latin and an Arabic face —
+   * see `core/services/app-font.ts` for what each value resolves to here.
+   */
+  fontFamily: AppFont;
+  /**
+   * Minutes an unanswered hail stays open before it expires and stops being
+   * offered to drivers. 1-240; the backend clamps anything outside that.
+   */
+  hailRequestTtlMinutes: number;
+  /**
    * Support channels the app's "Contact us" screen offers. Each one is optional
    * and empty until an admin fills it in; a client hides the channel it has no
    * value for rather than showing a row that goes nowhere.
@@ -62,6 +72,26 @@ export interface AppConfiguration {
 export enum CurrencyPosition {
   Before = 1,
   After = 2,
+}
+
+/**
+ * The typeface the admin picks. A closed set rather than a family name because
+ * every option names *two* faces — a Latin display face carries no Arabic
+ * glyphs, and Wanes runs in both scripts.
+ */
+export enum AppFont {
+  /** Plus Jakarta Sans + Cairo — the shipped design. */
+  Jakarta = 1,
+  /** Inter + IBM Plex Sans Arabic. */
+  Inter = 2,
+  /** Rubik, both scripts from one family. */
+  Rubik = 3,
+  /** Noto Sans + Noto Sans Arabic. */
+  Noto = 4,
+  /** Tajawal, both scripts — Arabic-first. */
+  Tajawal = 5,
+  /** The browser's own UI face; no webfont is downloaded. */
+  System = 6,
 }
 
 // ── Enums (kept in sync with the backend) ──
@@ -116,6 +146,10 @@ export enum BookingStatus {
   InProgress = 3,
   Completed = 4,
   Cancelled = 5,
+  /** Driver is at this rider's pickup, waiting for them to board. */
+  Arrived = 6,
+  /** Driver waited and the rider never boarded. Terminal, not a cancellation. */
+  NoShow = 7,
 }
 
 export enum RideRequestStatus {

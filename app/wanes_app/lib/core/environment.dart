@@ -4,7 +4,7 @@
 /// `--dart-define` named `API_BASE_URL`. This keeps one binary configurable
 /// per device without editing source:
 ///
-///   flutter run --dart-define=API_BASE_URL=http://192.168.1.43:5000/api/v1/ # LAN (default)
+///   flutter run --dart-define=API_BASE_URL=http://192.168.1.160:5000/api/v1/ # LAN (default)
 ///   flutter run --dart-define=API_BASE_URL=http://10.0.2.2:5000/api/v1/       # Android emulator
 ///   flutter run --dart-define=API_BASE_URL=http://localhost:5000/api/v1/      # web / desktop on the host
 ///   flutter run --dart-define=API_BASE_URL=https://www.technzone.com/wanesApi/api/v1/ # staging
@@ -27,7 +27,7 @@ class Environment {
 
   static const String apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://192.168.1.43:5000/api/v1/',
+    defaultValue: 'http://192.168.1.160:5000/api/v1/',
   );
 
   /// Free-text location search endpoint (OpenStreetMap Nominatim by default).
@@ -41,4 +41,16 @@ class Environment {
     'GEOCODER_URL',
     defaultValue: 'https://nominatim.openstreetmap.org/search',
   );
+
+  /// Reverse lookup (coordinate -> address), used by "use my current location".
+  /// Nominatim exposes it as a sibling of /search, so it is derived from
+  /// [geocoderUrl] rather than being a second dart-define to keep in sync.
+  /// Override it explicitly when the geocoder does not follow that shape.
+  static String get reverseGeocoderUrl {
+    const explicit = String.fromEnvironment('REVERSE_GEOCODER_URL');
+    if (explicit.isNotEmpty) return explicit;
+    final slash = geocoderUrl.lastIndexOf('/');
+    if (slash < 0) return geocoderUrl;
+    return '${geocoderUrl.substring(0, slash)}/reverse';
+  }
 }

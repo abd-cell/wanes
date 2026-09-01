@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import '../core/l10n.dart';
+import '../core/notification_router.dart';
 import '../core/push_service.dart';
 import '../core/session.dart';
 import '../core/theme.dart';
@@ -14,6 +15,10 @@ import 'login_screen.dart';
 /// Splash — prototype screen 00. A full-bleed teal field with a highlight in
 /// the top-left, the mark on a white tile, the wordmark and three loading
 /// dots. Routes on to Home (if a session exists) or Login.
+///
+/// The tile also wears a [WanesOrbitLoader] — a ring the wait travels around,
+/// added on top of the prototype so the hold reads as a journey under way
+/// rather than a logo sitting still.
 ///
 /// The whole intro runs off **one** controller rather than a set of delayed
 /// timers. On a cold start the event loop is congested enough that independent
@@ -55,6 +60,9 @@ class _SplashScreenState extends State<SplashScreen>
   late final _word = _track(500, 700, Curves.ease); // sfade .7s .5s
   late final _tag = _track(700, 700, Curves.ease); // sfade .7s .7s
   late final _pin = _track(1200, 500, Curves.ease); // spop .5s 1.2s
+  // The orbit ring is ours, not the prototype's: it arrives once the tile
+  // has finished popping so the two entrances don't fight each other.
+  late final _ring = _track(450, 850, Curves.easeOutCubic);
 
   @override
   void initState() {
@@ -99,6 +107,11 @@ class _SplashScreenState extends State<SplashScreen>
             FadeTransition(opacity: animation, child: child),
       ),
     );
+
+    // Launched by tapping a notification: now that there is a shell to push
+    // onto, take the user to what it was about. A no-op otherwise, and on the
+    // login branch the router holds the tap until there is a session.
+    NotificationRouter.drainPending();
   }
 
   /// `@keyframes sfade` — rise 14px while fading in.
@@ -137,34 +150,44 @@ class _SplashScreenState extends State<SplashScreen>
                   // `animation:spop .6s cubic-bezier(.3,1.3,.5,1) both`
                   AnimatedBuilder(
                     animation: _intro,
-                    builder: (_, __) => Opacity(
-                      opacity: _tile.value == 0 ? 0 : 1,
-                      child: Transform.scale(
-                        // `_tile` already carries the curve, so the raw track
-                        // is fed through spop's 0 → 1.18 → 1 shape linearly.
-                        scale: spopScale(_tile.value, Curves.linear),
-                        child: Container(
-                          width: 98,
-                          height: 98,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(28),
-                            boxShadow: const [
-                              BoxShadow(
-                                  color: Color(0x80042420),
-                                  blurRadius: 44,
-                                  offset: Offset(0, 22),
-                                  spreadRadius: -16),
-                            ],
-                          ),
-                          // The route curve draws itself in from .35s and the
-                          // amber pin pops on at 1.2s, over the tile's own pop.
-                          child: WanesLogo(
-                            size: 56,
-                            plain: true,
-                            draw: _draw.value,
-                            pinScale: spopScale(_pin.value, Curves.linear),
+                    // The loader tracks the tile's own corner, offset by the
+                    // gap, so the ring and the tile stay concentric curves.
+                    builder: (_, __) => WanesOrbitLoader(
+                      size: 98,
+                      radius: 28,
+                      gap: 17,
+                      accent: t.amber,
+                      reveal: _ring.value,
+                      child: Opacity(
+                        opacity: _tile.value == 0 ? 0 : 1,
+                        child: Transform.scale(
+                          // `_tile` already carries the curve, so the raw track
+                          // is fed through spop's 0 → 1.18 → 1 shape linearly.
+                          scale: spopScale(_tile.value, Curves.linear),
+                          child: Container(
+                            width: 98,
+                            height: 98,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(28),
+                              boxShadow: const [
+                                BoxShadow(
+                                    color: Color(0x80042420),
+                                    blurRadius: 44,
+                                    offset: Offset(0, 22),
+                                    spreadRadius: -16),
+                              ],
+                            ),
+                            // The route curve draws itself in from .35s and
+                            // the amber pin pops on at 1.2s, over the tile's
+                            // own pop.
+                            child: WanesLogo(
+                              size: 56,
+                              plain: true,
+                              draw: _draw.value,
+                              pinScale: spopScale(_pin.value, Curves.linear),
+                            ),
                           ),
                         ),
                       ),
@@ -174,12 +197,14 @@ class _SplashScreenState extends State<SplashScreen>
                   // `animation:sfade .7s ease .5s both`
                   _fade(
                     _word,
-                    const Text('wanes',
-                        style: TextStyle(
-                            fontSize: 40,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: -1.2,
-                            color: onTeal)),
+                    // The lockup is wide; on a narrow phone the FittedBox
+                    // scales it down rather than letting it clip.
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 24),
+                      child: FittedBox(
+                        child: WanesWordmark(size: 34, color: onTeal),
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 6),
                   // `animation:sfade .7s ease .7s both`

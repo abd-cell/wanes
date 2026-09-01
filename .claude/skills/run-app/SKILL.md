@@ -37,7 +37,7 @@ The button shows a teal spinner while it calls the API.
 
 `app/wanes_app/lib/core/environment.dart` reads the base URL from a
 compile-time `--dart-define=API_BASE_URL=...`. The default is the host PC's
-**LAN** address (`http://192.168.1.43:5000/api/v1/`) so a real phone, an
+**LAN** address (`http://192.168.1.160:5000/api/v1/`) so a real phone, an
 emulator and the host browser all hit the same backend. Pass the URL the
 *target* can actually reach:
 
@@ -87,7 +87,7 @@ The IP is DHCP-assigned (`ipconfig` → Wi-Fi IPv4). If it moves, update
 
 Smoke-test the LAN path:
 ```bash
-curl -s -o /dev/null -w "%{http_code}\n" -X POST http://192.168.1.43:5000/api/v1/accounts/request-otp -H "Content-Type: application/json" -d '{"phone":"+962790000000"}'
+curl -s -o /dev/null -w "%{http_code}\n" -X POST http://192.168.1.160:5000/api/v1/accounts/request-otp -H "Content-Type: application/json" -d '{"phone":"+962790000000"}'
 ```
 `200` means the API is reachable at that address.
 
@@ -134,6 +134,21 @@ The SDK was installed standalone (no Android Studio) at `C:\Android`, JDK at
   the root from the cmdline-tools location (`C:\Android`). Set `JAVA_HOME=C:\Android\jdk`
   for every sdkmanager/avdmanager call.
 - **Licenses**: `yes | sdkmanager --licenses` (no `--sdk_root`).
+- **`ANDROID_HOME` must be set, or AGP ignores `C:\Android`.** `flutter config
+  --android-sdk C:\Android` only steers the *Flutter tool*. The Android Gradle
+  Plugin resolves its own SDK, and with no `ANDROID_HOME`/`ANDROID_SDK_ROOT` it
+  falls back to the Windows default `%LOCALAPPDATA%\Android\Sdk` — a second,
+  half-built SDK on this machine. AGP then **rewrites `sdk.dir` in
+  `android/local.properties`** to that path and tries to auto-download the NDK
+  there, which aborts into a 177-byte stub
+  (`ndk\28.2.13676358\.installer\.installData`, no `source.properties`) and
+  fails the build with `[CXX1101] ... did not have a source.properties file`
+  plus Flutter's "malformed download of the NDK" advice. Deleting the stub does
+  **not** fix it — the next build recreates it. The fix (applied 1 Sep 2026) is
+  the user-level env var:
+  `[Environment]::SetEnvironmentVariable('ANDROID_HOME','C:\Android','User')`.
+  With it set, a clean `flutter build apk --debug` passes, `sdk.dir` stays
+  `C:\\Android`, and nothing is written to the AppData SDK.
 
 Create the AVD (once):
 ```bash

@@ -9,6 +9,7 @@ import '../widgets/map_backdrop.dart';
 import '../widgets/wanes_alerts.dart';
 import '../widgets/wanes_ui.dart';
 import 'confirm_booking_screen.dart';
+import '../widgets/wanes_motion.dart';
 
 /// Trip details — the journey behind a search result or a booking, in full.
 ///
@@ -136,7 +137,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
           Expanded(
             child: trip == null
                 ? (_error == null
-                    ? const Center(child: CircularProgressIndicator())
+                    ? const Center(child: WanesSpinner())
                     : _errorState(t))
                 : RefreshIndicator(
                     onRefresh: _load,

@@ -16,6 +16,9 @@ Future<TripSort?> showSortPicker(
 }) {
   return showModalBottomSheet<TripSort>(
     context: context,
+    // Six options plus a title overrun the default 9/16 sheet on a short handset,
+    // and overrun any handset once the reader turns text size up.
+    isScrollControlled: true,
     backgroundColor: Colors.transparent,
     builder: (_) => _SortPickerSheet(current: current, allowPickup: allowPickup),
   );
@@ -44,6 +47,7 @@ class _SortPickerSheet extends StatelessWidget {
         .toList();
 
     return Container(
+      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.78),
       decoration: BoxDecoration(
         color: t.surface,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
@@ -69,7 +73,14 @@ class _SortPickerSheet extends StatelessWidget {
                       fontSize: 19, fontWeight: FontWeight.w800, letterSpacing: -0.3, color: t.ink)),
             ),
             const SizedBox(height: 8),
-            for (final option in options) _row(context, t, option),
+            Flexible(
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [for (final option in options) _row(context, t, option)],
+                ),
+              ),
+            ),
             const SizedBox(height: 12),
           ],
         ),

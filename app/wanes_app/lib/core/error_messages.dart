@@ -13,6 +13,18 @@ library;
 
 import 'l10n.dart';
 
+/// The few server codes the app has to *branch* on rather than merely show.
+///
+/// Everything else goes through [_keys] and is only ever rendered, so a bare
+/// number is fine there. These are the ones a screen makes a decision from, and
+/// a decision written as `== 501` is one nobody can check against the backend
+/// enum without going to look it up.
+class ServerErrorCode {
+  /// `ErrorCode.RequestNotOpen` — the hail has already been cancelled, taken or
+  /// expired.
+  static const requestNotOpen = 501;
+}
+
 /// Client-only sentinel codes (never returned by the server).
 class ClientErrorCode {
   static const empty = -1; // empty/blank body
@@ -42,6 +54,8 @@ const Map<int, String> _keys = {
   // Driver / vehicle
   200: 'errors.driverNotVerified',
   202: 'errors.vehicleNotFound',
+  203: 'errors.driverOnActiveTrip',
+  204: 'errors.driverTripTimeConflict',
 
   // Trips
   300: 'errors.tripUnavailable',

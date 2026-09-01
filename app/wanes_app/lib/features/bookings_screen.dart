@@ -8,6 +8,7 @@ import '../widgets/wanes_alerts.dart';
 import '../widgets/wanes_ui.dart';
 import 'notifications_screen.dart';
 import 'booking_details_screen.dart';
+import '../widgets/wanes_motion.dart';
 
 /// The rider "Bookings" tab — every seat the rider has taken, split into the
 /// ones still ahead of them and everything already behind (completed, cancelled
@@ -99,7 +100,7 @@ class BookingsScreenState extends State<BookingsScreen> {
             if (_loading)
               const Padding(
                 padding: EdgeInsets.only(top: 60),
-                child: Center(child: CircularProgressIndicator()),
+                child: Center(child: WanesSpinner()),
               )
             else if (_error != null)
               WanesInlineAlert(_error!, onTap: load)

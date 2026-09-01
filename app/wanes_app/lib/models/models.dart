@@ -2,6 +2,7 @@
 
 import 'dart:convert';
 
+import '../core/app_config.dart';
 import '../core/l10n.dart';
 import '../core/places.dart';
 
@@ -93,8 +94,32 @@ enum CurrencyPosition {
       CurrencyPosition.values.firstWhere((p) => p.value == v, orElse: () => CurrencyPosition.before);
 }
 
-/// Platform settings the admin owns from the CMS — currency, brand colour and
-/// the support contact channels behind the Contact us screen.
+/// The admin-chosen typeface (`Wanes.Shareds.Enums.AppFont`).
+///
+/// A closed set, not a family name: each value is a *pairing* of a Latin face
+/// and an Arabic one, because a Latin display face carries no Arabic glyphs and
+/// the app runs in both scripts. `core/theme.dart` holds the faces each value
+/// resolves to; this layer only carries the choice.
+enum AppFont {
+  jakarta(1),
+  inter(2),
+  rubik(3),
+  noto(4),
+  tajawal(5),
+  system(6);
+
+  const AppFont(this.value);
+  final int value;
+
+  /// Unknown values — a server that knows a font this build does not, or the
+  /// `0` a row written before the column existed would give — fall back to the
+  /// shipped pairing rather than leaving the app with no face at all.
+  static AppFont fromValue(int? v) =>
+      AppFont.values.firstWhere((f) => f.value == v, orElse: () => AppFont.jakarta);
+}
+
+/// Platform settings the admin owns from the CMS — currency, brand colour,
+/// typeface and the support contact channels behind the Contact us screen.
 ///
 /// Served anonymously by `GET /configuration`, so the app can paint the right
 /// brand on the splash screen before anyone has signed in. The defaults here
@@ -106,6 +131,8 @@ class AppConfig {
     this.currencyPosition = CurrencyPosition.after,
     this.currencyDecimals = 3,
     this.primaryColor = 0xFF0FAE9E,
+    this.font = AppFont.jakarta,
+    this.hailTtlMinutes = 10,
     this.supportPhone = '',
     this.supportWhatsApp = '',
     this.supportEmail = '',
@@ -120,6 +147,22 @@ class AppConfig {
 
   /// Brand primary as an ARGB int, ready for `Color(...)`.
   final int primaryColor;
+
+  /// The display/body typeface. `WanesTheme` resolves it to a concrete face per
+  /// script; the mono/data face is fixed and not part of this choice.
+  final AppFont font;
+
+  /// How long an unanswered hail stays open, in minutes (the admin sets it).
+  ///
+  /// Only ever a *default* deadline: a request the server already opened
+  /// carries its own `expiresAt`, and that is what the countdowns run on. This
+  /// is what a screen uses when it has no row to read — the rider's own search,
+  /// which starts before the request comes back — and what sizes the driver's
+  /// countdown ring, which needs a full-window figure to measure against.
+  final int hailTtlMinutes;
+
+  /// [hailTtlMinutes] as a duration.
+  Duration get hailTtl => Duration(minutes: hailTtlMinutes);
 
   // ── Support contact ──
   //
@@ -154,6 +197,13 @@ class AppConfig {
         currencyDecimals:
             ((json['currencyDecimals'] as num?)?.toInt() ?? fallback.currencyDecimals).clamp(0, 3),
         primaryColor: parseHexColor(json['primaryColor'] as String?) ?? fallback.primaryColor,
+        font: AppFont.fromValue((json['fontFamily'] as num?)?.toInt()),
+        // Clamped to the same 1..240 the server enforces: a zero from an older
+        // API — or a row that predates the column — would otherwise give every
+        // countdown a window that has already run out.
+        hailTtlMinutes:
+            ((json['hailRequestTtlMinutes'] as num?)?.toInt() ?? fallback.hailTtlMinutes)
+                .clamp(1, 240),
         supportPhone: _text(json['supportPhone']),
         supportWhatsApp: _text(json['supportWhatsApp']),
         supportEmail: _text(json['supportEmail']),
@@ -167,6 +217,8 @@ class AppConfig {
         'currencyPosition': currencyPosition.value,
         'currencyDecimals': currencyDecimals,
         'primaryColor': hexColor,
+        'fontFamily': font.value,
+        'hailRequestTtlMinutes': hailTtlMinutes,
         'supportPhone': supportPhone,
         'supportWhatsApp': supportWhatsApp,
         'supportEmail': supportEmail,
@@ -332,6 +384,7 @@ class Trip {
   final String destinationAddress;
   final double destinationLat;
   final double destinationLng;
+
   final DateTime departAt;
   final int seatsLeft;
   final int seatsTotal;
@@ -360,6 +413,14 @@ class Trip {
   /// A posted trip nobody has booked yet — the driver may still edit it.
   /// The server is the authority (it also checks cancelled bookings).
   bool get editable => status == 1 && seatsLeft == seatsTotal;
+
+  /// Nothing more happens on this trip: no seat on it can be moved either.
+  bool get isFinished => status == 4 || status == 5;
+
+  /// The driver is out on this one — at a pickup point or carrying riders. They
+  /// are unavailable for a second ride while it lasts (server rule; see
+  /// `DriverAvailabilityRules`).
+  bool get isUnderway => status == 3 || status == 6;
 
   factory Trip.fromJson(Map<String, dynamic> j) => Trip(
         id: j['id'] as int,
@@ -413,6 +474,47 @@ class Vehicle {
       );
 }
 
+/// Why a hail stopped being answerable. Mirrors the backend's
+/// `RideRequestStatus`, but only the three terminal states a driver's screen
+/// can be told about — a hail never closes back into Open.
+enum RideRequestClosedReason {
+  /// The rider withdrew it.
+  cancelled,
+
+  /// Another driver got there first.
+  matched,
+
+  /// The window ran out with nobody accepting.
+  expired,
+
+  /// A close from a newer server whose reason this build does not know. The
+  /// card still goes; only the wording falls back to the neutral one.
+  unknown;
+
+  static RideRequestClosedReason fromWire(String? raw) => switch (raw) {
+        'Cancelled' => RideRequestClosedReason.cancelled,
+        'Matched' => RideRequestClosedReason.matched,
+        'Expired' => RideRequestClosedReason.expired,
+        _ => RideRequestClosedReason.unknown,
+      };
+
+  /// The l10n key for the one-line notice shown when a card disappears.
+  String get messageKey => switch (this) {
+        RideRequestClosedReason.cancelled => 'driver.requestWithdrawn',
+        RideRequestClosedReason.matched => 'driver.requestTaken',
+        RideRequestClosedReason.expired => 'driver.requestExpired',
+        RideRequestClosedReason.unknown => 'driver.requestClosed',
+      };
+}
+
+/// The server saying "this hail is over" — see `SseConnectionManager.BroadcastAsync`.
+class RideRequestClosed {
+  const RideRequestClosed({required this.requestId, required this.reason});
+
+  final int requestId;
+  final RideRequestClosedReason reason;
+}
+
 class RideRequestRow {
   RideRequestRow({
     required this.id,
@@ -420,29 +522,54 @@ class RideRequestRow {
     required this.destinationAddress,
     required this.seats,
     required this.requestedAt,
+    DateTime? wantedDepartAt,
     this.riderId = 0,
     this.originLat = 0,
     this.originLng = 0,
     this.destinationLat = 0,
     this.destinationLng = 0,
-  });
+    DateTime? expiresAt,
+  })  : wantedDepartAt = wantedDepartAt ?? requestedAt,
+        expiresAt = expiresAt ?? requestedAt.add(AppConfigController.value.hailTtl);
 
   final int id;
   final String originAddress;
   final String destinationAddress;
   final int seats;
   final DateTime requestedAt;
+
+  /// The departure the rider searched for — what a driver taking this hail is
+  /// agreeing to, and what the resulting trip leaves at.
+  ///
+  /// Not the same as [requestedAt]: a rider who searched for six this evening
+  /// and matched nothing is hailing for six, not for the moment they tapped.
+  /// Falls back to [requestedAt] for a response that carried none, which is what
+  /// a hail meant before it could be scheduled.
+  final DateTime wantedDepartAt;
   final int riderId;
   final double originLat;
   final double originLng;
   final double destinationLat;
   final double destinationLng;
 
-  /// A hail lives for 10 minutes server-side (SearchService.HailTtl); the
-  /// driver-facing countdown mirrors that window.
-  static const Duration ttl = Duration(minutes: 10);
+  /// When the hail stops being answerable, as the server stamped it. Only the
+  /// server knows the real deadline — the window is admin-set and can change
+  /// while a request is already open — so a response that carried none falls
+  /// back to the configured window rather than leaving the card up forever.
+  final DateTime expiresAt;
 
-  DateTime get expiresAt => requestedAt.add(ttl);
+  /// The full window this hail was opened for, which is what the driver's
+  /// countdown ring measures against.
+  ///
+  /// Derived from the two timestamps rather than read from the configuration:
+  /// the admin can change the window while requests are already open, and a
+  /// ring drawn against the *new* setting would show the wrong fraction of an
+  /// old request. Falls back to the configured window for a response that
+  /// carried no deadline.
+  Duration get ttl {
+    final window = expiresAt.difference(requestedAt);
+    return window > Duration.zero ? window : AppConfigController.value.hailTtl;
+  }
 
   factory RideRequestRow.fromJson(Map<String, dynamic> j) => RideRequestRow(
         id: j['id'] as int,
@@ -450,11 +577,13 @@ class RideRequestRow {
         destinationAddress: j['destinationAddress'] as String? ?? '',
         seats: j['seats'] as int? ?? 1,
         requestedAt: parseServerDate(j['requestedAt'] as String?) ?? DateTime.now(),
+        wantedDepartAt: parseServerDate(j['wantedDepartAt'] as String?),
         riderId: j['riderId'] as int? ?? 0,
         originLat: (j['originLat'] as num?)?.toDouble() ?? 0,
         originLng: (j['originLng'] as num?)?.toDouble() ?? 0,
         destinationLat: (j['destinationLat'] as num?)?.toDouble() ?? 0,
         destinationLng: (j['destinationLng'] as num?)?.toDouble() ?? 0,
+        expiresAt: parseServerDate(j['expiresAt'] as String?),
       );
 }
 
@@ -477,8 +606,8 @@ class Booking {
   final int riderId;
   final int seats;
 
-  /// Mirrors the server's `BookingStatus`:
-  /// 1 Pending · 2 Confirmed · 3 InProgress · 4 Completed · 5 Cancelled.
+  /// Mirrors the server's `BookingStatus`: 1 Pending · 2 Confirmed ·
+  /// 3 InProgress · 4 Completed · 5 Cancelled · 6 Arrived · 7 NoShow.
   final int status;
   final String originAddress;
   final String destinationAddress;
@@ -499,7 +628,14 @@ class Booking {
     3: 'bookingStatus.inProgress',
     4: 'bookingStatus.completed',
     5: 'bookingStatus.cancelled',
+    6: 'bookingStatus.arrived',
+    7: 'bookingStatus.noShow',
   };
+
+  /// The seat is still held — the mirror of the server's
+  /// `BookingStatusRules.IsLive`. This gates the phone numbers and the driver's
+  /// live position, so a status missing from here silently hides them.
+  static bool isLiveStatus(int status) => status == 1 || status == 2 || status == 3 || status == 6;
 
   /// l10n key for a booking status, shared with [TripBooking] so the rider and
   /// the driver read the same seat the same way.
@@ -512,17 +648,24 @@ class Booking {
   bool get isCancelled => status == 5;
   bool get isCompleted => status == 4;
 
-  /// The rider is aboard — the driver has started the trip.
+  /// The driver waited and the rider never boarded. Terminal, and not the same
+  /// thing as the rider cancelling.
+  bool get isNoShow => status == 7;
+
+  /// The rider is aboard — the driver has picked them up.
   bool get isInProgress => status == 3;
 
-  /// The seat is still held: neither given back nor finished.
-  bool get isLive => !isCancelled && !isCompleted;
+  /// The driver is at this rider's pickup, waiting for them.
+  bool get isDriverArrived => status == 6;
+
+  /// The seat is still held: neither given back, missed, nor finished.
+  bool get isLive => isLiveStatus(status);
 
   /// Still to happen. A trip already under way counts — it has not finished, so
   /// it belongs with the rider's live seats rather than their history, even
   /// though its departure time is now in the past.
-  bool get isUpcoming =>
-      isLive && (isInProgress || (departAt?.isAfter(DateTime.now()) ?? false));
+  bool get isUpcoming => isLive &&
+      (isInProgress || isDriverArrived || (departAt?.isAfter(DateTime.now()) ?? false));
 
   /// The rider can still give the seat back — the server allows a cancel for
   /// anything that is neither already cancelled nor completed.
@@ -602,14 +745,24 @@ class TripBooking {
   final int seats;
 
   /// Same scale as [Booking.status] — 1 Pending · 2 Confirmed · 3 InProgress ·
-  /// 4 Completed · 5 Cancelled.
+  /// 4 Completed · 5 Cancelled · 6 Arrived · 7 NoShow. This is the seat the
+  /// driver moves along as they reach, collect and drop off this rider, and
+  /// what the trip's own status is derived from.
   final int status;
   final DateTime? bookedAt;
 
   String get statusKey => Booking.statusKeyFor(status);
   bool get isCancelled => status == 5;
   bool get isCompleted => status == 4;
-  bool get isLive => !isCancelled && !isCompleted;
+  bool get isNoShow => status == 7;
+
+  /// The driver is at this rider's pickup, waiting for them.
+  bool get isDriverArrived => status == 6;
+
+  /// This rider is aboard.
+  bool get isInProgress => status == 3;
+
+  bool get isLive => Booking.isLiveStatus(status);
 
   /// The same reference the rider quotes — derived identically, so the two
   /// sides of the booking are talking about the same code.
@@ -661,6 +814,7 @@ class SearchResult {
     this.matches = const [],
     this.rideRequestId,
     this.driversNotified = 0,
+    this.rideRequestExpiresAt,
   });
 
   final SearchMode mode;
@@ -669,6 +823,11 @@ class SearchResult {
 
   /// How many nearby drivers the hail actually pinged.
   final int driversNotified;
+
+  /// When the opened hail stops being answerable, as the server stamped it.
+  /// Null outside hail mode, and on a server that predates the field — the
+  /// search screen then counts down the configured window instead.
+  final DateTime? rideRequestExpiresAt;
 
   factory SearchResult.fromJson(Map<String, dynamic> j) {
     final modeNum = j['mode'] as int? ?? 1;
@@ -680,6 +839,7 @@ class SearchResult {
       matches: list,
       rideRequestId: j['rideRequestId'] as int?,
       driversNotified: j['driversNotified'] as int? ?? 0,
+      rideRequestExpiresAt: parseServerDate(j['rideRequestExpiresAt'] as String?),
     );
   }
 }
@@ -755,6 +915,8 @@ enum NotificationKind {
   tripCompleted('TripCompleted'),
   bookingCancelled('BookingCancelled'),
   tripStarted('TripStarted'),
+  /// The driver reached the pickup point (`NotificationType.DriverArrived`).
+  driverArrived('DriverArrived'),
   tripMatched('TripMatched'),
   driverVerified('DriverVerified'),
   driverRejected('DriverRejected'),

@@ -18,6 +18,7 @@ import 'api_log_screen.dart';
 import 'contact_us_screen.dart';
 import 'faq_screen.dart';
 import 'saved_places_screen.dart';
+import '../widgets/wanes_motion.dart';
 
 /// Rider profile tab. Mirrors prototype screen 11 (Rider profile): identity
 /// header, stat card, quick links, the "Become a driver" affordance and sign-out.
@@ -123,8 +124,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _logout() async {
+    // AuthService.logout owns the teardown — see there.
     await _auth.logout();
-    SavedPlaces.instance.clear();
     if (!mounted) return;
     Navigator.pushAndRemoveUntil(
         context, MaterialPageRoute(builder: (_) => const LoginScreen()), (_) => false);
@@ -137,7 +138,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final name = (p?.name.isNotEmpty ?? false) ? p!.name : context.tr('role.rider');
 
     if (_loading && p == null) {
-      return const Center(child: CircularProgressIndicator());
+      return const Center(child: WanesSpinner());
     }
 
     final dark = Theme.of(context).brightness == Brightness.dark;

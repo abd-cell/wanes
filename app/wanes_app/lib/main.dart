@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'core/app_config.dart';
 import 'core/l10n.dart';
+import 'core/notification_router.dart';
 import 'core/push_service.dart';
 import 'core/session.dart';
 import 'core/theme.dart';
@@ -13,6 +14,7 @@ import 'services/services.dart';
 import 'features/splash_screen.dart';
 import 'features/login_screen.dart';
 import 'features/rider_shell.dart';
+import 'widgets/wanes_logo.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -35,6 +37,10 @@ void main() async {
   // No-op until Firebase credentials are filled in (lib/core/firebase_options.dart);
   // in-app notifications still arrive over SSE either way.
   await PushService.instance.init();
+  // Attach before the first frame: a tap that launched the app is already
+  // waiting inside PushService, and the router holds anything that arrives
+  // while the splash still owns the screen.
+  NotificationRouter.attach();
   runApp(const WanesApp());
 
   // Not awaited: settings rarely change, and a slow or unreachable backend must
@@ -61,7 +67,10 @@ class WanesApp extends StatelessWidget {
           builder: (_, __, ___) => ValueListenableBuilder<ThemeMode>(
             valueListenable: ThemeController.mode,
             builder: (_, mode, __) => MaterialApp(
-              title: 'Wanes',
+              title: kWanesAppName,
+              // A tapped notification routes from outside the widget tree, so
+              // it needs a navigator it can reach without a BuildContext.
+              navigatorKey: NotificationRouter.navigatorKey,
               debugShowCheckedModeBanner: false,
               theme: WanesTheme.light(),
               darkTheme: WanesTheme.dark(),

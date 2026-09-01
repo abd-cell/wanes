@@ -1,4 +1,4 @@
-namespace Wanes.Shareds.Constants;
+﻿namespace Wanes.Shareds.Constants;
 
 /// <summary>
 /// Single source of truth for audit action names, so the audit vocabulary is
@@ -53,6 +53,9 @@ public static class AuditActions
     // ride requests
     public const string RequestCancel = "request.cancel";
     public const string RequestAccept = "request.accept";
+
+    /// <summary>The TTL ran out with nobody accepting. Logged by the sweeper, so it has no actor.</summary>
+    public const string RequestExpire = "request.expire";
 
     // ratings
     public const string RatingCreate = "rating.create";

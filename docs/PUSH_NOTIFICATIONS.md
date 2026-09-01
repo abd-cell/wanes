@@ -44,9 +44,11 @@ action that triggered it.
 | `TripCompleted` (5) | `TripService.Complete` | every rider on the trip |
 | `BookingCancelled` (6) | `BookingService.Cancel` | the driver |
 | `TripStarted` (7) | `TripService.Start` | every rider on the trip |
+| `TripMatched` (8) | `TripService` posts a trip fitting an open hail | the waiting riders |
 | `DriverVerified` (9) | `AdminService.VerifyDriver` approve | the driver |
 | `DriverRejected` (10) | `AdminService.VerifyDriver` reject | the driver |
 | `RatingReceived` (11) | `RatingService.Rate` | the rated party |
+| `DriverArrived` (12) | `TripService.Arrive` | the riders waiting at pickup |
 | `General` (100) | admin console — one user, or a whole audience | the chosen user(s) |
 
 Adding a type means five edits, not one: the `NotificationType` enum, the call
@@ -54,7 +56,37 @@ site, `NotificationKind` in the app's `models.dart`, a label + icon arm in
 `notifications_screen.dart`, and the `notifType.*` key in **both**
 `strings_en.dart` and `strings_ar.dart`. The Dart switches are exhaustive, so the
 app fails to compile if you forget the middle three — but a missing l10n key only
-shows up at runtime as the raw key.
+shows up at runtime as the raw key. `DriverArrived` was missing its
+`NotificationKind` for exactly this reason: `fromWire` folded it into `general`,
+which cost it both its icon and its tap destination. `test/notification_routing_test.dart`
+now asserts every wire type maps to a kind of its own — extend that list too.
+
+### Where a tap goes
+
+Every notification carries a `data` payload (`tripId`, `bookingId`, `requestId`),
+and `app/wanes_app/lib/core/notification_router.dart` turns it into a screen. The
+same router serves a tap on the tray and a tap on an inbox row, so the two can
+never disagree.
+
+| Type | Opens |
+|---|---|
+| `RideRequestNearby` | the driver's incoming-hail sheet |
+| `BookingConfirmed` · `BookingCancelled` · `TripCompleted` · `RatingReceived` | the rider's booking, or the driver's trip |
+| `TripStarted` · `DriverArrived` · `DriverAccepted` | the live-trip rail, while the seat is still running |
+| `TripCancelled` · `TripMatched` | trip details (bookable only for a fresh match) |
+| `DriverVerified` · `DriverRejected` | driver home (after switching role) · the application form |
+| `General` | the inbox, which is also the fallback for anything unroutable |
+
+Two things about it are load-bearing:
+
+- **A tap has no `BuildContext`.** FCM delivers one while the app is backgrounded
+  and `getInitialMessage` replays one from before `runApp` ran, so the router
+  pushes through a `navigatorKey` on `MaterialApp`. A tap that arrives with no
+  navigator *or* no session is held, and drained at the splash hand-off, after
+  sign-in, and after the complete-profile gate.
+- **The type does not say which side you are on.** Most booking notifications go
+  to rider and driver alike, so the router asks `Bookings/mine`: a hit is the
+  rider's seat, a miss is the driver's trip.
 
 ### Language (English + Arabic)
 

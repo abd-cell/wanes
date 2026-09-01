@@ -215,9 +215,11 @@ class WanesTokens extends ThemeExtension<WanesTokens> {
   /// 1 Pending · 2 Confirmed · 3 InProgress · 4 Completed · 5 Cancelled.
   Color bookingStatus(int status) => switch (status) {
         1 => amber,   // waiting on something
-        3 => teal,    // under way
+        3 => teal,    // aboard
         4 => info,    // completed — the same blue trips use when they finish
         5 => alert,   // cancelled
+        6 => teal,    // driver is at this rider's pickup
+        7 => ink2,    // no-show: it did not happen, but nobody cancelled it
         _ => success, // confirmed
       };
 
@@ -320,14 +322,96 @@ class WanesTokens extends ThemeExtension<WanesTokens> {
   }
 }
 
-/// Material theme wired to the design tokens + typography
-/// (Plus Jakarta Sans display, JetBrains Mono for labels/data).
+/// One [AppFont]'s two faces, as builders over `google_fonts`.
+///
+/// A table of closures rather than a family name passed to
+/// `GoogleFonts.getFont`: that resolves through `GoogleFonts.asMap()`, which
+/// materialises the whole ~1500-family manifest on *every* call, and these
+/// builders run on every text style the app constructs. Naming the generated
+/// methods directly also means a font that does not exist is a compile error
+/// rather than an exception thrown mid-frame.
+class _FontFaces {
+  const _FontFaces({required this.latin, required this.arabic, required this.latinTheme, required this.arabicTheme});
+
+  /// Latin display/body face.
+  final TextStyle Function({double? fontSize, FontWeight? fontWeight, Color? color, double? letterSpacing}) latin;
+
+  /// Arabic display/body face.
+  final TextStyle Function({double? fontSize, FontWeight? fontWeight, Color? color, double? letterSpacing}) arabic;
+
+  final TextTheme Function(TextTheme base) latinTheme;
+  final TextTheme Function(TextTheme base) arabicTheme;
+}
+
+/// The device's own UI face: no family at all, which is what makes Flutter fall
+/// through to the platform default. Letter-spacing still applies.
+TextStyle _systemFace({double? fontSize, FontWeight? fontWeight, Color? color, double? letterSpacing}) =>
+    TextStyle(fontSize: fontSize, fontWeight: fontWeight, color: color, letterSpacing: letterSpacing);
+
+/// The system font's "text theme": Material's own, untouched. A named function
+/// rather than a closure so the table below stays `const`.
+TextTheme _systemTextTheme(TextTheme base) => base;
+
+/// What each configured font resolves to. The Arabic entry is never the same
+/// face as the Latin one by accident — where a family covers both scripts
+/// (Rubik, Tajawal) it is deliberately listed twice.
+const Map<AppFont, _FontFaces> _fontFaces = {
+  AppFont.jakarta: _FontFaces(
+    latin: GoogleFonts.plusJakartaSans,
+    arabic: GoogleFonts.cairo,
+    latinTheme: GoogleFonts.plusJakartaSansTextTheme,
+    arabicTheme: GoogleFonts.cairoTextTheme,
+  ),
+  AppFont.inter: _FontFaces(
+    latin: GoogleFonts.inter,
+    arabic: GoogleFonts.ibmPlexSansArabic,
+    latinTheme: GoogleFonts.interTextTheme,
+    arabicTheme: GoogleFonts.ibmPlexSansArabicTextTheme,
+  ),
+  AppFont.rubik: _FontFaces(
+    latin: GoogleFonts.rubik,
+    arabic: GoogleFonts.rubik,
+    latinTheme: GoogleFonts.rubikTextTheme,
+    arabicTheme: GoogleFonts.rubikTextTheme,
+  ),
+  AppFont.noto: _FontFaces(
+    latin: GoogleFonts.notoSans,
+    arabic: GoogleFonts.notoSansArabic,
+    latinTheme: GoogleFonts.notoSansTextTheme,
+    arabicTheme: GoogleFonts.notoSansArabicTextTheme,
+  ),
+  AppFont.tajawal: _FontFaces(
+    latin: GoogleFonts.tajawal,
+    arabic: GoogleFonts.tajawal,
+    latinTheme: GoogleFonts.tajawalTextTheme,
+    arabicTheme: GoogleFonts.tajawalTextTheme,
+  ),
+  AppFont.system: _FontFaces(
+    latin: _systemFace,
+    arabic: _systemFace,
+    latinTheme: _systemTextTheme,
+    arabicTheme: _systemTextTheme,
+  ),
+};
+
+/// Material theme wired to the design tokens + typography.
+///
+/// The display/body face is admin-configurable (see [AppFont]); the mono/data
+/// face is not — JetBrains Mono, IBM Plex Sans Arabic in Arabic — because it
+/// marks a numeric or label role rather than carrying the brand, and figures
+/// have to keep lining up whatever the display face is.
 class WanesTheme {
-  /// True while the app is showing Arabic. Plus Jakarta Sans and JetBrains
-  /// Mono carry no Arabic glyphs, so the type stack swaps to Cairo (display /
-  /// body) and IBM Plex Sans Arabic (the mono/data role) for `ar`. Set from
-  /// [WanesApp] whenever the locale changes, before the themes are rebuilt.
+  /// True while the app is showing Arabic. The Latin display faces carry no
+  /// Arabic glyphs, so the type stack swaps to the Arabic half of the
+  /// configured pairing (and to IBM Plex Sans Arabic for the mono/data role)
+  /// for `ar`. Set from [WanesApp] whenever the locale changes, before the
+  /// themes are rebuilt.
   static bool arabic = false;
+
+  /// The faces behind the configured font. Read per call rather than cached:
+  /// the admin can change the setting mid-session, and [WanesApp] rebuilds the
+  /// themes on the same notifier that carries the new value.
+  static _FontFaces get _faces => _fontFaces[AppConfigController.font] ?? _fontFaces[AppFont.jakarta]!;
 
   static ThemeData light() => _base(Brightness.light);
   static ThemeData dark() => _base(Brightness.dark);
@@ -364,9 +448,10 @@ class WanesTheme {
     double? spacing,
   }) =>
       arabic
-          ? GoogleFonts.cairo(
+          // Arabic is a joined script — letter-spacing breaks the joins.
+          ? _faces.arabic(
               fontSize: size, fontWeight: weight, color: color, letterSpacing: 0)
-          : GoogleFonts.plusJakartaSans(
+          : _faces.latin(
               fontSize: size, fontWeight: weight, color: color, letterSpacing: spacing);
 
   /// Display face for a *named* language rather than the active one — the
@@ -378,8 +463,8 @@ class WanesTheme {
     Color? color,
   }) =>
       languageCode == 'ar'
-          ? GoogleFonts.cairo(fontSize: size, fontWeight: weight, color: color)
-          : GoogleFonts.plusJakartaSans(fontSize: size, fontWeight: weight, color: color);
+          ? _faces.arabic(fontSize: size, fontWeight: weight, color: color)
+          : _faces.latin(fontSize: size, fontWeight: weight, color: color);
 
   static ThemeData _base(Brightness brightness) {
     final isDark = brightness == Brightness.dark;
@@ -407,8 +492,8 @@ class WanesTheme {
     return base.copyWith(
       extensions: [t],
       textTheme: (arabic
-              ? GoogleFonts.cairoTextTheme(base.textTheme)
-              : GoogleFonts.plusJakartaSansTextTheme(base.textTheme))
+              ? _faces.arabicTheme(base.textTheme)
+              : _faces.latinTheme(base.textTheme))
           .apply(bodyColor: t.ink, displayColor: t.ink),
       scaffoldBackgroundColor: t.bg,
       hintColor: t.ink2,

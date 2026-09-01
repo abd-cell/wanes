@@ -3,7 +3,8 @@ import { Injectable, PLATFORM_ID, inject, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { environment } from '../../environment';
 import { ApiService } from '../api/api.service';
-import { AppConfiguration, CurrencyPosition } from '../api/models';
+import { AppConfiguration, AppFont, CurrencyPosition } from '../api/models';
+import { ensureFontStylesheet, fontStack, rtlFontStack } from './app-font';
 import { deriveBrand } from './brand-color';
 
 /** What the CMS falls back to before (or instead of) an answer from the API. */
@@ -13,6 +14,8 @@ export const DEFAULT_CONFIG: AppConfiguration = {
   currencyPosition: CurrencyPosition.After,
   currencyDecimals: 3,
   primaryColor: '#0FAE9E',
+  fontFamily: AppFont.Jakarta,
+  hailRequestTtlMinutes: 10,
   supportPhone: '',
   supportWhatsApp: '',
   supportEmail: '',
@@ -36,6 +39,8 @@ export class AppConfigService {
 
   private readonly cacheKey = environment.APP_NAME + 'Config';
   private static readonly styleId = 'wanes-brand';
+  private static readonly fontStyleId = 'wanes-font';
+  private static readonly fontLinkId = 'wanes-font-webfont';
 
   readonly config = signal<AppConfiguration>(DEFAULT_CONFIG);
 
@@ -91,6 +96,7 @@ export class AppConfigService {
   private adopt(config: AppConfiguration, cache: boolean): void {
     this.config.set(config);
     this.applyBrand(config.primaryColor);
+    this.applyFont(config.fontFamily);
     if (cache) this.writeCache(config);
   }
 
@@ -120,6 +126,31 @@ export class AppConfigService {
   --app-primary-deep: ${b.darkPrimaryDeep};
   --app-on-primary: ${b.onPrimary};
 }`.trim();
+  }
+
+  /**
+   * Points `--app-font` at the configured stack and requests the faces it needs.
+   *
+   * Two elements rather than one because they do different jobs: the `<link>`
+   * fetches the faces, and the rule tells the page to use them — including the
+   * RTL variant, which leads with the Arabic face and so cannot be expressed as
+   * a single value.
+   */
+  private applyFont(font: AppFont): void {
+    if (!this.isBrowser) return;
+    ensureFontStylesheet(this.document, font, AppConfigService.fontLinkId);
+
+    let style = this.document.getElementById(
+      AppConfigService.fontStyleId,
+    ) as HTMLStyleElement | null;
+    if (!style) {
+      style = this.document.createElement('style');
+      style.id = AppConfigService.fontStyleId;
+      this.document.head.appendChild(style);
+    }
+    style.textContent = `
+:root { --app-font: ${fontStack(font)}; }
+[dir='rtl'] { --app-font: ${rtlFontStack(font)}; }`.trim();
   }
 
   private readCache(): AppConfiguration | null {

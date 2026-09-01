@@ -5,7 +5,7 @@ import 'wanes_motion.dart';
 
 /// The Wanes brand mark (from the design doc): a teal rounded-square badge with
 /// a dark-ink route curve from an origin dot to an amber destination pin.
-/// Optionally paired with the lowercase "wanes" wordmark.
+/// Optionally paired with the "Wanees ع الطريق" wordmark ([WanesWordmark]).
 class WanesLogo extends StatelessWidget {
   const WanesLogo({
     super.key,
@@ -69,27 +69,124 @@ class WanesLogo extends StatelessWidget {
 
     if (!showWordmark) return badge;
 
-    final wordmark = Text(
-      'wanes',
-      style: GoogleFonts.plusJakartaSans(
-        fontSize: size * 0.86,
-        fontWeight: FontWeight.w800,
-        letterSpacing: -size * 0.03,
-        color: Theme.of(context).colorScheme.onSurface,
-      ),
-    );
+    // The lockup is a good deal wider than a single word, so it takes a
+    // smaller share of the badge when it sits beside the mark than under it.
+    final wordmark = WanesWordmark(size: size * (horizontal ? 0.56 : 0.72));
 
     return horizontal
         ? Row(mainAxisSize: MainAxisSize.min, children: [
             badge,
             SizedBox(width: size * 0.3),
-            wordmark,
+            // Badge + three runs is a wide lockup for a 375pt phone once the
+            // screen adds its own gutters, so beside the mark it scales down
+            // to whatever room is left instead of overflowing the row.
+            Flexible(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: AlignmentDirectional.centerStart,
+                child: wordmark,
+              ),
+            ),
           ])
         : Column(mainAxisSize: MainAxisSize.min, children: [
             badge,
             SizedBox(height: size * 0.28),
             wordmark,
           ]);
+  }
+}
+
+/// The app name, in three runs: the Latin half, the joining colloquial `ع`,
+/// and the Arabic half. [WanesWordmark] sets each in its own face; the plain
+/// [kWanesAppName] below is for the surfaces that can only take a string.
+const String kWanesNameLatin = 'Wanees';
+const String kWanesNameJoiner = 'ع';
+const String kWanesNameArabic = 'الطريق';
+
+/// The app name as plain text — the launcher label, the task switcher, the
+/// browser tab. Kept in step with the native labels: `@string/app_name` in
+/// `android/app/src/main/res/values/strings.xml`, `CFBundleDisplayName` in
+/// `ios/Runner/Info.plist`, and `web/manifest.json` + `web/index.html`.
+///
+/// The three invisible marks are load-bearing. U+2066 (LRI) … U+2069 (PDI)
+/// isolate the whole name as left-to-right, so an Arabic launcher or an RTL
+/// paragraph cannot mirror it. The U+200E (LRM) after the `ع` is what keeps the
+/// `ع` in the middle: it and `الطريق` are both right-to-left, so with no strong
+/// left-to-right character between them bidi folds the two into a single RTL
+/// run and renders the `ع` past the Arabic word — "Wanees الطريق ع".
+const String kWanesAppName = '\u2066$kWanesNameLatin '
+    '$kWanesNameJoiner\u200E $kWanesNameArabic\u2069';
+
+/// The app-name lockup — **Wanees ع الطريق** ("Wanees, on the way"). Three
+/// runs, three faces: the Latin half in the display face, the Arabic half in
+/// Reem Kufi, and the colloquial `ع` that joins them as a calligraphic Aref
+/// Ruqaa glyph in the amber accent, sized up so it reads as a brand flourish
+/// rather than a clipped word.
+///
+/// Two details are deliberate. The order is pinned LTR — this is a logo, not
+/// running text, so it reads the same on an Arabic (RTL) layout. And the
+/// pieces stay separate [Text] runs rather than one `Text.rich`: in a single
+/// paragraph the bidi algorithm folds `ع الطريق` into one right-to-left run
+/// and flips the `ع` to the far right, which puts it on the wrong side of the
+/// Arabic word.
+class WanesWordmark extends StatelessWidget {
+  const WanesWordmark({super.key, this.size = 32, this.color, this.accent});
+
+  /// Font size of the Latin half; everything else is derived from it.
+  final double size;
+
+  /// Ink for the words. Defaults to the surface ink; the splash passes its
+  /// own on-teal ink.
+  final Color? color;
+
+  /// Colour of the joining `ع`. Defaults to the configured amber accent.
+  final Color? accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = WanesTokens.of(context);
+    final ink = color ?? Theme.of(context).colorScheme.onSurface;
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.baseline,
+        textBaseline: TextBaseline.alphabetic,
+        children: [
+          Text(
+            kWanesNameLatin,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: size,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -size * 0.03,
+              color: ink,
+            ),
+          ),
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: size * 0.16),
+            child: Text(
+              kWanesNameJoiner,
+              style: GoogleFonts.arefRuqaa(
+                fontSize: size * 1.12,
+                fontWeight: FontWeight.w700,
+                color: accent ?? t.amber,
+                height: 1,
+              ),
+            ),
+          ),
+          Text(
+            kWanesNameArabic,
+            style: GoogleFonts.reemKufi(
+              fontSize: size * 0.88,
+              fontWeight: FontWeight.w600,
+              color: ink,
+              // Arabic is a joined script — tracking would break the joins.
+              letterSpacing: 0,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

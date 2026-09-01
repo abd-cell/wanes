@@ -11,6 +11,7 @@ import '../../widgets/wanes_alerts.dart';
 import '../../widgets/wanes_ui.dart';
 import '../../widgets/when_picker.dart';
 import 'vehicles_screen.dart';
+import '../../widgets/wanes_motion.dart';
 
 /// Post a trip — prototype screen 09. Route card, DEPARTS / SEATS pair, the
 /// price-per-seat hero with its suggestion chip, the weekday-repeat switch and
@@ -185,7 +186,7 @@ class _PostTripScreenState extends State<PostTripScreen> {
           ),
           Expanded(
             child: _loading
-                ? const Center(child: CircularProgressIndicator())
+                ? const Center(child: WanesSpinner())
                 : _vehicles.isEmpty
                     ? _emptyVehicles(t)
                     : ListView(

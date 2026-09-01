@@ -34,6 +34,27 @@
 }
 .preset.chosen { border-color: var(--app-surface); box-shadow: 0 0 0 2px var(--app-ink); }
 
+/* Typeface picker: a card per option, each naming the two faces it pairs. */
+.fonts { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin-bottom: 18px; }
+.font-option {
+  display: flex; flex-direction: column; gap: 3px; text-align: start;
+  padding: 11px 14px; border-radius: 10px; cursor: pointer;
+  border: 1px solid var(--app-line); background: var(--app-surface); color: var(--app-ink);
+  font: inherit;
+}
+.font-option:hover { background: var(--app-surface-2); }
+/* Outlined in the brand rather than filled: the option's job is to be read, and
+   a filled state would fight the type sample it sits above. */
+.font-option.chosen { border-color: var(--app-primary); box-shadow: inset 0 0 0 1px var(--app-primary); }
+.font-name { font-weight: 600; font-size: 14px; }
+.font-faces { font-size: 12px; color: var(--app-ink-soft); }
+
+/* The specimen stacks rather than sitting inline: the two lines are meant to be
+   compared with each other, so they need the same left edge. */
+.specimen { align-items: flex-start; }
+.specimen-lines { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex: 1; }
+.specimen-line { margin: 0; font-size: 19px; font-weight: 600; line-height: 1.5; }
+
 .preview {
   border-top: 1px solid var(--app-line); padding-top: 14px;
   display: flex; align-items: center; gap: 14px; flex-wrap: wrap;

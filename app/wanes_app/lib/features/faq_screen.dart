@@ -108,7 +108,7 @@ class _FaqScreenState extends State<FaqScreen> {
 
   Widget _busy(WanesTokens t) => Padding(
         padding: const EdgeInsets.only(top: 90),
-        child: Center(child: CircularProgressIndicator(color: t.tealInk)),
+        child: Center(child: WanesSpinner(color: t.tealInk)),
       );
 
   Widget _failed(WanesTokens t) => Padding(

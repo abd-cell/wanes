@@ -10,6 +10,7 @@ import '../notifications_screen.dart';
 import '../../widgets/wanes_ui.dart';
 import '../contact_us_screen.dart';
 import '../edit_profile_screen.dart';
+import '../login_screen.dart';
 import 'driver_apply_screen.dart';
 import 'vehicles_screen.dart';
 
@@ -73,6 +74,16 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
     if (saved == true) _load();
   }
 
+  /// The driver's way out. There was none: the only Log out in the app lived on
+  /// the *rider* profile, so a driver had to switch back to riding first, and a
+  /// driver-only account had no way to sign out at all.
+  Future<void> _logout() async {
+    await _auth.logout();
+    if (!mounted) return;
+    Navigator.pushAndRemoveUntil(
+        context, MaterialPageRoute(builder: (_) => const LoginScreen()), (_) => false);
+  }
+
   Future<void> _switchToRiding() async {
     await _auth.switchRole(1);
     if (!mounted) return;
@@ -122,6 +133,16 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
             _settingsGroup(t, verified),
             const SizedBox(height: 14),
             _switchButton(t),
+            const SizedBox(height: 14),
+            Center(
+              child: GestureDetector(
+                onTap: _logout,
+                child: Text(context.tr('profile.logOut'),
+                    style: TextStyle(
+                        fontWeight: FontWeight.w600, fontSize: 14, color: t.amberInk)),
+              ),
+            ),
+            const SizedBox(height: 8),
           ],
         ),
       ),

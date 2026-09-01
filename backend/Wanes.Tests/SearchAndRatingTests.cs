@@ -9,6 +9,7 @@ using Wanes.Areas.Services.Ratings;
 using Wanes.Areas.Services.Ratings.Models;
 using Wanes.Areas.Services.Search;
 using Wanes.Areas.Services.Search.Models;
+using Wanes.Shareds.Constants;
 using Wanes.Shareds.Enums;
 using Wanes.Shareds.Models;
 using Wanes.Tests.TestDoubles;
@@ -31,6 +32,7 @@ public class SearchServiceTests
         var uow = new FakeUnitOfWork();
         var notifications = new FakeNotificationService { NearbyDriverCount = 3 };
         var svc = new SearchService(uow, new FakeSecurityManager(1), new FakeAuditService(), notifications,
+            new FakeAppConfigurationService(),
             uow.Repository<Trip>(), uow.Repository<User>(), uow.Repository<Vehicle>(), uow.Repository<RideRequest>(),
             uow.Repository<Booking>());
 
@@ -50,7 +52,7 @@ public class SearchServiceTests
         uow.Store<User>().Add(Build.Driver(2));
         uow.Store<Trip>().Add(Build.Trip(id: 10, driverId: 2, vehicleId: 1, seatsTotal: 3));
         var svc = new SearchService(uow, new FakeSecurityManager(1), new FakeAuditService(),
-            new FakeNotificationService(),
+            new FakeNotificationService(), new FakeAppConfigurationService(),
             uow.Repository<Trip>(), uow.Repository<User>(), uow.Repository<Vehicle>(), uow.Repository<RideRequest>(),
             uow.Repository<Booking>());
 
@@ -63,12 +65,14 @@ public class SearchServiceTests
     }
 
     [Fact]
-    public async Task Trip_that_already_departed_is_not_offered()
+    public async Task Trip_long_past_its_departure_is_not_offered()
     {
         var uow = new FakeUnitOfWork();
         uow.Store<User>().Add(Build.Driver(2));
         var trip = Build.Trip(id: 10, driverId: 2, vehicleId: 1, seatsTotal: 3);
-        trip.DepartAt = DateTime.UtcNow.AddMinutes(-5);   // left already, driver never pressed start
+        // Well past the boarding grace: gone, and the driver simply never
+        // pressed start. The search window still reaches back this far.
+        trip.DepartAt = DateTime.UtcNow - MatchRules.BoardingGrace - TimeSpan.FromMinutes(5);
         uow.Store<Trip>().Add(trip);
 
         var input = Input();
@@ -78,6 +82,29 @@ public class SearchServiceTests
 
         Assert.True(res.Success);
         Assert.Equal(SearchMode.Hail, res.Data!.Mode);
+    }
+
+    [Fact]
+    public async Task Trip_a_few_minutes_late_is_still_offered()
+    {
+        // Inside the boarding grace: the driver is running late, not gone. The
+        // rider is standing at the pickup and can still take the seat — and this
+        // is the same window that keeps a hail-accepted trip joinable once its
+        // pickup lead has elapsed.
+        var uow = new FakeUnitOfWork();
+        uow.Store<User>().Add(Build.Driver(2));
+        var trip = Build.Trip(id: 10, driverId: 2, vehicleId: 1, seatsTotal: 3);
+        trip.DepartAt = DateTime.UtcNow.AddMinutes(-3);
+        uow.Store<Trip>().Add(trip);
+
+        var input = Input();
+        input.When = DateTime.UtcNow;
+
+        var res = await Service(uow).Search(input);
+
+        Assert.True(res.Success);
+        Assert.Equal(SearchMode.Carpool, res.Data!.Mode);
+        Assert.Single(res.Data.Matches);
     }
 
     [Fact]
@@ -132,9 +159,93 @@ public class SearchServiceTests
         Assert.Equal(SearchMode.Hail, res.Data!.Mode);
     }
 
+    [Fact]
+    public async Task Departure_sort_puts_the_soonest_first()
+    {
+        var uow = new FakeUnitOfWork();
+        uow.Store<User>().Add(Build.Driver(2));
+        foreach (var (id, minutes) in new[] { (10, 40), (11, 15), (12, 25) })
+        {
+            var trip = Build.Trip(id: id, driverId: 2, vehicleId: 1, seatsTotal: 3);
+            trip.DepartAt = DateTime.UtcNow.AddMinutes(minutes);
+            uow.Store<Trip>().Add(trip);
+        }
+
+        var input = Input();
+        input.SortBy = SearchSort.Departure;
+
+        var res = await Service(uow).Search(input);
+
+        Assert.True(res.Success);
+        Assert.Equal([11, 12, 10], res.Data!.Matches.Select(m => m.Id));
+    }
+
+    [Fact]
+    public async Task Price_sort_puts_the_cheapest_first_and_the_unpriced_last()
+    {
+        var uow = new FakeUnitOfWork();
+        uow.Store<User>().Add(Build.Driver(2));
+        foreach (var (id, price) in new (int, decimal?)[] { (10, 5m), (11, null), (12, 2m) })
+        {
+            var trip = Build.Trip(id: id, driverId: 2, vehicleId: 1, seatsTotal: 3);
+            trip.PricePerSeat = price;
+            uow.Store<Trip>().Add(trip);
+        }
+
+        var input = Input();
+        input.SortBy = SearchSort.Price;
+
+        var res = await Service(uow).Search(input);
+
+        Assert.True(res.Success);
+        // A trip with no price set is not the cheapest one -- it sinks.
+        Assert.Equal([12, 10, 11], res.Data!.Matches.Select(m => m.Id));
+    }
+
+    [Fact]
+    public async Task Seats_sort_puts_the_roomiest_first()
+    {
+        var uow = new FakeUnitOfWork();
+        uow.Store<User>().Add(Build.Driver(2));
+        foreach (var (id, seats) in new[] { (10, 2), (11, 4), (12, 3) })
+        {
+            var trip = Build.Trip(id: id, driverId: 2, vehicleId: 1, seatsTotal: seats);
+            uow.Store<Trip>().Add(trip);
+        }
+
+        var input = Input();
+        input.SortBy = SearchSort.Seats;
+
+        var res = await Service(uow).Search(input);
+
+        Assert.True(res.Success);
+        Assert.Equal([11, 12, 10], res.Data!.Matches.Select(m => m.Id));
+    }
+
+    [Fact]
+    public async Task Unsorted_search_keeps_the_default_proximity_ranking()
+    {
+        var uow = new FakeUnitOfWork();
+        uow.Store<User>().Add(Build.Driver(2));
+        // Departure and price both disagree with proximity here, so a match on
+        // the arrival order means neither leaked into the default.
+        foreach (var (id, minutes, price) in new (int, int, decimal?)[] { (10, 40, 9m), (11, 15, 1m) })
+        {
+            var trip = Build.Trip(id: id, driverId: 2, vehicleId: 1, seatsTotal: 3);
+            trip.DepartAt = DateTime.UtcNow.AddMinutes(minutes);
+            trip.PricePerSeat = price;
+            uow.Store<Trip>().Add(trip);
+        }
+
+        var res = await Service(uow).Search(Input());
+
+        Assert.True(res.Success);
+        Assert.Equal(2, res.Data!.Matches.Count);
+    }
+
     private static SearchService Service(FakeUnitOfWork uow, INotificationService? notifications = null) =>
         new(uow, new FakeSecurityManager(1), new FakeAuditService(),
-            notifications ?? new FakeNotificationService(),
+            notifications ?? new FakeNotificationService(), new FakeAppConfigurationService(),
             uow.Repository<Trip>(), uow.Repository<User>(), uow.Repository<Vehicle>(), uow.Repository<RideRequest>(),
             uow.Repository<Booking>());
 }

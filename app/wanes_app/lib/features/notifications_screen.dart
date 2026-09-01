@@ -2,12 +2,14 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import '../core/l10n.dart';
+import '../core/notification_router.dart';
 import '../core/push_service.dart';
 import '../core/theme.dart';
 import '../models/models.dart';
 import '../services/services.dart';
 import '../widgets/wanes_alerts.dart';
 import '../widgets/wanes_ui.dart';
+import '../widgets/wanes_motion.dart';
 
 /// Rider notifications feed. Mirrors prototype screen 13 (Notifications):
 /// a Today / Earlier grouped list with unread dots and "Mark all read".
@@ -78,7 +80,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     await _load(silent: true);
   }
 
+  /// A row is a link to whatever it is about, not just a read receipt — the
+  /// same destination a tap on the tray notification opens.
   Future<void> _open(AppNotification notification) async {
+    unawaited(NotificationRouter.open(notification, fromInbox: true));
+
     if (notification.isRead) return;
 
     setState(() {
@@ -121,6 +127,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       NotificationKind.tripCompleted => 'notifType.tripCompleted',
       NotificationKind.bookingCancelled => 'notifType.bookingCancelled',
       NotificationKind.tripStarted => 'notifType.tripStarted',
+      NotificationKind.driverArrived => 'notifType.driverArrived',
       NotificationKind.tripMatched => 'notifType.tripMatched',
       NotificationKind.driverVerified => 'notifType.driverVerified',
       NotificationKind.driverRejected => 'notifType.driverRejected',
@@ -160,7 +167,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             tile: t.teal,
             card: t.tealTint
           ),
-        NotificationKind.driverAccepted || NotificationKind.tripStarted => (
+        NotificationKind.driverAccepted ||
+        NotificationKind.tripStarted ||
+        NotificationKind.driverArrived => (
             icon: Icons.directions_car_rounded,
             fg: const Color(0xFF2A1000),
             tile: t.amber,
@@ -248,7 +257,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   Widget _busy(WanesTokens t) => Padding(
         padding: const EdgeInsets.only(top: 90),
-        child: Center(child: CircularProgressIndicator(color: t.tealInk)),
+        child: Center(child: WanesSpinner(color: t.tealInk)),
       );
 
   Widget _failed(WanesTokens t) => Padding(

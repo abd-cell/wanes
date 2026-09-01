@@ -26,6 +26,9 @@ class AppConfigController {
   /// [WanesTokens.lightFor] / [WanesTokens.darkFor].
   static Color get primary => Color(value.primaryColor);
 
+  /// The configured typeface. [WanesTheme] resolves it to a face per script.
+  static AppFont get font => value.font;
+
   /// Restores the last known settings. Runs before `runApp`, so there is no
   /// flash of the default palette on a device that has already seen the brand.
   static Future<void> load() async {
@@ -45,10 +48,12 @@ class AppConfigController {
   static Future<void> adopt(AppConfig next) async {
     final current = value;
     final changed = next.primaryColor != current.primaryColor ||
+        next.font != current.font ||
         next.currencySymbol != current.currencySymbol ||
         next.currencyCode != current.currencyCode ||
         next.currencyPosition != current.currencyPosition ||
         next.currencyDecimals != current.currencyDecimals ||
+        next.hailTtlMinutes != current.hailTtlMinutes ||
         next.supportPhone != current.supportPhone ||
         next.supportWhatsApp != current.supportWhatsApp ||
         next.supportEmail != current.supportEmail ||

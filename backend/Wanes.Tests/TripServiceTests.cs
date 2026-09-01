@@ -5,6 +5,7 @@ using Wanes.Areas.Domain.Users;
 using Wanes.Areas.Domain.Vehicles;
 using Wanes.Areas.Services.Audit;
 using Wanes.Areas.Services.Trips;
+using Wanes.Areas.Services.Users.Availability;
 using Wanes.Areas.Services.Trips.Models;
 using Wanes.Shareds.Enums;
 using Wanes.Shareds.Models;
@@ -18,7 +19,7 @@ public class TripServiceTests
     {
         var uow = new FakeUnitOfWork();
         var svc = new TripService(uow, new FakeSecurityManager(driverId), new FakeAuditService(),
-            new FakeNotificationService(),
+            new FakeNotificationService(), new DriverAvailabilityService(uow.Repository<Trip>()),
             uow.Repository<Trip>(), uow.Repository<TripStatusHistory>(), uow.Repository<Vehicle>(),
             uow.Repository<User>(), uow.Repository<Booking>(), uow.Repository<RideRequest>());
         return (svc, uow);

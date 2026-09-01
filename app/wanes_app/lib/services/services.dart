@@ -4,6 +4,7 @@ import '../core/app_response.dart';
 import '../core/l10n.dart';
 import '../core/places.dart';
 import '../core/push_service.dart';
+import '../core/saved_places.dart';
 import '../core/session.dart';
 import '../models/models.dart';
 
@@ -134,12 +135,26 @@ class AuthService {
     return res;
   }
 
+  /// Signs out and tears down everything this account left behind on the device.
+  ///
+  /// Every screen with a "Log out" calls exactly this. It used to be a bare
+  /// three lines with each caller adding its own cleanup on top, which is how
+  /// one of them ended up clearing the cached places and the other did not —
+  /// state that belongs to a signed-out account has no business being anyone
+  /// else's problem to remember.
+  ///
+  /// The account's server-side presence is dropped by the API as it revokes the
+  /// session, so there is no separate "go offline" call to lose here.
   Future<void> logout() async {
     // Detach the device while the auth token is still valid, so this handset
     // stops receiving the account's pushes.
     await PushService.instance.clearToken();
     await _api.post('Accounts/logout');
+    // Unconditional: a failed or unreachable logout still ends the session on
+    // this device. Leaving the user signed in because the network was down is
+    // the one outcome nobody wants from tapping Log out.
     await Session.instance.clear();
+    SavedPlaces.instance.clear();
   }
 }
 
@@ -335,9 +350,21 @@ class TripService {
         parse: (d) => DriverLocation.fromJson(d as Map<String, dynamic>),
       );
 
-  /// Driver lifecycle. The server enforces the order (Posted/Full → Arrived →
-  /// Active → Completed) and pushes each move to the riders holding a seat,
-  /// which is what advances their tracking rail.
+  /// Tracks one rider's seat: reached them, picked them up, dropped them off,
+  /// or they never showed. The server enforces the order per seat, derives the
+  /// trip's own status from every seat on it, and tells only the rider whose
+  /// seat moved — which is what advances that one rider's tracking rail.
+  Future<AppResponse<TripBooking>> setBookingStatus(int tripId, int bookingId, int status) =>
+      _api.put<TripBooking>(
+        'Trips/$tripId/bookings/$bookingId/status',
+        body: {'status': status},
+        parse: (d) => TripBooking.fromJson(d as Map<String, dynamic>),
+      );
+
+  /// Driver lifecycle, trip-wide: the same per-seat moves applied to every rider
+  /// at once. The server enforces the order (Posted/Full → Arrived → Active →
+  /// Completed) and pushes each move to the riders whose seat it moved, which is
+  /// what advances their tracking rail.
   Future<AppResponse<Trip>> arrive(int id) => _transition(id, 'arrive');
   Future<AppResponse<Trip>> start(int id) => _transition(id, 'start');
   Future<AppResponse<Trip>> complete(int id) => _transition(id, 'complete');
@@ -373,6 +400,11 @@ class RideRequestService {
       );
 
   Future<AppResponse> accept(int id) => _api.post('requests/$id/accept');
+
+  /// Withdraws the rider's own open hail. The server closes it on every driver
+  /// who was offered it, so leaving the search screen without calling this
+  /// leaves a card up that can still be accepted.
+  Future<AppResponse> cancel(int id) => _api.post('requests/$id/cancel');
 }
 
 /// The rider's saved places — Home, Work and named favourites

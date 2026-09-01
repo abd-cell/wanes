@@ -211,10 +211,23 @@ void main() {
       expect(find.text('Rate your trip'), findsOneWidget);
       expect(find.text('Cancel booking'), findsNothing);
     });
+
+    testWidgets('leaves back navigation alone while it has nothing to report',
+        (tester) async {
+      await tester.pumpWidget(host(BookingDetailsScreen(booking: booking())));
+      await tester.pump();
+
+      // The screen only intercepts the pop to hand a `true` back to the list.
+      // Blocking it unconditionally cost the rider the iOS swipe-back gesture
+      // and Android's predictive back on a screen that usually changes nothing.
+      final scopes = tester.widgetList(
+          find.byWidgetPredicate((w) => w is PopScope<Object?>));
+      expect(scopes.map((w) => (w as PopScope<Object?>).canPop), [true]);
+    });
   });
 
   group('the rider tab bar', () {
-    testWidgets('carries Bookings between Home and Trips', (tester) async {
+    testWidgets('is Home · Bookings · Profile', (tester) async {
       await tester.pumpWidget(host(Builder(
         builder: (context) => Scaffold(
           bottomNavigationBar: WanesBottomNav(
@@ -230,8 +243,9 @@ void main() {
 
       expect(find.text('Home'), findsOneWidget);
       expect(find.text('Bookings'), findsOneWidget);
-      expect(find.text('Trips'), findsOneWidget);
       expect(find.text('Profile'), findsOneWidget);
+      // A booking carries its journey with it, so there is no rider trips tab.
+      expect(find.text('Trips'), findsNothing);
     });
   });
 }
