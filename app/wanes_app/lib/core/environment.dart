@@ -42,6 +42,23 @@ class Environment {
     defaultValue: 'https://nominatim.openstreetmap.org/search',
   );
 
+  /// ISO 3166-1 alpha-2 country the location search is confined to.
+  ///
+  /// Wanes runs in Jordan, so a rider typing "London" should be offered nothing
+  /// rather than a trip origin the service cannot serve. Nominatim treats
+  /// `viewbox` as a preference and would happily return the London one; only
+  /// `countrycodes` actually excludes it.
+  ///
+  /// A comma-separated list works too, and an empty value lifts the restriction
+  /// altogether — which is what a second country would need:
+  ///
+  ///   flutter run --dart-define=GEOCODER_COUNTRIES=jo,ps
+  ///   flutter run --dart-define=GEOCODER_COUNTRIES=          # anywhere
+  static const String geocoderCountries = String.fromEnvironment(
+    'GEOCODER_COUNTRIES',
+    defaultValue: 'jo',
+  );
+
   /// Reverse lookup (coordinate -> address), used by "use my current location".
   /// Nominatim exposes it as a sibling of /search, so it is derived from
   /// [geocoderUrl] rather than being a second dart-define to keep in sync.

@@ -36,7 +36,9 @@ class GeocodingService {
   /// the intercity results that Wanes exists to match.
   static const _nearbyDegrees = 0.35;
 
-  /// Fallback bias when we have no fix: Jordan, where the service runs.
+  /// Fallback bias when we have no fix: Jordan, where the service runs. This
+  /// only *orders* the results — [Environment.geocoderCountries] is what keeps
+  /// them inside the country.
   static const _defaultViewbox = '34.9,33.4,39.3,29.1';
 
   /// "31.95, 35.92" typed straight into the box — treat it as a dropped pin.
@@ -93,6 +95,12 @@ class GeocodingService {
       'limit': '12',
       'accept-language': AppLocalizations.current.localeName,
       'viewbox': viewbox,
+      // Bias by viewbox, restrict by country: a rider whose fix has drifted
+      // over a border — or who is searching before any fix arrives — still
+      // gets Jordanian results, because a trip Wanes cannot serve is not a
+      // useful search result.
+      if (Environment.geocoderCountries.isNotEmpty)
+        'countrycodes': Environment.geocoderCountries,
     });
 
     final res = await _get(uri);

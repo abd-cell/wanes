@@ -141,6 +141,13 @@ void main() {
       expect(parts[1], lessThanOrEqualTo(90.0));
       expect(parts[2], lessThanOrEqualTo(180.0));
     });
+
+    /// The viewbox only orders results — Nominatim would still hand back London
+    /// for "london". Confining the search is the country code's job, and Wanes
+    /// only runs in Jordan.
+    test('the search is confined to Jordan by default', () {
+      expect(Environment.geocoderCountries, 'jo');
+    });
   });
 
   group('categories', () {
