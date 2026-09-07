@@ -17,6 +17,7 @@ import 'notifications_screen.dart';
 import 'api_log_screen.dart';
 import 'contact_us_screen.dart';
 import 'faq_screen.dart';
+import 'feedback_screen.dart';
 import 'saved_places_screen.dart';
 import '../widgets/wanes_motion.dart';
 
@@ -276,6 +277,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
         subtitle: context.tr('contact.subtitle'),
         onTap: () => Navigator.push(
             context, MaterialPageRoute(builder: (_) => const ContactUsScreen())),
+      ),
+      GroupedRow(
+        icon: Icons.rate_review_outlined,
+        title: context.tr('feedback.title'),
+        subtitle: context.tr('feedback.subtitle'),
+        onTap: () => Navigator.push(
+            context, MaterialPageRoute(builder: (_) => const FeedbackScreen())),
       ),
       // Developer aid. `ApiLog.enabled` is `kDebugMode`, so the row — and the
       // screen behind it — are tree-shaken out of release builds.

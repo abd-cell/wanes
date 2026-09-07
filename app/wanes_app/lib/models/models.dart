@@ -941,6 +941,10 @@ enum NotificationKind {
   driverVerified('DriverVerified'),
   driverRejected('DriverRejected'),
   ratingReceived('RatingReceived'),
+
+  /// The support desk answered a complaint or suggestion
+  /// (`NotificationType.FeedbackReplied`).
+  feedbackReplied('FeedbackReplied'),
   general('General');
 
   const NotificationKind(this.wire);
@@ -1001,6 +1005,7 @@ class AppNotification {
   int? get tripId => _int('tripId');
   int? get bookingId => _int('bookingId');
   int? get requestId => _int('requestId');
+  int? get feedbackId => _int('feedbackId');
 
   int? _int(String key) {
     final value = data?[key];
@@ -1158,5 +1163,90 @@ class Faq {
         items: (j['items'] as List? ?? [])
             .map((e) => FaqItem.fromJson(e as Map<String, dynamic>))
             .toList(),
+      );
+}
+
+/// Complaint or suggestion (`Wanes.Shareds.Enums.FeedbackKind`).
+enum FeedbackKind {
+  complaint(1, 'feedback.kindComplaint'),
+  suggestion(2, 'feedback.kindSuggestion');
+
+  const FeedbackKind(this.value, this.labelKey);
+  final int value;
+
+  /// l10n key — resolve with `context.tr(kind.labelKey)`.
+  final String labelKey;
+
+  String get label => AppLocalizations.current.t(labelKey);
+
+  static FeedbackKind fromValue(int? v) => FeedbackKind.values
+      .firstWhere((k) => k.value == v, orElse: () => FeedbackKind.complaint);
+}
+
+/// Where a submission stands with the support desk
+/// (`Wanes.Shareds.Enums.FeedbackStatus`).
+enum FeedbackStatus {
+  isNew(1, 'feedback.statusNew'),
+  inReview(2, 'feedback.statusInReview'),
+  resolved(3, 'feedback.statusResolved'),
+  dismissed(4, 'feedback.statusDismissed');
+
+  const FeedbackStatus(this.value, this.labelKey);
+  final int value;
+  final String labelKey;
+
+  String get label => AppLocalizations.current.t(labelKey);
+
+  /// Still with the desk — the user may yet hear back on it.
+  bool get isOpen => this == FeedbackStatus.isNew || this == FeedbackStatus.inReview;
+
+  static FeedbackStatus fromValue(int? v) => FeedbackStatus.values
+      .firstWhere((s) => s.value == v, orElse: () => FeedbackStatus.isNew);
+}
+
+/// One complaint or suggestion the user sent, with the desk's answer if it has
+/// arrived (`GET /feedback`).
+///
+/// No language pair, unlike [FaqItem]: this is one person's own words and one
+/// person's answer to them, so there is nothing to switch between — the server
+/// records which language the submission was written in and the desk replies in
+/// it.
+class FeedbackEntry {
+  const FeedbackEntry({
+    required this.id,
+    required this.kind,
+    required this.status,
+    required this.subject,
+    required this.message,
+    this.tripId,
+    this.reply,
+    this.repliedAt,
+    this.createdAt,
+  });
+
+  final int id;
+  final FeedbackKind kind;
+  final FeedbackStatus status;
+  final String subject;
+  final String message;
+  final int? tripId;
+
+  /// The desk's answer, as written. Null until someone replies.
+  final String? reply;
+  final DateTime? repliedAt;
+  final DateTime? createdAt;
+
+  bool get hasReply => (reply?.trim().isNotEmpty ?? false);
+
+  factory FeedbackEntry.fromJson(Map<String, dynamic> j) => FeedbackEntry(
+        id: j['id'] as int? ?? 0,
+        kind: FeedbackKind.fromValue(j['kind'] as int?),
+        status: FeedbackStatus.fromValue(j['status'] as int?),
+        subject: j['subject'] as String? ?? '',
+        message: j['message'] as String? ?? '',
+        tripId: j['tripId'] as int?,
+        reply: j['reply'] as String?,
+        repliedAt: parseServerDate(j['repliedAt'] as String?),
+        createdAt: parseServerDate(j['creationDate'] as String?),
       );
 }

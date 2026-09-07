@@ -27,6 +27,13 @@ const PAGE_SIZE = 25;
   styles: [`
     .roles-row { display: flex; gap: 16px; flex-wrap: wrap; margin: 6px 0 2px; }
     .roles-row label { display: flex; align-items: center; gap: 6px; font-weight: 600; }
+    /* Someone else's words. Reads as quoted text, not as an empty input the
+       admin is invited to type over. */
+    .readonly-text {
+      white-space: pre-wrap; line-height: 1.55;
+      padding: 10px 12px; border-radius: 8px;
+      background: var(--app-surface-2); border: 1px solid var(--app-line);
+    }
   `],
 })
 export class ResourceComponent implements OnInit {
@@ -177,7 +184,7 @@ export class ResourceComponent implements OnInit {
     const cfg = this.config();
     if (!cfg) return;
     const id = this.editingId();
-    const body = this.model();
+    const body = this.bodyFor(cfg);
     const res = id === null
       ? await firstValueFrom(this.api.createResource(cfg.route, body))
       : await firstValueFrom(this.api.updateResource(cfg.route, id, body));
@@ -188,6 +195,16 @@ export class ResourceComponent implements OnInit {
     } else {
       this.global.errorMsg(res.message || this.translation.translate('error_generic'));
     }
+  }
+
+  /**
+   * The model minus the `readonly` fields. They are in the form to be read, and
+   * sending them back would offer the server an edit it is right to refuse.
+   */
+  private bodyFor(cfg: ResourceConfig): ResourceRecord {
+    const skip = new Set(cfg.fields.filter((f) => f.type === 'readonly').map((f) => f.name));
+    if (skip.size === 0) return this.model();
+    return Object.fromEntries(Object.entries(this.model()).filter(([k]) => !skip.has(k)));
   }
 
   async remove(row: ResourceRecord): Promise<void> {

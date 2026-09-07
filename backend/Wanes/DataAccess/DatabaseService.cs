@@ -38,6 +38,7 @@ public class DatabaseService : DbContext
     public DbSet<AppConfiguration> AppConfigurations => Set<AppConfiguration>();
 
     public DbSet<FaqItem> FaqItems => Set<FaqItem>();
+    public DbSet<Feedback> Feedbacks => Set<Feedback>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

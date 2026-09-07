@@ -31,4 +31,7 @@ public enum NotificationTemplate
 
     /// <summary>The driver waited at the pickup and marked the rider a no-show.</summary>
     BookingNoShowRider = 14,
+
+    /// <summary>The support desk answered the user's complaint or suggestion.</summary>
+    FeedbackReplied = 15,
 }

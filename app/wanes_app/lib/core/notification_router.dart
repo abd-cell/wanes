@@ -7,6 +7,7 @@ import '../features/driver/driver_apply_screen.dart';
 import '../features/driver/driver_home_screen.dart';
 import '../features/driver/driver_trip_details_screen.dart';
 import '../features/driver/requests_screen.dart';
+import '../features/feedback_screen.dart';
 import '../features/live_trip_screen.dart';
 import '../features/notifications_screen.dart';
 import '../features/trip_details_screen.dart';
@@ -180,6 +181,13 @@ class NotificationRouter {
               // was just cancelled under them is not.
               canBook: n.kind == NotificationKind.tripMatched,
             );
+
+      // The answer is on the submission, not in the notification: the reply is
+      // free text a lock screen was never going to carry, so this opens the
+      // screen that holds it. The list is enough of a destination — the card
+      // the user is looking for is the one with the reply dot on it.
+      case NotificationKind.feedbackReplied:
+        return (_) => const FeedbackScreen();
 
       // Admin-composed: there is no entity behind it, so show it in full.
       case NotificationKind.general:

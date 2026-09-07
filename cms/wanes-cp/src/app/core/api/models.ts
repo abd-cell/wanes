@@ -302,6 +302,20 @@ export enum FaqCategory {
   Safety = 5,
 }
 
+/** Complaint or suggestion — mirrors Shareds/Enums/FeedbackKind.cs. */
+export enum FeedbackKind {
+  Complaint = 1,
+  Suggestion = 2,
+}
+
+/** Where a submission stands with the desk — mirrors Shareds/Enums/FeedbackStatus.cs. */
+export enum FeedbackStatus {
+  New = 1,
+  InReview = 2,
+  Resolved = 3,
+  Dismissed = 4,
+}
+
 // ── DTOs ──
 export interface AuthResult {
   /** Short-lived bearer token; `refreshToken` is what outlives it. */

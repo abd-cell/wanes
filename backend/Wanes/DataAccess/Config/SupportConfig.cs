@@ -21,3 +21,31 @@ public class FaqItemConfig : IEntityTypeConfiguration<FaqItem>
         b.HasIndex(x => new { x.IsPublished, x.Category, x.SortOrder });
     }
 }
+
+public class FeedbackConfig : IEntityTypeConfiguration<Feedback>
+{
+    public void Configure(EntityTypeBuilder<Feedback> b)
+    {
+        b.Property(x => x.Subject).HasMaxLength(FeedbackRules.MaxSubject).IsRequired();
+
+        // The body and the reply are prose. The length ceiling that matters is
+        // the one on the way in (FeedbackRules), not one baked into the column
+        // where a later, more generous limit would need a migration.
+        b.Property(x => x.Message).IsRequired();
+
+        b.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // Restrict, not Cascade: the complaint is the record that the platform
+        // let someone down. Deleting the trip must not quietly delete the
+        // evidence, and the reference is optional anyway.
+        b.HasOne(x => x.Trip).WithMany().HasForeignKey(x => x.TripId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // The admin inbox: newest first, filtered by status and kind.
+        b.HasIndex(x => new { x.Status, x.Kind, x.Id });
+
+        // "My submissions", newest first.
+        b.HasIndex(x => new { x.UserId, x.Id });
+    }
+}

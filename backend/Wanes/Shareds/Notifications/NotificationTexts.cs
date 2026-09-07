@@ -99,6 +99,15 @@ public static class NotificationTexts
             "تم رفض طلب السائق",
             "لم يتم اعتماد طلبك كسائق. تواصل مع الدعم إذا كنت تعتقد أن هناك خطأ."),
 
+        // The reply itself is not in the push. It is one person's answer to one
+        // person's complaint, written in free text the desk never expected a
+        // lock screen to carry — and it can be long. The notification says an
+        // answer arrived; the screen shows what it says.
+        [NotificationTemplate.FeedbackReplied] = new(
+            NotificationType.FeedbackReplied,
+            "Support replied", "We answered \"{subject}\". Tap to read it.",
+            "ردّ فريق الدعم", "أجبنا على \"{subject}\". اضغط للقراءة."),
+
         [NotificationTemplate.RatingReceived] = new(
             NotificationType.RatingReceived,
             "You got a new rating", "{stars} out of 5 for your last trip.",

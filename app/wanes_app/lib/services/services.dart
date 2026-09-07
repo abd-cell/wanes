@@ -488,3 +488,38 @@ class FaqService {
         parse: (d) => Faq.fromJson(d as Map<String, dynamic>),
       );
 }
+
+/// Complaints and suggestions: file one, and read what the desk said back.
+///
+/// Authorized, unlike [FaqService] beside it — a submission the desk cannot
+/// reply to is a dead end.
+class FeedbackService {
+  final _api = ApiClient.instance;
+
+  /// The user's own submissions, newest first.
+  Future<AppResponse<List<FeedbackEntry>>> mine() => _api.get<List<FeedbackEntry>>(
+        'feedback',
+        parse: (d) => (d as List? ?? [])
+            .map((e) => FeedbackEntry.fromJson(e as Map<String, dynamic>))
+            .toList(),
+      );
+
+  /// Files one. [tripId] must be a trip the user was actually on — the server
+  /// answers `TripNotFound` otherwise.
+  Future<AppResponse<FeedbackEntry>> submit({
+    required FeedbackKind kind,
+    required String subject,
+    required String message,
+    int? tripId,
+  }) =>
+      _api.post<FeedbackEntry>(
+        'feedback',
+        body: {
+          'kind': kind.value,
+          'subject': subject,
+          'message': message,
+          if (tripId != null) 'tripId': tripId,
+        },
+        parse: (d) => FeedbackEntry.fromJson(d as Map<String, dynamic>),
+      );
+}

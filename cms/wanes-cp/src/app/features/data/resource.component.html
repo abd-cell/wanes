@@ -61,6 +61,12 @@
                             (ngModelChange)="setField(fld.name, $event)"></textarea>
                 </div>
               }
+              @case ('readonly') {
+                <div class="form-row" style="grid-column:1/-1">
+                  <label>{{ fld.labelKey | translate }}</label>
+                  <div class="readonly-text">{{ model()[fld.name] || '—' }}</div>
+                </div>
+              }
               @case ('reference') {
                 <div class="form-row">
                   <label>{{ fld.labelKey | translate }}</label>

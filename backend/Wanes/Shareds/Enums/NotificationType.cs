@@ -25,5 +25,8 @@ public enum NotificationType
     /// <summary>The driver reached the pickup point.</summary>
     DriverArrived = 12,
 
+    /// <summary>The support desk answered a complaint or suggestion.</summary>
+    FeedbackReplied = 13,
+
     General = 100,
 }

@@ -38,6 +38,7 @@ export const en: Record<string, string> = {
   res_sessions: 'Sessions',
   res_api_logs: 'API Logs',
   res_faqs: 'FAQ',
+  res_feedback: 'Complaints & suggestions',
 
   // ── generic actions / labels ──
   action_new: 'New',
@@ -212,6 +213,14 @@ export const en: Record<string, string> = {
   faqcategory_4: 'Account',
   faqcategory_5: 'Safety',
 
+  feedbackkind_1: 'Complaint',
+  feedbackkind_2: 'Suggestion',
+
+  feedbackstatus_1: 'New',
+  feedbackstatus_2: 'In review',
+  feedbackstatus_3: 'Resolved',
+  feedbackstatus_4: 'Dismissed',
+
   // ── dashboard: filters & sections ──
   dash_range: 'Range',
   range_7: 'Last 7 days',
@@ -332,6 +341,11 @@ export const en: Record<string, string> = {
   col_answer_en: 'Answer (EN)',
   col_answer_ar: 'Answer (AR)',
   col_sort_order: 'Order',
+  col_feedback_kind: 'Type',
+  col_subject: 'Subject',
+  col_message: 'Message',
+  col_reply: 'Reply',
+  col_replied_by: 'Answered by',
   col_published: 'Published',
   col_endpoint: 'Endpoint',
   col_calls: 'Calls',

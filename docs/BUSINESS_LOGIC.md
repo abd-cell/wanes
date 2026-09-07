@@ -500,7 +500,52 @@ way.
 
 ---
 
-## 11. Audit rule (track the whole journey)
+## 11. Complaints & suggestions
+
+The support desk's one inbox, holding both kinds of message a user might send:
+something went wrong (**complaint**) or something could be better
+(**suggestion**). One entity carries both — the pipeline is identical, and the
+kind is what changes how it is read, not how it is handled.
+
+**Lifecycle** — `new → in_review → resolved | dismissed`. The user sees the
+status verbatim, so it is worded as an answer to "what is happening to my
+complaint?". `dismissed` sits next to `resolved` deliberately: "we read it and
+are not acting on it" is a real outcome, and calling that resolved would be a
+lie the user can spot.
+
+**The rules that are not obvious from the CRUD:**
+
+- **One exchange deep.** The user writes, the desk answers, the row closes. A
+  back-and-forth belongs in a messaging feature; a single `reply` column
+  pretending to be a conversation would let replies overwrite each other.
+- **A named trip must be the user's own** — as its driver, or holding a booking
+  on it. The id ends up in front of an admin as context, so an arbitrary one
+  would attach a complaint to a stranger's ride and would answer "does trip N
+  exist?" for anyone who asked.
+- **The limit is queue depth, not a rate.** At most five *open* submissions per
+  account. A genuine bad day can honestly produce three complaints in ten
+  minutes, which a per-minute cap would block while still letting a script file
+  hundreds over a day. The desk answers and the slot comes back.
+- **No language pair, unlike the FAQ.** FAQ copy is published to everyone and so
+  ships in both languages; this is one person's own words answered by one
+  person. The submission records the language the user was writing in so the desk
+  answers in the one they will read it in.
+- **The admin never edits the user's text.** Only `status` and `reply` are
+  writable, and there is no create — a submission belongs to whoever wrote it.
+  Deletion is soft, like everywhere else.
+- **Only a real answer notifies.** A status moving `new → in_review` is desk
+  bookkeeping; notifying on it would train the user to ignore the one
+  notification that carries an actual answer. The push says an answer arrived and
+  does not carry it — the reply is free text a lock screen was never going to
+  hold.
+
+Audited as `feedback.submit` on the way in and `admin.feedback.update` /
+`admin.feedback.delete` on the desk's side, the update carrying `before`/`after`
+so the trail shows what was said.
+
+---
+
+## 12. Audit rule (track the whole journey)
 
 - **Every mutating action + auth event** writes one immutable `AuditLog` row:
   who (actor), what (action), which entity, `before`/`after`, IP, time.
@@ -513,7 +558,7 @@ way.
 
 ---
 
-## 12. Key validation & edge-case rules
+## 13. Key validation & edge-case rules
 
 - Origin and destination **must differ** and both must geocode successfully.
 - `depart_at` must be in the **future** when posting a trip.
@@ -525,11 +570,11 @@ way.
 - Concurrency: see the section below — the seat decrement and the hail claim are
   both guarded, and neither is a plain read-then-write.
 - A cancelled/expired entity cannot transition back to an active state.
-- All state changes are recorded in the audit log (Section 11).
+- All state changes are recorded in the audit log (Section 12).
 
 ---
 
-## 13. Out of scope (now)
+## 14. Out of scope (now)
 
 - **Payments / wallet / fares / payouts** — deferred to a later phase.
 - Automated pricing — price is display-only if shown at all.

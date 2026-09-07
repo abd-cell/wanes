@@ -38,6 +38,7 @@ export const ar: Record<string, string> = {
   res_sessions: 'الجلسات',
   res_api_logs: 'سجلات الواجهة',
   res_faqs: 'الأسئلة الشائعة',
+  res_feedback: 'الشكاوى والاقتراحات',
 
   // ── إجراءات عامة ──
   action_new: 'جديد',
@@ -212,6 +213,14 @@ export const ar: Record<string, string> = {
   faqcategory_4: 'الحساب',
   faqcategory_5: 'السلامة',
 
+  feedbackkind_1: 'شكوى',
+  feedbackkind_2: 'اقتراح',
+
+  feedbackstatus_1: 'جديدة',
+  feedbackstatus_2: 'قيد المراجعة',
+  feedbackstatus_3: 'تمت المعالجة',
+  feedbackstatus_4: 'مرفوضة',
+
   // ── dashboard: filters & sections ──
   dash_range: 'الفترة',
   range_7: 'آخر ٧ أيام',
@@ -332,6 +341,11 @@ export const ar: Record<string, string> = {
   col_answer_en: 'الجواب (إنجليزي)',
   col_answer_ar: 'الجواب (عربي)',
   col_sort_order: 'الترتيب',
+  col_feedback_kind: 'النوع',
+  col_subject: 'الموضوع',
+  col_message: 'الرسالة',
+  col_reply: 'الرد',
+  col_replied_by: 'أجاب عليها',
   col_published: 'منشور',
   col_endpoint: 'المسار',
   col_calls: 'الطلبات',

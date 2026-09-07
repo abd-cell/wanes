@@ -132,6 +132,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       NotificationKind.driverVerified => 'notifType.driverVerified',
       NotificationKind.driverRejected => 'notifType.driverRejected',
       NotificationKind.ratingReceived => 'notifType.ratingReceived',
+      NotificationKind.feedbackReplied => 'notifType.feedbackReplied',
       // Admin-composed — there is no key for it, so show what was sent.
       NotificationKind.general => '',
     };
@@ -201,6 +202,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             tile: const Color(0x29E05F9A),
             card: null
           ),
+        // An answer from a person, so it reads as a reply rather than as an
+        // event the platform generated.
+        NotificationKind.feedbackReplied =>
+          (icon: Icons.forum_rounded, fg: t.tealInk, tile: t.tealTint, card: null),
         NotificationKind.general =>
           (icon: Icons.info_outline_rounded, fg: t.ink2, tile: t.surface2, card: null),
       };

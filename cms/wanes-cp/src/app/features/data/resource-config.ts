@@ -1,10 +1,17 @@
 import {
-  ActiveRole, BookingStatus, DeviceType, DriverStatus, FaqCategory, Gender, Language,
-  NotificationAudience, NotificationType, RatingDirection, RideRequestStatus, Roles,
-  SavedPlaceLabel, TripStatus,
+  ActiveRole, BookingStatus, DeviceType, DriverStatus, FaqCategory, FeedbackKind, FeedbackStatus,
+  Gender, Language, NotificationAudience, NotificationType, RatingDirection, RideRequestStatus,
+  Roles, SavedPlaceLabel, TripStatus,
 } from '../../core/api/models';
 
-export type FieldType = 'text' | 'number' | 'checkbox' | 'select' | 'datetime' | 'textarea' | 'reference';
+export type FieldType =
+  | 'text' | 'number' | 'checkbox' | 'select' | 'datetime' | 'textarea' | 'reference'
+  /**
+   * Shown in the form but never sent back. For records the admin has to *read*
+   * to act on — a complaint's own words — where an editable box would invite
+   * rewriting someone else's text, and a table cell is too small to read it in.
+   */
+  | 'readonly';
 export type ColumnType = 'text' | 'datetime' | 'enum' | 'bool' | 'currency';
 
 export interface EnumOption { value: number; labelKey: string; }
@@ -73,6 +80,8 @@ export const PLACE_LABEL = opt(SavedPlaceLabel, 'placelabel');
 export const DEVICE_TYPE = opt(DeviceType, 'devicetype');
 export const ROLE_OPTIONS = opt(Roles, 'role');
 export const FAQ_CATEGORY = opt(FaqCategory, 'faqcategory');
+export const FEEDBACK_KIND = opt(FeedbackKind, 'feedbackkind');
+export const FEEDBACK_STATUS = opt(FeedbackStatus, 'feedbackstatus');
 
 export const RESOURCES: ResourceConfig[] = [
   {
@@ -285,6 +294,33 @@ export const RESOURCES: ResourceConfig[] = [
       { name: 'answerAr', labelKey: 'col_answer_ar', type: 'textarea', required: true },
       { name: 'sortOrder', labelKey: 'col_sort_order', type: 'number' },
       { name: 'isPublished', labelKey: 'col_published', type: 'checkbox' },
+    ],
+  },
+  {
+    // The support desk's inbox. Read-mostly: the form exposes the submission as
+    // context and only the two columns the desk owns — status and the reply —
+    // are editable. No create; a complaint belongs to whoever wrote it.
+    key: 'feedback', route: 'feedback', titleKey: 'res_feedback',
+    searchable: true, canCreate: false, canEdit: true, canDelete: true,
+    columns: [
+      { field: 'id', labelKey: 'col_id' },
+      { field: 'kind', labelKey: 'col_feedback_kind', type: 'enum', enum: FEEDBACK_KIND },
+      { field: 'status', labelKey: 'col_status', type: 'enum', enum: FEEDBACK_STATUS },
+      { field: 'userName', labelKey: 'col_user' },
+      { field: 'subject', labelKey: 'col_subject' },
+      { field: 'language', labelKey: 'col_language', type: 'enum', enum: LANGUAGE },
+      { field: 'repliedByName', labelKey: 'col_replied_by' },
+      { field: 'creationDate', labelKey: 'col_created', type: 'datetime' },
+    ],
+    filters: [
+      { name: 'status', labelKey: 'col_status', enum: FEEDBACK_STATUS },
+      { name: 'kind', labelKey: 'col_feedback_kind', enum: FEEDBACK_KIND },
+    ],
+    fields: [
+      { name: 'subject', labelKey: 'col_subject', type: 'readonly' },
+      { name: 'message', labelKey: 'col_message', type: 'readonly' },
+      { name: 'status', labelKey: 'col_status', type: 'select', enum: FEEDBACK_STATUS, required: true },
+      { name: 'reply', labelKey: 'col_reply', type: 'textarea' },
     ],
   },
   {

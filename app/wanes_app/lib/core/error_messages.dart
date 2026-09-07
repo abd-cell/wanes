@@ -80,6 +80,10 @@ const Map<int, String> _keys = {
   600: 'errors.rateAfterCompletion',
   601: 'errors.alreadyRated',
 
+  // Complaints / suggestions
+  700: 'errors.feedbackNotFound',
+  701: 'errors.tooManyOpenFeedback',
+
   // Client-side
   ClientErrorCode.empty: 'errors.emptyResponse',
   ClientErrorCode.network: 'errors.network',

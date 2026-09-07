@@ -63,6 +63,9 @@ public static class AuditActions
     // ratings
     public const string RatingCreate = "rating.create";
 
+    // complaints + suggestions
+    public const string FeedbackSubmit = "feedback.submit";
+
     // admin
     public const string AdminDriverVerified = "admin.driver_verified";
     public const string AdminDriverRejected = "admin.driver_rejected";
