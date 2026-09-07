@@ -313,6 +313,7 @@ public class TripService : ITripService
         });
     }
 
+    public Task<BaseResponse<TripOutput>> Depart(int id) => Transition(id, TripStatus.EnRoute, AuditActions.TripDepart);
     public Task<BaseResponse<TripOutput>> Start(int id) => Transition(id, TripStatus.Active, AuditActions.TripStart);
     public Task<BaseResponse<TripOutput>> Arrive(int id) => Transition(id, TripStatus.Arrived, AuditActions.TripArrive);
     public Task<BaseResponse<TripOutput>> Complete(int id) => Transition(id, TripStatus.Completed, AuditActions.TripComplete);
@@ -371,8 +372,16 @@ public class TripService : ITripService
     /// </summary>
     private static bool CanTransition(TripStatus from, TripStatus to) => to switch
     {
-        TripStatus.Arrived => from is TripStatus.Posted or TripStatus.Full,
-        TripStatus.Active => from is TripStatus.Posted or TripStatus.Full or TripStatus.Arrived,
+        // Setting off is only possible from a trip still waiting to go.
+        TripStatus.EnRoute => from is TripStatus.Posted or TripStatus.Full,
+
+        // Reaching a kerb, or boarding someone, does not require having pressed
+        // "set off" first — a driver who just starts collecting is not doing
+        // anything wrong, and refusing them would only teach them to tap a
+        // button that means nothing to them.
+        TripStatus.Arrived => from is TripStatus.Posted or TripStatus.Full or TripStatus.EnRoute,
+        TripStatus.Active => from is TripStatus.Posted or TripStatus.Full
+            or TripStatus.EnRoute or TripStatus.Arrived,
         TripStatus.Completed => from is TripStatus.Active,
         _ => false,
     };

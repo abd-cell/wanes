@@ -350,6 +350,7 @@ const Map<String, String> enStrings = {
   'tripStatus.completed': 'Completed',
   'tripStatus.cancelled': 'Cancelled',
   'tripStatus.arrived': 'Arrived',
+  'tripStatus.enRoute': 'On the way',
 
   // ── Notifications ────────────────────────────────────────────────────────
   'notif.title': 'Notifications',
@@ -478,6 +479,8 @@ const Map<String, String> enStrings = {
   'driver.startTrip': 'Start trip',
   'driver.completeTrip': 'Complete trip',
   'driver.tripArrived': 'Your riders know you are here.',
+  'driver.departTrip': "I'm on my way",
+  'driver.tripEnRoute': 'Your riders know you have set off.',
   'driver.tripStarted': 'Trip started.',
   'driver.tripCompleted': 'Trip completed.',
   'driver.tripUpdateFailed': 'Could not update the trip',
@@ -545,6 +548,10 @@ const Map<String, String> enStrings = {
   'driver.saveFailed': "Couldn't save your changes",
   'driver.reviewPublish': 'Review & publish',
   'driver.pricePerSeat': 'Price per seat',
+  'driver.setPriceTitle': 'Set your price',
+  'driver.setPriceBody': "This rider asked for a ride, not a quote — name what a seat costs before you accept.",
+  'driver.priceSuggested': 'Use suggested {value}',
+  'driver.acceptAtPrice': 'Accept at {value} a seat',
   'driver.suggestedPrice': 'Suggested {price}',
   'driver.repeatWeekdays': 'Repeat on weekdays',
   'driver.repeatWeekdaysBody': 'Mon–Fri, same time',

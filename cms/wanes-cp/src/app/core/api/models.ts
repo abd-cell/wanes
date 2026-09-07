@@ -55,6 +55,10 @@ export interface AppConfiguration {
    * offered to drivers. 1-240; the backend clamps anything outside that.
    */
   hailRequestTtlMinutes: number;
+
+  /** Flag-fall and per-km rate behind a derived per-seat price (see cfg_fare). */
+  fareBaseAmount: number;
+  farePerKm: number;
   /**
    * Support channels the app's "Contact us" screen offers. Each one is optional
    * and empty until an admin fills it in; a client hides the channel it has no
@@ -138,6 +142,12 @@ export enum TripStatus {
   Cancelled = 5,
   /** Driver is at the pickup point, waiting for the rider to board. */
   Arrived = 6,
+  /**
+   * Driver has set off for the first pickup — where a trip stops being
+   * searchable. Appended rather than slotted into the running order, because
+   * the numbers cross all three stacks.
+   */
+  EnRoute = 7,
 }
 
 export enum BookingStatus {

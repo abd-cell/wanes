@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Wanes.Areas.Domain.Bookings;
 using Wanes.Areas.Domain.Trips;
 using Wanes.Areas.Services.Audit;
@@ -39,7 +39,37 @@ public class BookingService : IBookingService
         this.tripRepository = tripRepository;
     }
 
+    /// <summary>
+    /// Joins a trip. No driver approval: the booking is Confirmed the moment it
+    /// exists and the seats come off the trip in the same commit.
+    ///
+    /// Wrapped in a retry because taking the last seat is a race. The seat
+    /// decrement is guarded by the trip's row version, so a rider who lost it
+    /// changes no rows and lands here rather than overselling — and losing is
+    /// not the same as being refused: on a four-seat trip both riders should get
+    /// a seat, and the loser only has to read again. The refusal, when there is
+    /// one, comes out of the ordinary checks on the fresh read.
+    /// </summary>
     public async Task<BaseResponse<BookingOutput>> Create(CreateBookingInput input)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await CreateOnce(input);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                // CreateOnce has already rolled back. Its trip is still tracked
+                // with the version that lost, so drop it before reading again.
+                unitOfWork.Detach();
+                if (attempt >= ConcurrencyRules.MaxAttempts)
+                    return new BaseResponse<BookingOutput>(default, ErrorCode.Conflict);
+            }
+        }
+    }
+
+    private async Task<BaseResponse<BookingOutput>> CreateOnce(CreateBookingInput input)
     {
         var riderId = securityManager.RequireUserId();
         var seats = input.Seats < 1 ? 1 : input.Seats;
@@ -63,7 +93,11 @@ public class BookingService : IBookingService
             if (alreadyBooked)
                 return await RollBack<BookingOutput>(ErrorCode.AlreadyBooked);
 
-            // reserve seats atomically inside the transaction
+            // Reserve the seats. This reads as a plain decrement, and is safe
+            // only because Trip carries a row version: the UPDATE EF writes is
+            // conditional on the value loaded above, so two riders cannot both
+            // take the same last seat. Without it the transaction would happily
+            // let both through — READ COMMITTED does not block either read.
             trip.SeatsLeft -= seats;
             if (trip.SeatsLeft <= 0) trip.Status = TripStatus.Full;
             tripRepository.Update(trip);
@@ -101,7 +135,29 @@ public class BookingService : IBookingService
         }
     }
 
+    /// <summary>
+    /// Gives a seat back. Retried on the same terms as <see cref="Create"/>:
+    /// returning a seat writes the same trip row a rider taking one does, so the
+    /// two contend, and the loser has only to read the trip again.
+    /// </summary>
     public async Task<BaseResponse> Cancel(int id)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await CancelOnce(id);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                unitOfWork.Detach();
+                if (attempt >= ConcurrencyRules.MaxAttempts)
+                    return new BaseResponse(ErrorCode.Conflict);
+            }
+        }
+    }
+
+    private async Task<BaseResponse> CancelOnce(int id)
     {
         var riderId = securityManager.RequireUserId();
 

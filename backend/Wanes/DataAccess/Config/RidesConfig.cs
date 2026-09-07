@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Wanes.Areas.Domain.Audit;
 using Wanes.Areas.Domain.Bookings;
@@ -33,6 +33,10 @@ public class TripConfig : IEntityTypeConfiguration<Trip>
 
         b.HasIndex(x => new { x.Status, x.DepartAt });
 
+        // Makes the seat decrement a conditional update rather than a
+        // read-then-write. See Trip.RowVersion.
+        b.Property(x => x.RowVersion).IsRowVersion();
+
         b.HasOne(x => x.Driver).WithMany().HasForeignKey(x => x.DriverId)
             .OnDelete(DeleteBehavior.Restrict);
         b.HasOne(x => x.Vehicle).WithMany().HasForeignKey(x => x.VehicleId)
@@ -63,6 +67,10 @@ public class RideRequestConfig : IEntityTypeConfiguration<RideRequest>
         b.Property(x => x.Origin).HasColumnType("geography");
         b.Property(x => x.Destination).HasColumnType("geography");
         b.HasIndex(x => x.Status);
+
+        // Makes "first driver to accept wins" an actual claim. See RideRequest.RowVersion.
+        b.Property(x => x.RowVersion).IsRowVersion();
+
         b.HasOne(x => x.Rider).WithMany().HasForeignKey(x => x.RiderId)
             .OnDelete(DeleteBehavior.Restrict);
     }

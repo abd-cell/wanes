@@ -226,7 +226,7 @@ class WanesTokens extends ThemeExtension<WanesTokens> {
   /// Same idea for a trip's own status:
   /// 1 Posted · 2 Full · 3 Active · 4 Completed · 5 Cancelled · 6 Arrived.
   Color tripStatus(int status) => switch (status) {
-        3 || 6 => teal, // arrived / under way
+        3 || 6 || 7 => teal, // en route / arrived / under way
         4 => info,      // completed
         5 => alert,     // cancelled
         _ => amber,     // posted or full

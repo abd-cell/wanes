@@ -7,11 +7,12 @@ import 'l10n.dart';
 
 /// Display-only fare maths.
 ///
-/// There is no payment backend: hail requests carry no price, so the figures
-/// the driver screens show next to a request are an *estimate* derived from the
-/// straight-line distance with the rates below. Anything the driver actually
-/// sets (a posted trip's `pricePerSeat`) is used verbatim and never goes
-/// through here.
+/// There is no payment backend. An open hail carries no price of its own, so the
+/// figure the driver screens show next to a request is an *estimate* derived
+/// from the straight-line distance and the admin-set rates below — the same
+/// arithmetic, off the same rates, that the server uses to stamp a price on the
+/// trip that accepting the hail creates. Anything a driver actually set (a
+/// posted trip's `pricePerSeat`) is used verbatim and never goes through here.
 class Fare {
   const Fare._();
 
@@ -29,12 +30,24 @@ class Fare {
   /// rather than assume the two most currencies use.
   static int get decimals => AppConfigController.value.currencyDecimals.clamp(0, 3);
 
-  /// Flag-fall, then a per-kilometre rate.
-  static const double base = 2.50;
-  static const double perKm = 1.20;
+  /// Flag-fall, then a per-kilometre rate — both admin-set.
+  ///
+  /// Read from the configuration rather than hardcoded because the server
+  /// prices a hail-accepted trip from the same two numbers. While these were
+  /// constants, the estimate shown on a driver's request card and the price
+  /// stamped on the trip they got by accepting it could differ, and an admin
+  /// changing the rates moved only one of them.
+  static double get base => AppConfigController.value.fareBaseAmount;
 
+  static double get perKm => AppConfigController.value.farePerKm;
+
+  /// The total for [seats] seats over [km]. One seat's share is what the server
+  /// stores as `pricePerSeat`, so the multiplication belongs here, not there.
   static double estimate(double km, {int seats = 1}) =>
-      (base + perKm * km) * (seats < 1 ? 1 : seats);
+      perSeat(km) * (seats < 1 ? 1 : seats);
+
+  /// What a single seat over [km] is worth — the figure the server derives.
+  static double perSeat(double km) => base + perKm * (km.isFinite && km > 0 ? km : 0);
 
   /// Estimated fare between two coordinates.
   static double estimateBetween(

@@ -11,10 +11,11 @@ import '../../widgets/wanes_motion.dart';
 /// stands — every rider at once.
 ///
 /// The server enforces the same order in `TripService.CanTransition`, so this
-/// is the UI half of one rule, not a second one: Posted/Full → Arrived →
-/// Active → Completed, and nothing at all once the trip is finished or
-/// cancelled. Per-rider moves live in [SeatStep]; a trip's status is derived
-/// from its seats either way.
+/// is the UI half of one rule, not a second one: Posted/Full → EnRoute →
+/// Arrived → Active → Completed, and nothing at all once the trip is finished
+/// or cancelled. Per-rider moves live in [SeatStep]; a trip's status is derived
+/// from its seats either way — EnRoute excepted, which is the driver saying they
+/// have set off and moves nobody's seat.
 class DriverTripStep {
   const DriverTripStep(this.labelKey, this.doneKey, this.icon, this.call);
 
@@ -24,7 +25,13 @@ class DriverTripStep {
   final Future<AppResponse<Trip>> Function(int id) call;
 
   static DriverTripStep? forTrip(Trip trip, TripService trips) => switch (trip.status) {
-        1 || 2 => DriverTripStep('driver.arriveTrip', 'driver.tripArrived',
+        // Setting off is the offered move on a trip still waiting to go: it is
+        // what takes the trip out of search, so it comes before the first kerb.
+        // A driver who skips it and goes straight to arriving is still allowed
+        // — the server permits Posted → Arrived — they just lose the step.
+        1 || 2 => DriverTripStep('driver.departTrip', 'driver.tripEnRoute',
+            Icons.navigation_outlined, trips.depart),
+        7 => DriverTripStep('driver.arriveTrip', 'driver.tripArrived',
             Icons.location_on_outlined, trips.arrive),
         6 => DriverTripStep(
             'driver.startTrip', 'driver.tripStarted', Icons.play_arrow_rounded, trips.start),

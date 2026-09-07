@@ -157,6 +157,7 @@ export const en: Record<string, string> = {
   tripstatus_4: 'Completed',
   tripstatus_5: 'Cancelled',
   tripstatus_6: 'Arrived',
+  tripstatus_7: 'On the way',
   bookingstatus_1: 'Pending',
   bookingstatus_2: 'Confirmed',
   bookingstatus_3: 'In progress',
@@ -395,6 +396,15 @@ export const en: Record<string, string> = {
   cfg_hail_ttl_preview: 'A request stays open for',
   cfg_unit_hours: 'h',
   cfg_unit_minutes: 'min',
+
+  cfg_fare: 'Fare display',
+  cfg_fare_hint:
+    'Rates used to price a trip that nobody quoted a fare for. A driver who posts a trip sets their own price; a driver who accepts a rider’s request never quoted one, so that trip is listed at these rates times its distance.',
+  cfg_fare_base: 'Base fare',
+  cfg_fare_per_km: 'Per kilometre',
+  cfg_fare_preview: 'A 10 km ride lists one seat at',
+  cfg_fare_foot:
+    'Display only — Wanes takes no payments. The app shows the same figure as an estimate on a driver’s request card, so both read these rates.',
   cfg_shade_primary: 'Primary',
   cfg_shade_deep: 'Deep',
   cfg_shade_dark: 'Dark theme',

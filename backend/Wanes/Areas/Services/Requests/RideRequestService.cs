@@ -5,6 +5,7 @@ using Wanes.Areas.Domain.Trips;
 using Wanes.Areas.Domain.Users;
 using Wanes.Areas.Domain.Vehicles;
 using Wanes.Areas.Services.Audit;
+using Wanes.Areas.Services.Configuration;
 using Wanes.Areas.Services.Notifications;
 using Wanes.Areas.Services.Requests.Models;
 using Wanes.Areas.Services.Users.Availability;
@@ -26,6 +27,7 @@ public class RideRequestService : IRideRequestService
     private readonly IAuditService auditService;
     private readonly INotificationService notificationService;
     private readonly IDriverAvailabilityService driverAvailabilityService;
+    private readonly IAppConfigurationService appConfigurationService;
     private readonly IRepository<RideRequest> rideRequestRepository;
     private readonly IRepository<User> userRepository;
     private readonly IRepository<Vehicle> vehicleRepository;
@@ -38,6 +40,7 @@ public class RideRequestService : IRideRequestService
         IAuditService auditService,
         INotificationService notificationService,
         IDriverAvailabilityService driverAvailabilityService,
+        IAppConfigurationService appConfigurationService,
         IRepository<RideRequest> rideRequestRepository,
         IRepository<User> userRepository,
         IRepository<Vehicle> vehicleRepository,
@@ -49,6 +52,7 @@ public class RideRequestService : IRideRequestService
         this.auditService = auditService;
         this.notificationService = notificationService;
         this.driverAvailabilityService = driverAvailabilityService;
+        this.appConfigurationService = appConfigurationService;
         this.rideRequestRepository = rideRequestRepository;
         this.userRepository = userRepository;
         this.vehicleRepository = vehicleRepository;
@@ -133,9 +137,27 @@ public class RideRequestService : IRideRequestService
         return new BaseResponse<List<RideRequestRow>>(data);
     }
 
-    public async Task<BaseResponse<RideRequestRow>> Accept(int id)
+    /// <summary>
+    /// Takes a hail, at the price the driver is charging. First driver to accept
+    /// wins, and the loser is told rather than allowed to create a second trip
+    /// for the same rider.
+    ///
+    /// Two things make that true. The request carries a row version, so the
+    /// Open → Matched write is a claim and not a read-then-write: the second
+    /// driver's commit changes no rows, the whole transaction rolls back, and
+    /// the trip and booking it had staged go with it. And the same driver
+    /// arriving twice — a double tap, a retried request — is answered from the
+    /// trip they already have rather than by building another.
+    /// </summary>
+    public async Task<BaseResponse<RideRequestRow>> Accept(int id, AcceptRideRequestInput? input = null)
     {
         var driverId = securityManager.RequireUserId();
+
+        // Idempotency first, before anything is staged. A double tap must yield
+        // one trip and say so twice; refusing the second tap with RequestNotOpen
+        // would be a lie to the driver who is holding the trip.
+        if (await AlreadyMine(id, driverId) is { } mine)
+            return new BaseResponse<RideRequestRow>(mine);
 
         var driver = await userRepository.GetByIdAsync(driverId);
         if (driver == null) return new BaseResponse<RideRequestRow>(default, ErrorCode.NotFound);
@@ -148,6 +170,15 @@ public class RideRequestService : IRideRequestService
             .OrderByDescending(v => v.IsDefault)
             .FirstOrDefault();
         if (vehicle == null) return new BaseResponse<RideRequestRow>(default, ErrorCode.VehicleNotFound);
+
+        // The driver's own price is what the trip lists at. The configured rates
+        // are only the fallback for a call that carried none — an older build,
+        // or a retry whose body was lost — because the one thing this must not
+        // produce is the single kind of trip in search with a blank price.
+        //
+        // Read before the transaction: a settings lookup is not part of the
+        // claim, and Get() never fails.
+        var settings = await appConfigurationService.Get();
 
         await unitOfWork.BeginTransactionAsync();
         try
@@ -194,6 +225,16 @@ public class RideRequestService : IRideRequestService
                 DepartAt = departAt,
                 SeatsTotal = vehicle.SeatCapacity,
                 SeatsLeft = vehicle.SeatCapacity - request.Seats,
+                // Verbatim if the driver named a price, derived from the
+                // distance if they somehow did not. Either way this trip carries
+                // a figure: it is offered in search beside posted trips that all
+                // show one, and a blank there reads as free rather than unset.
+                PricePerSeat = input?.PricePerSeat is { } quoted
+                    ? FareRules.PriceFor(quoted)
+                    : FareRules.PerSeat(
+                        GeoDistance.Km(request.Origin, request.Destination),
+                        settings.Data?.FareBaseAmount ?? FareRules.DefaultBaseAmount,
+                        settings.Data?.FarePerKm ?? FareRules.DefaultPerKm),
                 Status = vehicle.SeatCapacity - request.Seats == 0 ? TripStatus.Full : TripStatus.Posted,
             };
             tripRepository.Create(trip);
@@ -208,6 +249,10 @@ public class RideRequestService : IRideRequestService
                 RideRequestId = request.Id,
             });
 
+            // The claim. Conditional on the row version read above, so if another
+            // driver matched this hail in the meantime the commit below throws
+            // and everything staged in this transaction — trip included — is
+            // discarded. That is what makes "first wins" true rather than hoped for.
             request.Status = RideRequestStatus.Matched;
             request.MatchedTripId = trip.Id;
             rideRequestRepository.Update(request);
@@ -233,11 +278,36 @@ public class RideRequestService : IRideRequestService
 
             return new BaseResponse<RideRequestRow>(new RideRequestRow(request));
         }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Another driver got there first. Nothing of this attempt survives.
+            await unitOfWork.RollBackAsync();
+            unitOfWork.Detach();
+            return new BaseResponse<RideRequestRow>(default, ErrorCode.RequestNotOpen);
+        }
         catch
         {
             await unitOfWork.RollBackAsync();
             throw;
         }
+    }
+
+    /// <summary>
+    /// The row to hand back when this driver has already accepted this hail, or
+    /// <c>null</c> when they have not.
+    ///
+    /// Deliberately narrow: only the driver who owns the matched trip is
+    /// answered this way. Another driver asking about a hail that is already
+    /// matched is a loser, not a repeat caller, and belongs on the refusal path.
+    /// </summary>
+    private async Task<RideRequestRow?> AlreadyMine(int id, int driverId)
+    {
+        var request = await rideRequestRepository.FirstOrDefaultAsync(r => r.Id == id);
+        if (request?.Status != RideRequestStatus.Matched || request.MatchedTripId == null) return null;
+
+        var mine = await tripRepository.AnyAsync(
+            t => t.Id == request.MatchedTripId!.Value && t.DriverId == driverId);
+        return mine ? new RideRequestRow(request) : null;
     }
 
     public async Task<int> ExpireDue()

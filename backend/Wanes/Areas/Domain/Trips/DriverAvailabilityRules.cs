@@ -1,4 +1,4 @@
-using Wanes.Shareds.Constants;
+﻿using Wanes.Shareds.Constants;
 using Wanes.Shareds.Enums;
 
 namespace Wanes.Areas.Domain.Trips;
@@ -16,18 +16,20 @@ namespace Wanes.Areas.Domain.Trips;
 public static class DriverAvailabilityRules
 {
     /// <summary>
-    /// The driver is out driving: at a pickup point or carrying riders. Posted
-    /// and Full are promises, not journeys, and so are not "engaged".
+    /// The driver is out driving: on their way to a pickup, at one, or carrying
+    /// riders. Posted and Full are promises, not journeys, and so are not
+    /// "engaged" — the driver is still at home with the trip in their diary.
     /// </summary>
     public static bool IsEngaged(TripStatus status) =>
-        status is TripStatus.Arrived or TripStatus.Active;
+        status is TripStatus.EnRoute or TripStatus.Arrived or TripStatus.Active;
 
     /// <summary>
     /// The trip still holds a slot in the driver's day — anything not finished
     /// and not called off.
     /// </summary>
     public static bool HoldsSchedule(TripStatus status) =>
-        status is TripStatus.Posted or TripStatus.Full or TripStatus.Arrived or TripStatus.Active;
+        status is TripStatus.Posted or TripStatus.Full
+            or TripStatus.EnRoute or TripStatus.Arrived or TripStatus.Active;
 
     /// <summary>
     /// How close two of one driver's departures may be. Taken from the matching

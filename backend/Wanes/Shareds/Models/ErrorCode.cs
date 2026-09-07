@@ -61,4 +61,10 @@ public enum ErrorCode
     // Ratings
     RatingNotAllowed = 600,
     AlreadyRated = 601,
+
+    // Complaints / suggestions
+    FeedbackNotFound = 700,
+
+    /// <summary>The user already has as many open submissions as the desk will hold for one account.</summary>
+    TooManyOpenFeedback = 701,
 }

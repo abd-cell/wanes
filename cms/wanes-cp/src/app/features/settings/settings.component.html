@@ -152,6 +152,36 @@
       </div>
     </section>
 
+    <!-- ── Fare display ── -->
+    <section class="card section span-2">
+      <h2>{{ 'cfg_fare' | translate }}</h2>
+      <p class="hint">{{ 'cfg_fare_hint' | translate }}</p>
+
+      <div class="pair">
+        <div class="form-row">
+          <label for="cfg-fare-base">{{ 'cfg_fare_base' | translate }}</label>
+          <input id="cfg-fare-base" class="field mono" dir="ltr" type="number"
+                 min="0" max="1000" step="0.01"
+                 [ngModel]="model().fareBaseAmount"
+                 (ngModelChange)="set('fareBaseAmount', +$event)" />
+        </div>
+        <div class="form-row">
+          <label for="cfg-fare-perkm">{{ 'cfg_fare_per_km' | translate }}</label>
+          <input id="cfg-fare-perkm" class="field mono" dir="ltr" type="number"
+                 min="0" max="1000" step="0.01"
+                 [ngModel]="model().farePerKm"
+                 (ngModelChange)="set('farePerKm', +$event)" />
+        </div>
+      </div>
+
+      <div class="form-row">
+        <span class="preview-label">{{ 'cfg_preview' | translate }}</span>
+        <p class="hint">{{ farePreview() }}</p>
+      </div>
+
+      <p class="hint foot">{{ 'cfg_fare_foot' | translate }}</p>
+    </section>
+
     <!-- ── Support contact ── -->
     <section class="card section span-2">
       <h2>{{ 'cfg_support' | translate }}</h2>

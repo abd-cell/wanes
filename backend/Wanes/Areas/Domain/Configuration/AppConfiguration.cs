@@ -1,4 +1,5 @@
-﻿using Wanes.Shareds.Constants;
+﻿using Wanes.Areas.Domain.Trips;
+using Wanes.Shareds.Constants;
 using Wanes.Shareds.Enums;
 using Wanes.Shareds.Models.Base;
 
@@ -56,6 +57,20 @@ public class AppConfiguration : AuditableEntity
     /// cref="Wanes.Shareds.Constants.MatchRules.MaxHailTtlMinutes"/> on save.
     /// </summary>
     public int HailRequestTtlMinutes { get; set; } = MatchRules.DefaultHailTtlMinutes;
+
+    // ── Fare display ──
+    //
+    // There are no payments: these only decide what a trip is *listed* at. They
+    // exist because the two ways a trip is created do not both come with a
+    // price. A driver posting a trip quotes one; a driver accepting a hail
+    // never did, they only agreed to go — so that trip's per-seat figure is
+    // derived from these rates instead of left blank. See Trips.FareRules.
+
+    /// <summary>Flag-fall for a derived per-seat price, in the platform currency.</summary>
+    public decimal FareBaseAmount { get; set; } = FareRules.DefaultBaseAmount;
+
+    /// <summary>Per-kilometre rate on top of <see cref="FareBaseAmount"/>.</summary>
+    public decimal FarePerKm { get; set; } = FareRules.DefaultPerKm;
 
     // ── Support contact ──
     //

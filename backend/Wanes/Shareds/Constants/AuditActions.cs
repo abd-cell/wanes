@@ -32,6 +32,9 @@ public static class AuditActions
     public const string TripCreate = "trip.create";
     public const string TripUpdate = "trip.update";
     public const string TripCancel = "trip.cancel";
+    /// <summary>The driver set off for the first pickup.</summary>
+    public const string TripDepart = "trip.depart";
+
     public const string TripStart = "trip.start";
     public const string TripArrive = "trip.arrive";
     public const string TripComplete = "trip.complete";

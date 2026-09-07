@@ -37,6 +37,7 @@ public class DriverAvailabilityTests
     private static RideRequestService Requests(FakeUnitOfWork uow, int driverId = DriverId) =>
         new(uow, new FakeSecurityManager(driverId), new FakeAuditService(), new FakeNotificationService(),
             new DriverAvailabilityService(uow.Repository<Trip>()),
+            new FakeAppConfigurationService(),
             uow.Repository<RideRequest>(), uow.Repository<User>(), uow.Repository<Vehicle>(),
             uow.Repository<Trip>(), uow.Repository<Booking>());
 

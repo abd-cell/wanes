@@ -1,4 +1,4 @@
-using NetTopologySuite.Geometries;
+﻿using NetTopologySuite.Geometries;
 using Wanes.Areas.Domain.Users;
 using Wanes.Areas.Domain.Vehicles;
 using Wanes.Shareds.Enums;
@@ -36,6 +36,21 @@ public class Trip : AuditableEntity
     public decimal? PricePerSeat { get; set; }
 
     public TripStatus Status { get; set; } = TripStatus.Posted;
+
+    /// <summary>
+    /// Concurrency token. Two riders taking the last seat is a genuine race:
+    /// both read <see cref="SeatsLeft"/> = 1, both pass the check, and the
+    /// second write would sell a seat that no longer exists. A transaction alone
+    /// does not stop it — SQL Server reads at READ COMMITTED, so neither
+    /// transaction blocks the other's read.
+    ///
+    /// With this mapped as a row version, EF appends <c>AND RowVersion = @old</c>
+    /// to every UPDATE, which turns the read-check-write into one conditional
+    /// update: the loser changes no rows and gets a
+    /// <c>DbUpdateConcurrencyException</c> instead of overselling. Callers
+    /// retry from a fresh read (<c>ConcurrencyRules.MaxAttempts</c>).
+    /// </summary>
+    public byte[]? RowVersion { get; set; }
 
     public ICollection<TripStatusHistory> History { get; set; } = [];
 }

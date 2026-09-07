@@ -41,4 +41,13 @@ public class RideRequest : AuditableEntity
     /// <summary>Set when a driver accepted (the resulting booking / trip).</summary>
     public int? MatchedTripId { get; set; }
     public DateTime? ExpiresAt { get; set; }
+
+    /// <summary>
+    /// Concurrency token, for the same reason <see cref="Wanes.Areas.Domain.Trips.Trip.RowVersion"/>
+    /// carries one: "first driver to accept wins" is a race, and checking
+    /// <see cref="Status"/> then writing it is not a claim. Two drivers reading
+    /// this row as Open would both go on to create a trip. Guarded by the
+    /// version, the second one's commit changes no rows and is refused.
+    /// </summary>
+    public byte[]? RowVersion { get; set; }
 }

@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using Wanes.Areas.Domain.Trips;
 using Wanes.Shareds.Constants;
 using Wanes.Shareds.Enums;
 
@@ -31,6 +32,19 @@ public class AppConfigurationOutput
     /// </summary>
     public int HailRequestTtlMinutes { get; set; }
 
+    /// <summary>
+    /// Flag-fall and per-kilometre rate behind a derived per-seat price.
+    ///
+    /// Sent to the clients as well as used on the server, because both quote the
+    /// figure: the driver's hail card shows what a request is worth *before*
+    /// anyone accepts it, and the trip the server prices on accept has to agree
+    /// with the estimate that driver was looking at. Hardcoding the rates in the
+    /// app is what let those two drift.
+    /// </summary>
+    public decimal FareBaseAmount { get; set; }
+
+    public decimal FarePerKm { get; set; }
+
     // ── Support contact ──
     //
     // Null means "not configured"; the clients hide the channel rather than
@@ -59,6 +73,8 @@ public class AppConfigurationOutput
         PrimaryColor = e.PrimaryColor;
         FontFamily = e.FontFamily;
         HailRequestTtlMinutes = e.HailRequestTtlMinutes;
+        FareBaseAmount = e.FareBaseAmount;
+        FarePerKm = e.FarePerKm;
         SupportPhone = e.SupportPhone;
         SupportWhatsApp = e.SupportWhatsApp;
         SupportEmail = e.SupportEmail;
@@ -106,6 +122,21 @@ public class AppConfigurationInput
     /// </summary>
     [Range(MatchRules.MinHailTtlMinutes, MatchRules.MaxHailTtlMinutes)]
     public int HailRequestTtlMinutes { get; set; } = MatchRules.DefaultHailTtlMinutes;
+
+    /// <summary>
+    /// Flag-fall for a derived per-seat price. Zero is allowed and means the
+    /// whole fare comes from the distance; negative is not, because it would
+    /// price a long ride below a short one.
+    /// </summary>
+    [Range(typeof(decimal), "0", "1000")]
+    public decimal FareBaseAmount { get; set; } = FareRules.DefaultBaseAmount;
+
+    /// <summary>
+    /// Per-kilometre rate. Zero is allowed — it makes every derived price the
+    /// flat flag-fall, which is a legitimate choice for a small town.
+    /// </summary>
+    [Range(typeof(decimal), "0", "1000")]
+    public decimal FarePerKm { get; set; } = FareRules.DefaultPerKm;
 
     // ── Support contact ──
     //

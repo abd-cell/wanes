@@ -1,4 +1,4 @@
-using Wanes.Areas.Domain.Bookings;
+﻿using Wanes.Areas.Domain.Bookings;
 using Wanes.Shareds.Enums;
 
 namespace Wanes.Areas.Domain.Trips;
@@ -15,6 +15,8 @@ public static class TripStatusRules
     /// <summary>The seat status a trip-wide move puts every eligible rider at.</summary>
     public static BookingStatus? BookingStatusFor(TripStatus tripStatus) => tripStatus switch
     {
+        // EnRoute is deliberately absent: setting off moves no rider's seat. A
+        // rider is still waiting at their kerb whether or not the car has left.
         TripStatus.Arrived => BookingStatus.Arrived,
         TripStatus.Active => BookingStatus.InProgress,
         TripStatus.Completed => BookingStatus.Completed,
@@ -49,7 +51,10 @@ public static class TripStatusRules
         if (live.Count == 0 && bookings.Any(s => s == BookingStatus.Completed))
             return TripStatus.Completed;
 
-        if (current is TripStatus.Arrived or TripStatus.Active) return current;
+        // EnRoute joins these two as a state derivation cannot reach: no seat has
+        // moved, so the seats say "Posted" while the driver is already driving.
+        // Falling back to Posted here would put a departed trip back in search.
+        if (current is TripStatus.Arrived or TripStatus.Active or TripStatus.EnRoute) return current;
 
         return seatsLeft <= 0 ? TripStatus.Full : TripStatus.Posted;
     }

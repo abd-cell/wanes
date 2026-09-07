@@ -44,6 +44,7 @@ public class ScheduledHailTests
     private static RideRequestService Requests(FakeUnitOfWork uow, int actingUserId) =>
         new(uow, new FakeSecurityManager(actingUserId), new FakeAuditService(),
             new FakeNotificationService(), new DriverAvailabilityService(uow.Repository<Trip>()),
+            new FakeAppConfigurationService(),
             uow.Repository<RideRequest>(), uow.Repository<User>(), uow.Repository<Vehicle>(),
             uow.Repository<Trip>(), uow.Repository<Booking>());
 

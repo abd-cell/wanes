@@ -36,9 +36,12 @@ void main() {
     String? labelFor(int status) => DriverTripStep.forTrip(trip(status: status), trips)?.labelKey;
 
     test('mirrors the order the server enforces', () {
-      // Posted/Full -> Arrived -> Active -> Completed, then nothing.
-      expect(labelFor(1), 'driver.arriveTrip');
-      expect(labelFor(2), 'driver.arriveTrip');
+      // Posted/Full -> EnRoute -> Arrived -> Active -> Completed, then nothing.
+      // Setting off comes first because it is what takes the trip out of search;
+      // the server still allows Posted -> Arrived for a driver who skips it.
+      expect(labelFor(1), 'driver.departTrip');
+      expect(labelFor(2), 'driver.departTrip');
+      expect(labelFor(7), 'driver.arriveTrip');
       expect(labelFor(6), 'driver.startTrip');
       expect(labelFor(3), 'driver.completeTrip');
       expect(labelFor(4), isNull);
@@ -48,10 +51,12 @@ void main() {
 
   group('a trip that takes the driver off the board', () {
     test('is one they are out on, and only that', () {
-      // The server treats Arrived and Active as "engaged": at a pickup point, or
-      // carrying riders. A posted or finished trip leaves the driver available.
+      // The server treats EnRoute, Arrived and Active as "engaged": on the way
+      // to a pickup, at one, or carrying riders. A posted or finished trip
+      // leaves the driver available.
       expect(trip(status: 3).isUnderway, isTrue); // Active
       expect(trip(status: 6).isUnderway, isTrue); // Arrived
+      expect(trip(status: 7).isUnderway, isTrue); // EnRoute
       expect(trip(status: 1).isUnderway, isFalse); // Posted
       expect(trip(status: 2).isUnderway, isFalse); // Full
       expect(trip(status: 4).isUnderway, isFalse); // Completed
@@ -63,6 +68,13 @@ void main() {
     testWidgets('shows the move a posted trip offers', (tester) async {
       await tester.pumpWidget(
           host(TripStepButton(trip: trip(status: 1), onChanged: () {})));
+      await tester.pump();
+      expect(find.text("I'm on my way"), findsOneWidget);
+    });
+
+    testWidgets('shows Arrived once the driver has set off', (tester) async {
+      await tester.pumpWidget(
+          host(TripStepButton(trip: trip(status: 7), onChanged: () {})));
       await tester.pump();
       expect(find.text("I've arrived"), findsOneWidget);
     });

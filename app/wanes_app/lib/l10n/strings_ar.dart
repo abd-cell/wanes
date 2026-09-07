@@ -365,6 +365,7 @@ const Map<String, String> arStrings = {
   'tripStatus.completed': 'منتهية',
   'tripStatus.cancelled': 'ملغاة',
   'tripStatus.arrived': 'وصل السائق',
+  'tripStatus.enRoute': 'في الطريق',
 
   // ── الإشعارات ────────────────────────────────────────────────────────────
   'notif.title': 'الإشعارات',
@@ -472,6 +473,8 @@ const Map<String, String> arStrings = {
   'driver.startTrip': 'بدء الرحلة',
   'driver.completeTrip': 'إنهاء الرحلة',
   'driver.tripArrived': 'أبلغنا الركّاب بوصولك.',
+  'driver.departTrip': 'أنا في الطريق',
+  'driver.tripEnRoute': 'أبلغنا الركّاب بأنك انطلقت.',
   'driver.tripStarted': 'بدأت الرحلة.',
   'driver.tripCompleted': 'انتهت الرحلة.',
   'driver.tripUpdateFailed': 'تعذّر تحديث الرحلة',
@@ -543,6 +546,10 @@ const Map<String, String> arStrings = {
   'driver.saveFailed': 'تعذّر حفظ تغييراتك',
   'driver.reviewPublish': 'مراجعة ونشر',
   'driver.pricePerSeat': 'سعر المقعد',
+  'driver.setPriceTitle': 'حدّد سعرك',
+  'driver.setPriceBody': 'طلب الراكب رحلة لا عرض سعر — حدّد سعر المقعد قبل القبول.',
+  'driver.priceSuggested': 'استخدم السعر المقترح {value}',
+  'driver.acceptAtPrice': 'اقبل بسعر {value} للمقعد',
   'driver.suggestedPrice': 'المقترح ‎{price}‎',
   'driver.repeatWeekdays': 'التكرار أيام الأسبوع',
   'driver.repeatWeekdaysBody': 'الأحد–الخميس، بالوقت نفسه',

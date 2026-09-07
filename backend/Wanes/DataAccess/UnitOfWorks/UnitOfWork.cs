@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore.Storage;
+﻿using Microsoft.EntityFrameworkCore.Storage;
 using Wanes.DataAccess.Repositories;
 using Wanes.Shareds.Attributes;
 using Wanes.Shareds.Models.Base;
@@ -47,6 +47,8 @@ public class UnitOfWork : IUnitOfWork
         if (_transaction is not null) await _transaction.RollbackAsync();
         await DisposeTransactionAsync();
     }
+
+    public void Detach() => _db.ChangeTracker.Clear();
 
     private async Task DisposeTransactionAsync()
     {

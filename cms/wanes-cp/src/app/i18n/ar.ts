@@ -157,6 +157,7 @@ export const ar: Record<string, string> = {
   tripstatus_4: 'مكتملة',
   tripstatus_5: 'ملغاة',
   tripstatus_6: 'وصل السائق',
+  tripstatus_7: 'في الطريق',
   bookingstatus_1: 'قيد الانتظار',
   bookingstatus_2: 'مؤكّد',
   bookingstatus_3: 'قيد التنفيذ',
@@ -395,6 +396,15 @@ export const ar: Record<string, string> = {
   cfg_hail_ttl_preview: 'يبقى الطلب مفتوحاً لمدة',
   cfg_unit_hours: 'ساعة',
   cfg_unit_minutes: 'دقيقة',
+
+  cfg_fare: 'عرض الأجرة',
+  cfg_fare_hint:
+    'أسعار تُستخدم لتحديد أجرة رحلة لم يحدّدها أحد. السائق الذي ينشر رحلة يضع سعره بنفسه؛ أما السائق الذي يقبل طلب راكب فلم يحدّد سعراً، فتُعرض رحلته بهذه الأسعار مضروبةً بالمسافة.',
+  cfg_fare_base: 'الأجرة الأساسية',
+  cfg_fare_per_km: 'لكل كيلومتر',
+  cfg_fare_preview: 'رحلة ١٠ كم يُعرض المقعد فيها بـ',
+  cfg_fare_foot:
+    'للعرض فقط — وانِس لا يتولى أي مدفوعات. يعرض التطبيق الرقم نفسه كتقدير على بطاقة الطلب لدى السائق، فكلاهما يقرأ هذه الأسعار.',
   cfg_shade_primary: 'أساسي',
   cfg_shade_deep: 'غامق',
   cfg_shade_dark: 'الوضع الداكن',

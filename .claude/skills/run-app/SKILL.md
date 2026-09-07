@@ -17,6 +17,21 @@ The monorepo has three runnable stacks. "the app" = the **Flutter** client in
 - Backend DB is SQL Server `DESKTOP-SBF2I7A` (the user's machine).
 - Seeded admin login: phone `+962790000000`, OTP `1234`
   (OTP is fixed to 1234 while `Otp.IsTesting=true` in appsettings).
+- **Start every long-running server detached via PowerShell `Start-Process`, not
+  the Bash tool.** This is not just a `dotnet run` quirk — `ng serve` and
+  `flutter run` hit it too: the process exits **127 with no error message**,
+  the last log line being a perfectly healthy one. Verified 7 Sep 2026: an
+  `ng serve` started from Bash died minutes after printing
+  `Application bundle generation complete` + `Page reload sent to client(s)`,
+  and a `flutter run` from Bash was torn down the same way. Exit 127 here means
+  "the harness reaped it", NOT a build or config error — don't go hunting for
+  one. The pattern, for any of the three stacks:
+  ```
+  Start-Process -FilePath "npm.cmd" -ArgumentList "start","--","--port","4300" `
+    -WorkingDirectory "C:\Git\claude\wanes\cms\wanes-cp" `
+    -RedirectStandardOutput out.log -RedirectStandardError err.log -WindowStyle Hidden
+  ```
+  `flutter.bat` takes the same treatment (`-FilePath "C:\flutter\bin\flutter.bat"`).
 
 ## Run the Flutter app on web (fastest; drivable in a browser)
 
@@ -25,10 +40,34 @@ cd /c/Git/claude/wanes/app/wanes_app
 C:/flutter/bin/flutter.bat run -d web-server --web-port 8090 --web-hostname 127.0.0.1
 ```
 
-First compile ~30s. Wait for `lib\main.dart is being served at http://127.0.0.1:8090`,
-then open that URL in the browser pane (`preview_start` with the url). Front the
+Open that URL in the browser pane (`preview_start` with the url). Front the
 tab and screenshot — you should see the **Sign in** screen: ink `#0e1726`
 background, teal `#0fae9e` brand dot + "Send code" button, phone field.
+
+### A 200 on the port does NOT mean the app is ready (verified 7 Sep 2026)
+
+The web server answers `index.html` within a second or two, while the Dart
+build behind it keeps going — measured at **67.8s** on this machine
+(`Waiting for connection from debug service on Web Server... 67.8s`). So a
+readiness poll like `curl -o /dev/null -w "%{http_code}" http://localhost:8096/`
+returns `200` long before there is an app to see. Navigate at that point and you
+get a **black page** plus a pile of `net::ERR_CONNECTION_TIMED_OUT` console
+errors for the `.lib.js` module requests — which reads exactly like a broken
+API base URL and sends you debugging the network instead of just waiting.
+
+Poll the **run log** for `is being served at`, not the port:
+
+```bash
+for i in $(seq 1 100); do
+  grep -q "is being served at" app-out.log && { echo ready; break; }
+  grep -qE "Failed to bind|exited with code" app-out.log && { echo FAILED; tail -5 app-out.log; break; }
+  sleep 2
+done
+```
+
+Even after that line appears, first paint takes another ~30-60s (splash →
+orbit loader → sign-in). If you already navigated too early, a forced reload
+picks it up; no need to restart the server.
 
 Drive it: click the phone field, type `+962790000000`, click **Send code**.
 The button shows a teal spinner while it calls the API.
@@ -37,7 +76,7 @@ The button shows a teal spinner while it calls the API.
 
 `app/wanes_app/lib/core/environment.dart` reads the base URL from a
 compile-time `--dart-define=API_BASE_URL=...`. The default is the host PC's
-**LAN** address (`http://192.168.1.160:5000/api/v1/`) so a real phone, an
+**LAN** address (`http://192.168.10.150:5000/api/v1/`) so a real phone, an
 emulator and the host browser all hit the same backend. Pass the URL the
 *target* can actually reach:
 
@@ -85,9 +124,26 @@ The IP is DHCP-assigned (`ipconfig` → Wi-Fi IPv4). If it moves, update
 `environment.dart`, the Android network-security config, and
 `cms/wanes-cp/src/app/environment.ts` together — or reserve it on the router.
 
+**This address moves often — re-check `ipconfig` before trusting the files.**
+Observed **five** values in seven days, hopping between two subnets:
+`192.168.1.43` → `192.168.10.149` → `192.168.1.160` → `192.168.1.127` →
+`192.168.10.150` (1-7 Sep 2026). Three of those moved *mid-session*, one of
+them within twenty minutes of being verified — so treat the value in these
+files as a hint, never as fact. Run `ipconfig` at the start of every session
+that touches the API. When the app reports
+"Connection lost / request timed out" and the console shows
+`net::ERR_CONNECTION_TIMED_OUT`, check `ipconfig` **first** — that symptom was
+a moved lease both times, not CORS and not the firewall. Distinguishing test:
+`curl` the LAN IP and `localhost` back to back; loopback OK + LAN IP timing out
+= the baked-in IP is wrong. (Real CORS failures look different — an explicit
+CORS policy error in the console, not a connection timeout.)
+
+There is a fourth place worth updating for your own sanity: the smoke-test
+`curl` and the example URL in this skill file.
+
 Smoke-test the LAN path:
 ```bash
-curl -s -o /dev/null -w "%{http_code}\n" -X POST http://192.168.1.160:5000/api/v1/accounts/request-otp -H "Content-Type: application/json" -d '{"phone":"+962790000000"}'
+curl -s -o /dev/null -w "%{http_code}\n" -X POST http://192.168.10.150:5000/api/v1/accounts/request-otp -H "Content-Type: application/json" -d '{"phone":"+962790000000"}'
 ```
 `200` means the API is reachable at that address.
 
@@ -115,6 +171,49 @@ Start-Process dotnet -ArgumentList "run","--project","Wanes","--launch-profile",
 ```bash
 taskkill //F //IM dart.exe
 ```
+
+**Check what is already running before you launch anything.** Stale servers
+from earlier sessions survive for days on this machine — on 7 Sep 2026 there
+were Flutter web servers holding 8090, 8091 *and* 8092 (oldest ~6 days), an
+`ng serve` on 4200, and at one point **two** backends on 5000 (one bound
+`0.0.0.0`, one loopback-only — only the first is LAN-reachable, and it is easy
+to smoke-test the wrong one). A busy port fails the launch with
+`SocketException ... errno = 10048`, which is just a port collision, nothing to
+debug. Pick a free port instead of killing the user's servers:
+
+```bash
+netstat -ano | grep LISTENING | grep -oE ":[0-9]+ " | tr -d ': ' | sort -n | uniq | awk '$1>=8000 && $1<=9100'
+netstat -ano | grep ":5000.*LISTENING"   # expect ONE line, on 0.0.0.0:5000
+```
+
+Note `taskkill //F //IM dart.exe` is a blunt instrument — there were 13 `dart`
+processes running on 7 Sep 2026. Prefer `Stop-Process -Id <pid>` on the PID that
+actually holds the port (`netstat -ano` last column).
+
+## Running the CMS alongside (verified 7 Sep 2026)
+
+Only needed when the task touches the admin panel, but the app and CMS share
+the backend so they are often brought up together.
+
+```
+Start-Process -FilePath "npm.cmd" -ArgumentList "start","--","--port","4300" `
+  -WorkingDirectory "C:\Git\claude\wanes\cms\wanes-cp" `
+  -RedirectStandardOutput cms-out.log -RedirectStandardError cms-err.log -WindowStyle Hidden
+```
+
+- **Do NOT pass `--host 0.0.0.0`.** Angular 22's dev server rejects every
+  request with `Header "host" with value "localhost:4300" is not allowed` (its
+  SSRF guard) and serves nothing but `ERROR: Bad Request`. Leave it on the
+  default localhost binding; use `--allowed-hosts` only if a LAN device really
+  must reach the CMS.
+- `ng serve` **watches** `environment.ts`, so after an IP edit it rebuilds on
+  its own — look for a fresh `Application bundle generation complete` timestamp
+  rather than restarting it.
+- A bare `GET /` correctly returns **302**, not 200 — `languageGuard`
+  redirects to `/en/...`. Poll `/en/login` if you want a 200 as the ready
+  signal.
+- Don't try to verify the baked-in API URL by grepping the served bundles;
+  the value lives in a hashed lazy chunk. Load a screen and watch it fetch.
 
 ## Running on an Android emulator (verified end-to-end)
 

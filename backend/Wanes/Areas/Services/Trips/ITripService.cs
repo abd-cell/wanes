@@ -1,4 +1,4 @@
-using Wanes.Areas.Services.Trips.Models;
+﻿using Wanes.Areas.Services.Trips.Models;
 using Wanes.Shareds.Attributes;
 using Wanes.Shareds.Enums;
 using Wanes.Shareds.Models;
@@ -13,6 +13,13 @@ public interface ITripService
     Task<BaseResponse<TripOutput>> Get(int id);
     Task<BaseResponse<List<TripOutput>>> GetUserTrips();
     Task<BaseResponse> Cancel(int id);
+    /// <summary>
+    /// The driver has set off for the first pickup. Takes the trip out of search
+    /// and off the hail board; no rider's seat moves, because none of them has
+    /// been reached yet.
+    /// </summary>
+    Task<BaseResponse<TripOutput>> Depart(int id);
+
     Task<BaseResponse<TripOutput>> Start(int id);
     Task<BaseResponse<TripOutput>> Arrive(int id);
     Task<BaseResponse<TripOutput>> Complete(int id);

@@ -1,16 +1,24 @@
-namespace Wanes.Areas.Services.Search;
+﻿namespace Wanes.Areas.Services.Search;
 
 /// <summary>
 /// How the rider wants carpool matches ordered.
 ///
-/// Applied inside the query, before the result cap, so the page that comes back
-/// is the best twenty <em>for that sort</em> rather than the twenty nearest
-/// re-shuffled on the client. Every sort tie-breaks on <see cref="Best"/>, which
-/// keeps the order stable across identical requests.
+/// Applied before the result cap, so the page that comes back is the best twenty
+/// <em>for that sort</em> rather than the twenty nearest re-shuffled on the
+/// client. The explicit sorts run inside the query; <see cref="Best"/> ranks a
+/// pool in memory because it weighs time against distance. Every sort tie-breaks
+/// on proximity and then departure, which keeps the order stable across
+/// identical requests.
 /// </summary>
 public enum SearchSort
 {
-    /// <summary>Combined proximity of both ends — the default ranking.</summary>
+    /// <summary>
+    /// Walk plus wait — the default. Combined proximity of both ends *and*
+    /// closeness to the hour the rider asked for, weighed against each other so
+    /// a trip leaving soon beats a nearer one leaving tomorrow without hiding
+    /// tomorrow's. Ranked in memory rather than in the query, because the two
+    /// halves cannot be scored together in SQL.
+    /// </summary>
     Best = 1,
 
     /// <summary>Leaving soonest first.</summary>

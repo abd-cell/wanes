@@ -3,6 +3,7 @@ using Wanes.Areas.Services.Audit;
 using Wanes.Areas.Services.Configuration.Models;
 using Wanes.DataAccess.Repositories;
 using Wanes.DataAccess.UnitOfWorks;
+using Wanes.Areas.Domain.Trips;
 using Wanes.Shareds.Constants;
 using Wanes.Shareds.Models;
 using Entity = Wanes.Areas.Domain.Configuration.AppConfiguration;
@@ -54,6 +55,10 @@ public class AppConfigurationService : IAppConfigurationService
         entity.FontFamily = input.FontFamily;
         entity.HailRequestTtlMinutes =
             Math.Clamp(input.HailRequestTtlMinutes, MatchRules.MinHailTtlMinutes, MatchRules.MaxHailTtlMinutes);
+        // Clamped as well as validated: the attribute answers the CMS, this
+        // answers everything else that can reach the row.
+        entity.FareBaseAmount = FareRules.RateFor(input.FareBaseAmount);
+        entity.FarePerKm = FareRules.RateFor(input.FarePerKm);
         entity.SupportPhone = Blank(input.SupportPhone);
         entity.SupportWhatsApp = Blank(input.SupportWhatsApp);
         entity.SupportEmail = Blank(input.SupportEmail)?.ToLowerInvariant();

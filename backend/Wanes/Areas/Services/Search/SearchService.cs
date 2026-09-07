@@ -75,8 +75,9 @@ public class SearchService : ISearchService
 
         var now = DateTime.UtcNow;
         var boardingFloor = now - MatchRules.BoardingGrace;
-        var from = input.When - MatchRules.TimeWindow;
-        var to = input.When + MatchRules.TimeWindow;
+
+        // Older than this and a reported position is not where the driver is.
+        var liveFixFloor = MatchRules.LiveFixFloor(now);
 
         // A seat this rider already holds is not a seat they can take again --
         // booking it would only answer AlreadyBooked, so keep those trips out of
@@ -109,13 +110,44 @@ public class SearchService : ISearchService
                         // driver still on their way to the first pickup. Excluding
                         // those made the hail trip unjoinable by anyone else.
                         && t.DepartAt > boardingFloor
-                        && t.DepartAt >= from && t.DepartAt <= to
+                        // No window on the wanted departure. A trip with free
+                        // seats that has not gone is discoverable whenever it
+                        // leaves; how close it is to the hour the rider asked
+                        // for ranks it instead (Order/Rank below). As a filter
+                        // this hid a usable trip two hours out and dropped the
+                        // rider into a hail with a good match sitting unshown.
                         && t.Origin.IsWithinDistance(origin, matchRadius)
-                        && t.Destination.IsWithinDistance(destination, matchRadius));
+                        && t.Destination.IsWithinDistance(destination, matchRadius)
+                        // And, when we actually know where the driver is, they
+                        // have to be around here too. A trip whose pickup point
+                        // is next door but whose driver is currently an hour
+                        // away is a notional match, not a real one.
+                        //
+                        // A missing or stale fix is ignored rather than
+                        // disqualifying: a driver only reports while the app is
+                        // running, so requiring one would hide every trip posted
+                        // for a future day. Those are judged on the planned
+                        // origin alone, exactly as before.
+                        && (t.Driver == null
+                            || t.Driver.LastLocation == null
+                            || t.Driver.LastLocationAt == null
+                            || t.Driver.LastLocationAt < liveFixFloor
+                            || t.Driver.LastLocation.IsWithinDistance(origin, matchRadius)));
 
-        var candidates = await Order(filtered, input.SortBy, origin, destination)
-            .Take(MaxResults)
-            .ToListAsync();
+        var candidates = input.SortBy == SearchSort.Best
+            // The default order weighs walk against wait, which the database
+            // cannot score: geography answers in metres only inside a query, and
+            // the entities that come back measure in degrees. So take a pool the
+            // database *can* order — by proximity — and rank it properly here.
+            ? Rank(
+                await filtered
+                    .OrderBy(t => t.Origin.Distance(origin) + t.Destination.Distance(destination))
+                    .Take(MatchRules.CandidatePool)
+                    .ToListAsync(),
+                origin, destination, input.When, matchRadius)
+            : await Order(filtered, input.SortBy, origin, destination)
+                .Take(MaxResults)
+                .ToListAsync();
 
         if (candidates.Count > 0)
         {
@@ -228,9 +260,45 @@ public class SearchService : ISearchService
             .OrderByDescending(t => t.SeatsLeft)
             .ThenBy(t => t.Origin.Distance(origin) + t.Destination.Distance(destination)),
 
+        // SearchSort.Best never arrives here — it is ranked in memory by Rank,
+        // which can weigh time against distance. This stands as the tie-break
+        // every explicit sort above falls through to.
         _ => query
             .OrderBy(t => t.Origin.Distance(origin) + t.Destination.Distance(destination)),
     };
+
+    /// <summary>
+    /// The default ranking: how far the rider walks, plus how long they wait.
+    ///
+    /// Both halves are normalised before they are added, so the sum is unitless
+    /// — a full match radius of walking at both ends scores the same as
+    /// <see cref="MatchRules.RankTimeScale"/> away from the wanted hour. That is
+    /// what lets a trip leaving tomorrow stay in the results while a trip
+    /// leaving soon sits above it.
+    ///
+    /// Distances come through <see cref="GeoDistance"/> and not
+    /// <c>Point.Distance</c>: these entities are in memory now, where NTS
+    /// answers in degrees.
+    /// </summary>
+    private static List<Trip> Rank(List<Trip> pool, Point origin, Point destination,
+        DateTime when, int matchRadiusMeters)
+    {
+        var radiusKm = matchRadiusMeters / 1000.0;
+        var timeScale = MatchRules.RankTimeScale.TotalMinutes;
+
+        return pool
+            .OrderBy(t =>
+            {
+                var walkKm = GeoDistance.Km(t.Origin, origin) + GeoDistance.Km(t.Destination, destination);
+                var waitMinutes = Math.Abs((t.DepartAt - when).TotalMinutes);
+                return walkKm / radiusKm + waitMinutes / timeScale;
+            })
+            // Same tie-break as every other sort, so two identical searches
+            // cannot disagree about the order of equally good matches.
+            .ThenBy(t => t.DepartAt)
+            .Take(MaxResults)
+            .ToList();
+    }
 
     private static bool IsSamePoint(GeoPoint a, GeoPoint b) =>
         Math.Abs(a.Lat - b.Lat) < 1e-6 && Math.Abs(a.Lng - b.Lng) < 1e-6;

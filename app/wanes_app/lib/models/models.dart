@@ -133,6 +133,8 @@ class AppConfig {
     this.primaryColor = 0xFF0FAE9E,
     this.font = AppFont.jakarta,
     this.hailTtlMinutes = 10,
+    this.fareBaseAmount = 2.50,
+    this.farePerKm = 1.20,
     this.supportPhone = '',
     this.supportWhatsApp = '',
     this.supportEmail = '',
@@ -163,6 +165,16 @@ class AppConfig {
 
   /// [hailTtlMinutes] as a duration.
   Duration get hailTtl => Duration(minutes: hailTtlMinutes);
+
+  /// Flag-fall and per-kilometre rate behind an estimated fare.
+  ///
+  /// Configuration rather than constants because the server prices a
+  /// hail-accepted trip off these same two numbers. While the app carried its
+  /// own copies, the figure a driver saw on a request card and the price stamped
+  /// on the trip they got by accepting it were free to disagree — and did, the
+  /// moment an admin touched the rates.
+  final double fareBaseAmount;
+  final double farePerKm;
 
   // ── Support contact ──
   //
@@ -204,6 +216,11 @@ class AppConfig {
         hailTtlMinutes:
             ((json['hailRequestTtlMinutes'] as num?)?.toInt() ?? fallback.hailTtlMinutes)
                 .clamp(1, 240),
+        // Zero is a legitimate rate (a flat flag-fall, or a fare that is all
+        // distance), so only a missing value falls back to the shipped one.
+        fareBaseAmount:
+            (json['fareBaseAmount'] as num?)?.toDouble() ?? fallback.fareBaseAmount,
+        farePerKm: (json['farePerKm'] as num?)?.toDouble() ?? fallback.farePerKm,
         supportPhone: _text(json['supportPhone']),
         supportWhatsApp: _text(json['supportWhatsApp']),
         supportEmail: _text(json['supportEmail']),
@@ -219,6 +236,8 @@ class AppConfig {
         'primaryColor': hexColor,
         'fontFamily': font.value,
         'hailRequestTtlMinutes': hailTtlMinutes,
+        'fareBaseAmount': fareBaseAmount,
+        'farePerKm': farePerKm,
         'supportPhone': supportPhone,
         'supportWhatsApp': supportWhatsApp,
         'supportEmail': supportEmail,
@@ -404,6 +423,7 @@ class Trip {
     4: 'tripStatus.completed',
     5: 'tripStatus.cancelled',
     6: 'tripStatus.arrived',
+    7: 'tripStatus.enRoute',
   };
 
   /// l10n key for [status] — resolve with `context.tr(trip.statusKey)`.
@@ -417,10 +437,10 @@ class Trip {
   /// Nothing more happens on this trip: no seat on it can be moved either.
   bool get isFinished => status == 4 || status == 5;
 
-  /// The driver is out on this one — at a pickup point or carrying riders. They
-  /// are unavailable for a second ride while it lasts (server rule; see
-  /// `DriverAvailabilityRules`).
-  bool get isUnderway => status == 3 || status == 6;
+  /// The driver is out on this one — on their way to a pickup, at one, or
+  /// carrying riders. They are unavailable for a second ride while it lasts
+  /// (server rule; see `DriverAvailabilityRules.IsEngaged`, which this mirrors).
+  bool get isUnderway => status == 3 || status == 6 || status == 7;
 
   factory Trip.fromJson(Map<String, dynamic> j) => Trip(
         id: j['id'] as int,

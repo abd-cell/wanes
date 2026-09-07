@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Wanes.Areas.Services.Requests;
 using Wanes.Areas.Services.Requests.Models;
 using Wanes.Shareds.Attributes;
@@ -28,7 +28,9 @@ public class RideRequestsController : BaseApiController
         [FromQuery] double lat, [FromQuery] double lng, [FromQuery] int radiusMeters = 5000)
         => await rideRequestService.GetNearby(lat, lng, radiusMeters);
 
+    /// <summary>Takes a hail, at the price the driver is charging for a seat.</summary>
     [HttpPost("{id:int}/accept")]
-    public async Task<BaseResponse<RideRequestRow>> Accept(int id)
-        => await rideRequestService.Accept(id);
+    public async Task<BaseResponse<RideRequestRow>> Accept(int id,
+        [FromBody] AcceptRideRequestInput? input = null)
+        => await rideRequestService.Accept(id, input);
 }

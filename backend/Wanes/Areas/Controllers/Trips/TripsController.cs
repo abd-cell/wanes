@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Wanes.Areas.Services.Trips;
 using Wanes.Areas.Services.Trips.Models;
 using Wanes.Shareds.Attributes;
@@ -51,6 +51,10 @@ public class TripsController : BaseApiController
     public async Task<BaseResponse> Cancel(int id) => await tripService.Cancel(id);
 
     [AppAuthorize]
+    /// <summary>The driver has set off for the first pickup.</summary>
+    [HttpPost("{id:int}/depart")]
+    public async Task<BaseResponse<TripOutput>> Depart(int id) => await tripService.Depart(id);
+
     [HttpPost("{id:int}/start")]
     public async Task<BaseResponse<TripOutput>> Start(int id) => await tripService.Start(id);
 

@@ -49,11 +49,11 @@ notifies nearby drivers** to accept (hail). One trip can carry **several riders*
 ## 4. Trip lifecycle (driver side) — derived from the seats
 
 ```
-posted ──► arrived ──► active ──► completed
-   │                     │
-   ├──► full ────────────┘        (seats_left = 0; can still become active/completed)
+posted ──► en_route ──► arrived ──► active ──► completed
+   │                                   │
+   ├──► full ──────────────────────────┘   (seats_left = 0; still runs to completion)
    │
-   └──► cancelled                 (by driver, before departure)
+   └──► cancelled                          (by driver, before departure)
 ```
 
 **The trip's status is not a field the driver sets — it is a summary of its
@@ -64,7 +64,14 @@ bookings** (Section 8). One trip carries several riders, so:
 | any `in_progress` | `active` — somebody is aboard |
 | else any `arrived` | `arrived` — the driver is at a pickup |
 | else all settled and ≥1 `completed` | `completed` — the last rider was dropped off |
+| else, and it was `en_route` | `en_route` — see below |
 | else | `posted`, or `full` when `seats_left = 0` |
+
+**`en_route` is the one status a driver sets outright**, and the exception to
+derivation: setting off moves *nobody's* seat — every rider is still at their
+kerb — so the seats would say `posted` while the car is already moving. Derivation
+preserves it instead of falling back, because falling back would put a departed
+trip back in search.
 
 `completed` and `cancelled` are terminal and never re-derived. A journey whose
 last rider cancels or no-shows mid-ride stays where it was — the driver is still
@@ -74,6 +81,12 @@ on the road — and their own trip-wide move is what finishes it.
 - `posted` — created, in the future, discoverable in search. Published straight
   away, with no admin review.
 - `full` — no seats left; hidden from search but existing bookings stand.
+- `en_route` — the driver has set off for the first pickup (`POST
+  trips/{id}/depart`). **This is where a trip leaves search.** Before it existed a
+  trip stayed discoverable all the way to the first kerb and dropped out on
+  arrival, which is backwards. Optional for the driver: `posted → arrived` is
+  still legal, because refusing it would only teach drivers to tap a button that
+  means nothing to them.
 - `arrived` — the driver has reached at least one rider's pickup point.
 - `active` — trip is under way; at least one rider is aboard.
 - `completed` — trip finished; unlocks rating for everyone on it. Bumps the
@@ -81,8 +94,10 @@ on the road — and their own trip-wide move is what finishes it.
 - `cancelled` — driver cancels; **all live bookings are auto-cancelled** and riders notified.
 - The driver's trip-wide **Arrived / Start / Complete** buttons are the same
   per-seat moves applied to every rider the move is legal for (Section 8); the
-  status is then derived from the result. They still enforce the order
-  `posted|full → arrived → active → completed` (`Conflict` otherwise).
+  status is then derived from the result. **On my way** is not one of these — it
+  moves no seat at all. The order enforced is
+  `posted|full → en_route → arrived → active → completed` (`Conflict` otherwise),
+  with `en_route` skippable.
 - A `posted` trip with **no bookings** can be **edited** by its driver (vehicle,
   route, departure, seats, price); `seats_left` is reset to the new `seats_total`.
   Once any non-cancelled booking exists — or the trip has left `posted` — editing
@@ -91,9 +106,10 @@ on the road — and their own trip-wide move is what finishes it.
 
 ### One driver, one car — availability
 
-A driver is **engaged** while any trip of theirs is `arrived` or `active`: they
-are at a pickup point or carrying riders. A trip that still holds a slot in
-their day (`posted`, `full`, `arrived`, `active`) **holds their schedule**.
+A driver is **engaged** while any trip of theirs is `en_route`, `arrived` or
+`active`: they are on the way to a pickup, at one, or carrying riders. A trip that still holds a slot in
+their day (`posted`, `full`, `en_route`, `arrived`, `active`) **holds their
+schedule**.
 
 While engaged, the driver:
 - **cannot be marked online.** `POST me/location` still stores the location —
@@ -131,12 +147,15 @@ Input: `origin`, `destination`, `when`, `seats`.
 ```
 1. Geocode origin + destination → coordinates.
 2. Find CANDIDATE trips where ALL hold:
-     • status = posted (not full/cancelled/active-past)
-     • depart_at within the time window (e.g. ±30 min of `when`)
+     • status = posted            (not full, not departed, not cancelled)
      • seats_left >= requested seats
-     • origin is near the trip's route
-     • destination is near the trip's route AND further along it than origin
-       (direction check — no wrong-way matches)
+     • depart_at has not gone     (> now − BoardingGrace)
+     • origin is near the trip's origin
+     • destination is near the trip's destination
+       (both ends inside the radius — this is also the direction check:
+        a trip going the other way has its origin near the rider's
+        destination, so it cannot match)
+     • AND, if the driver has a live fix, they are near the rider too
 3. IF candidates exist:
      → RANK them (Section 6) → return list → rider books a seat.   [CARPOOL]
    ELSE (no candidate):
@@ -144,15 +163,38 @@ Input: `origin`, `destination`, `when`, `seats`.
      → notify nearby online drivers free at `when`                  [HAIL]
 ```
 
+**The rider's `when` is not in that filter.** It ranks (Section 6) and never
+excludes. A trip with free seats that has not departed is discoverable *whenever*
+it leaves — six hours out, four days out. Used as a ±30 min window this hid a
+perfectly usable trip and dropped the rider into a hail with a good match sitting
+unshown; the discoverability rule is "seats left and not departed", full stop.
+
 **Rules**
 - The **direction check** is mandatory: a trip going the opposite way must never match.
 - Only **seats-available, posted** trips are matchable, and only those that have
   not yet gone: `depart_at > now - MatchRules.BoardingGrace` (15 min). The floor
   is a grace rather than "now" because a Posted trip a few minutes past its
-  departure has not left — it is boarding, the driver is late, or it is a
-  hail-accepted driver still on the way to the first pickup. The grace stays
+  departure has not left — it is boarding, or the driver is late. The grace stays
   short so the case it was written for — a trip from this morning that was never
-  started — is still excluded.
+  started — is still excluded. A driver who has actually set off is excluded by
+  `status`, not by the clock (`en_route`, Section 4).
+- **The driver has to actually be around here.** Matching the rider's pickup
+  against the trip's *planned* origin alone makes a notional match: the pickup
+  point can be next door while the driver is an hour away. So when the driver has
+  a **live fix** — `User.LastLocation`, reported within `MatchRules.LiveFixWindow`
+  (30 min) — that position must be inside the radius of the rider's origin as
+  well. Both halves are required: a driver standing next to the rider, on a trip
+  leaving from another region, is no more a match than the reverse.
+- **A missing or stale fix is ignored, not disqualifying.** A driver only reports
+  while the app is running, so most trips posted for a future day carry an old fix
+  or none; requiring one would empty search of every scheduled trip. Those are
+  judged on the planned origin exactly as before. `MatchRules.IsLiveFix` is the
+  one place that decides, and a position with no timestamp is not live — an unaged
+  position cannot be called current, so it does not get to exclude a trip.
+- **A trip already collecting riders is closed**, even with seats free. Only
+  `posted` is searchable, so `en_route`, `arrived` and `active` are all out: a
+  rider added to a pickup run already under way has no way to tell the driver to
+  turn around.
 - If the rider requests more seats than any single trip offers, no carpool match →
   falls through to a request (or we suggest splitting — future).
 
@@ -160,16 +202,30 @@ Input: `origin`, `destination`, `when`, `seats`.
 
 ## 6. Ranking rule (which trips show first)
 
+The default order (`SearchSort.Best`) is **walk plus wait**, normalised so the two
+can be added:
+
 ```
-score =  w1 · 1/detour_distance     (least detour for the driver — best)
-       + w2 · 1/pickup_distance     (route passes closest to the rider)
-       + w3 · 1/time_gap            (closest to requested time)
-       + w4 · driver_rating         (more trusted driver)
+score = (walk_km_at_both_ends / match_radius_km)
+      + (minutes_from_wanted_departure / MatchRules.RankTimeScale)   # 60 min
 ```
 
-- **Price is NOT a ranking factor** (payments out of scope; price is display-only if shown).
-- Ties broken by earliest `depart_at`, then highest `driver_rating`.
-- MVP may use **straight-line** distances; upgrade to true route geometry later.
+A full match radius of walking costs the same as an hour off the wanted hour.
+That is what lets a trip leaving tomorrow stay in the results while a trip
+leaving soon sits above it — the window became a ranking factor here when it
+stopped being a filter (Section 5).
+
+- Computed **in memory over a candidate pool** (`MatchRules.CandidatePool`, 200),
+  not in the query: the geography operators only answer in metres *inside* a
+  query, so a materialised entity's `Distance` returns degrees. Distances go
+  through `GeoDistance.Km`. The pool comes back ordered by proximity, which the
+  database *can* do, and is re-ranked properly before the 20-row cap.
+- The rider may override with an explicit sort (soonest, cheapest, best-rated,
+  shortest walk, most seats); those run in the query. Every sort tie-breaks on
+  proximity then `depart_at`, so two identical searches cannot disagree.
+- **Price is NOT part of the default score** (payments out of scope) — it is only
+  an explicit sort the rider can choose.
+- MVP uses **straight-line** distances; upgrade to true route geometry later.
 
 ---
 
@@ -226,11 +282,63 @@ like any other**:
   never offer, which is what used to make this trip unjoinable by anyone except
   the hailing rider.
 - It is offered in search, and bookable, on exactly the same rules as a posted
-  trip (`Posted`, seats left, inside the radius and time window).
+  trip (`Posted`, seats left, not departed, both ends inside the radius).
 - It runs the **reverse match** as a posted trip does: riders already sitting on
   an open hail along the same route are told a trip they can take now exists.
   Skipped when the hail filled the car (`SeatsLeft == 0`) — there is nothing to
   offer them.
+- It carries a **price**, derived rather than quoted. See below.
+
+### One trip type — the invariant to protect
+
+The two paths differ **only in who created the trip row**. After creation there
+is one trip type, one search index, one join rule, and `Trip` deliberately has
+**no `Source` / `OfferedBy` column** — nothing downstream can ask which path a
+trip came from, so nothing can start behaving differently for one of them.
+
+Keep it that way. Adding such a flag is how "one trip type" quietly becomes two
+sets of rules that have to be kept in step.
+
+Three consequences follow from a hail-accepted trip being an ordinary trip, and
+each needed an answer:
+
+- **Seat capacity** comes from the driver's vehicle, not from the request. The
+  request only says what one rider needs; `SeatsTotal = vehicle.SeatCapacity`
+  and the remainder is carpool seats. The driver's vehicle is therefore part of
+  trip creation, not optional metadata — `Accept` refuses with `VehicleNotFound`
+  if they have none.
+- **Price per seat is set by the driver, at accept time.** A hail carries no
+  price — the rider asked for a ride, not a quote — so `POST
+  requests/{id}/accept` takes a `pricePerSeat` and the trip lists at that figure,
+  verbatim, exactly as a posted trip lists at its driver's own price. The app
+  requires it: tapping Accept opens a price sheet, and **backing out of that
+  sheet is declining, never accepting at the default**.
+
+  The sheet opens on the **distance estimate** — the same figure already shown on
+  the request card, from the admin-set `AppConfiguration.FareBaseAmount` /
+  `FarePerKm` — so the driver confirms a number they have been looking at rather
+  than inventing one against the countdown. Those rates are also the server's
+  **fallback** for a call that carries no price (an older build, a retry whose
+  body was lost): they are not a second pricing model, they are the guarantee
+  that this never produces the one kind of trip in search with a blank where
+  every other row shows a figure. Zero is kept as a real answer — a free seat is
+  a favour, not a missing field. Still display-only: there are no payments.
+- **Route deviation** for a joining rider is bounded by the **search radius and
+  nothing else**: both of the joiner's ends must sit within `MatchRules.RadiusFor`
+  (5 km Nearby / 50 km Anywhere) of the trip's own ends. A joiner can only arrive
+  before the trip departs at all (`en_route` closes it, Section 4), so there is no
+  such thing as adding a detour to a run already in progress. That is the rider's own
+  Nearby/Anywhere choice, so a rider who opted into a wide match accepted the
+  longer ride. A real added-detour figure was considered and declined — it needs
+  route geometry the MVP does not have, and a straight-line approximation would
+  refuse joins a driver would happily take.
+
+**Whose filters govern a joiner** is not a live question: every filter is
+logistical (from/to, time, seats, radius), so a later joiner cannot violate the
+first rider's constraint. Should a *social* filter ever be added — gender
+preference is the obvious one — this becomes a real decision, and the choice is
+between making filters matching-time only or copying the requester's constraints
+onto the trip as hard limits. Do not add one without settling that.
 
 ### How long a request stays open
 
@@ -281,8 +389,14 @@ on them (`PUT Trips/{id}/bookings/{bookingId}/status`). The trip's own status is
 then derived from all of its seats (Section 4).
 
 **Rules**
-- Creating a booking **reserves** seats (`pending`); confirming **decrements** `seats_left`.
-- A booking cannot be confirmed if `seats_left < requested seats` (race-safe: check-and-decrement atomically).
+- **Joining is instant — there is no driver approval and no `pending` step.** A
+  booking is created `confirmed` and `seats_left` drops in the same commit. The
+  `pending` value still exists on `BookingStatus` (and the transition rules still
+  accept it, so an admin-created row behaves) but no rider-facing path produces
+  one.
+- A booking is refused if `seats_left < requested seats`, and the decrement is
+  race-safe — see *Concurrency* below for how, because a transaction alone is not
+  enough.
 - Only the trip's **own driver** may move a seat, and only along the order above
   (`BookingStatusNotAllowed` otherwise): a rider can be dropped off only once
   aboard, and marked a no-show only while they are not.
@@ -299,6 +413,43 @@ then derived from all of its seats (Section 4).
   would be a lie, and their tracking rail reads these events.
 - Rating unlocks on `completed` only; a `no_show` rates nobody.
 - No fees/charges on cancel or no-show (no payments yet).
+
+---
+
+### Concurrency — the two races
+
+Two operations are genuine races, and a transaction does **not** settle either:
+SQL Server reads at READ COMMITTED, so two callers see the same row and neither
+blocks the other's read.
+
+| The race | What used to happen |
+|---|---|
+| Two riders take the last seat | Both read `seats_left = 1`, both pass the check, both write `0` — one seat sold twice |
+| Two drivers accept the same hail | Both read `open`, both create a trip — the rider gets two drivers |
+
+Both rows therefore carry a **row version** (`Trip.RowVersion`,
+`RideRequest.RowVersion`, mapped `IsRowVersion()`), which makes every `UPDATE`
+conditional on the value that was read. The loser changes no rows, gets a
+`DbUpdateConcurrencyException`, and its whole transaction rolls back — including,
+for a hail, the trip and booking it had already staged.
+
+**Losing is not the same as being refused.** Two riders booking a four-seat trip
+at the same instant both deserve a seat; the loser only needs to look again. So
+the seat paths retry from a fresh read (`ConcurrencyRules.MaxAttempts`, 3), and
+the refusal — when there is one — comes out of the ordinary checks on that fresh
+read (`TripNotBookable` for a trip that filled, `NoSeatsLeft` for one that has
+too few). Only sustained contention across every attempt returns `Conflict`,
+which is honest: there may well be a seat, we simply never got to take it.
+
+**Accepting a hail is idempotent.** A double tap, or a client retrying a request
+whose response it never saw, is answered from the trip the driver already has —
+one trip, success both times. Deliberately scoped to *that* driver: another
+driver asking about a hail that is already matched is a loser, not a repeat
+caller, and gets `RequestNotOpen`.
+
+Retries need the change tracker cleared between attempts (`IUnitOfWork.Detach()`),
+or the stale entity is handed straight back and the retry fails forever on the
+same version.
 
 ---
 
@@ -371,7 +522,8 @@ way.
 - A driver **cannot hold two rides at once**: none while out on a trip, and never
   two departures within 30 minutes of each other (Section 4).
 - A rider **cannot double-book** the same trip.
-- Concurrency: seat decrement is **atomic** so two riders can't take the last seat.
+- Concurrency: see the section below — the seat decrement and the hail claim are
+  both guarded, and neither is a plain read-then-write.
 - A cancelled/expired entity cannot transition back to an active state.
 - All state changes are recorded in the audit log (Section 11).
 

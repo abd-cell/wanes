@@ -12,6 +12,7 @@ import '../../core/theme.dart';
 import '../../models/models.dart';
 import '../../services/services.dart';
 import '../../widgets/map_backdrop.dart';
+import '../../widgets/accept_price_sheet.dart';
 import '../../widgets/wanes_alerts.dart';
 import '../../widgets/wanes_ui.dart';
 import '../../widgets/wanes_motion.dart';
@@ -89,8 +90,21 @@ class _RequestsScreenState extends State<RequestsScreen> {
       .toList();
 
   Future<void> _accept(RideRequestRow r) async {
+    // A hail carries no price, so the driver names one before they commit. The
+    // sheet opens on the same distance estimate the card shows, so this is a
+    // figure they confirm rather than invent against the countdown.
+    final price = await showAcceptPriceSheet(
+      context,
+      suggestion: Fare.perSeat(Geo.distanceKm(
+          r.originLat, r.originLng, r.destinationLat, r.destinationLng)),
+      seats: r.seats,
+    );
+    // Backing out of the sheet is declining to accept, not accepting at the
+    // suggested figure.
+    if (price == null || !mounted) return;
+
     setState(() => _accepting = true);
-    final res = await _service.accept(r.id);
+    final res = await _service.accept(r.id, pricePerSeat: price);
     if (!mounted) return;
     setState(() {
       _accepting = false;

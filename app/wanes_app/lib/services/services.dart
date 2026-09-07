@@ -365,6 +365,10 @@ class TripService {
   /// at once. The server enforces the order (Posted/Full → Arrived → Active →
   /// Completed) and pushes each move to the riders whose seat it moved, which is
   /// what advances their tracking rail.
+  /// The driver has set off for the first pickup. Takes the trip out of search;
+  /// no rider's seat moves, because none of them has been reached yet.
+  Future<AppResponse<Trip>> depart(int id) => _transition(id, 'depart');
+
   Future<AppResponse<Trip>> arrive(int id) => _transition(id, 'arrive');
   Future<AppResponse<Trip>> start(int id) => _transition(id, 'start');
   Future<AppResponse<Trip>> complete(int id) => _transition(id, 'complete');
@@ -399,7 +403,11 @@ class RideRequestService {
             .toList(),
       );
 
-  Future<AppResponse> accept(int id) => _api.post('requests/$id/accept');
+  /// Takes a hail at [pricePerSeat] — what the driver is charging for a seat on
+  /// the trip this creates. A hail carries no price of its own, so this is the
+  /// only place it can be set.
+  Future<AppResponse> accept(int id, {required double pricePerSeat}) =>
+      _api.post('requests/$id/accept', body: {'pricePerSeat': pricePerSeat});
 
   /// Withdraws the rider's own open hail. The server closes it on every driver
   /// who was offered it, so leaving the search screen without calling this

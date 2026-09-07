@@ -114,16 +114,25 @@ public class FakeAppConfigurationService : IAppConfigurationService
 {
     public int HailRequestTtlMinutes { get; set; } = MatchRules.DefaultHailTtlMinutes;
 
+    // The rates a hail-accepted trip is priced from. Default to the shipped
+    // ones so a test that does not care about price gets the real arithmetic.
+    public decimal FareBaseAmount { get; set; } = FareRules.DefaultBaseAmount;
+    public decimal FarePerKm { get; set; } = FareRules.DefaultPerKm;
+
     public Task<BaseResponse<AppConfigurationOutput>> Get() =>
         Task.FromResult(new BaseResponse<AppConfigurationOutput>(new AppConfigurationOutput
         {
             HailRequestTtlMinutes = HailRequestTtlMinutes,
+            FareBaseAmount = FareBaseAmount,
+            FarePerKm = FarePerKm,
         }));
 
     public Task<BaseResponse<AppConfigurationOutput>> Update(AppConfigurationInput input) =>
         Task.FromResult(new BaseResponse<AppConfigurationOutput>(new AppConfigurationOutput
         {
             HailRequestTtlMinutes = input.HailRequestTtlMinutes,
+            FareBaseAmount = input.FareBaseAmount,
+            FarePerKm = input.FarePerKm,
         }));
 }
 

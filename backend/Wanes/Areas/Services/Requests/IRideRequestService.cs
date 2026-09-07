@@ -10,7 +10,11 @@ public interface IRideRequestService
     Task<BaseResponse<List<RideRequestRow>>> GetUserRequests();
     Task<BaseResponse> Cancel(int id);
     Task<BaseResponse<List<RideRequestRow>>> GetNearby(double lat, double lng, int radiusMeters);
-    Task<BaseResponse<RideRequestRow>> Accept(int id);
+    /// <summary>
+    /// Takes a hail, at the price the driver is charging. First to accept wins;
+    /// the same driver asking twice gets the trip they already have.
+    /// </summary>
+    Task<BaseResponse<RideRequestRow>> Accept(int id, AcceptRideRequestInput? input = null);
 
     /// <summary>
     /// Moves every hail past its expiry from Open to Expired and closes it on the

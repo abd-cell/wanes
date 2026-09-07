@@ -49,7 +49,10 @@ class _LiveTripScreenState extends State<LiveTripScreen> {
   /// The trip is the fallback, not the truth: it summarises every seat on it, so
   /// on a carpool it can already say "under way" while this rider is still
   /// waiting at the curb. [_stageOfSeat] is what actually describes *them*.
-  static const _stageOf = {1: 0, 2: 0, 6: 1, 3: 2, 4: 3};
+  /// EnRoute sits at stage 0 with Posted and Full: the rail's first headline is
+  /// already "on the way", and it is the driver who has moved, not this rider's
+  /// seat — they are still at the kerb until the car reaches them.
+  static const _stageOf = {1: 0, 2: 0, 7: 0, 6: 1, 3: 2, 4: 3};
 
   /// This rider's own `BookingStatus` → rail stage: the driver moves each seat
   /// separately (reached → aboard → dropped off).

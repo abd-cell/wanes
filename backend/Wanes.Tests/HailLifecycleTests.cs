@@ -33,6 +33,7 @@ public class HailLifecycleTests
         int actingUserId) =>
         new(uow, new FakeSecurityManager(actingUserId), new FakeAuditService(), notifications,
             new DriverAvailabilityService(uow.Repository<Trip>()),
+            new FakeAppConfigurationService(),
             uow.Repository<RideRequest>(), uow.Repository<User>(), uow.Repository<Vehicle>(),
             uow.Repository<Trip>(), uow.Repository<Booking>());
 

@@ -10,6 +10,7 @@ import '../../core/session.dart';
 import '../../core/theme.dart';
 import '../../models/models.dart';
 import '../../services/services.dart';
+import '../../widgets/accept_price_sheet.dart';
 import '../../widgets/wanes_alerts.dart';
 import '../../widgets/wanes_ui.dart';
 import '../notifications_screen.dart';
@@ -327,8 +328,19 @@ class _DriverDashboardState extends State<DriverDashboard> {
     // One driver drives one car: a double tap, or a tap on a second card while
     // the first is still in flight, is an accept the server is bound to refuse.
     if (_accepting) return;
+
+    // Same sheet as the requests screen — a hail carries no price, so the driver
+    // names one wherever they answer from. Backing out is declining.
+    final price = await showAcceptPriceSheet(
+      context,
+      suggestion: Fare.perSeat(Geo.distanceKm(
+          r.originLat, r.originLng, r.destinationLat, r.destinationLng)),
+      seats: r.seats,
+    );
+    if (price == null || !mounted) return;
+
     setState(() => _accepting = true);
-    final res = await _requests.accept(r.id);
+    final res = await _requests.accept(r.id, pricePerSeat: price);
     if (!mounted) return;
     setState(() {
       _accepting = false;

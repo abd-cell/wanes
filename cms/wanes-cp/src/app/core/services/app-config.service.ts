@@ -16,6 +16,8 @@ export const DEFAULT_CONFIG: AppConfiguration = {
   primaryColor: '#0FAE9E',
   fontFamily: AppFont.Jakarta,
   hailRequestTtlMinutes: 10,
+  fareBaseAmount: 2.5,
+  farePerKm: 1.2,
   supportPhone: '',
   supportWhatsApp: '',
   supportEmail: '',

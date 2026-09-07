@@ -20,6 +20,23 @@ const HAIL_TTL_BOUNDS = {
   clamp: (value: number) => Math.min(240, Math.max(1, Math.round(value || 0))),
 };
 
+/**
+ * Fare rates, bounded the way the server bounds them (`Trips.FareRules`).
+ *
+ * Zero is allowed on both: a flat flag-fall with no distance component, or a
+ * fare that is all distance, are both real pricing choices. Negative is not —
+ * it would price a long ride below a short one — and the ceiling is there so a
+ * slipped decimal cannot list a trip at a fortune.
+ */
+/** The distance the fare preview quotes for — an ordinary city trip. */
+const FARE_PREVIEW_KM = 10;
+
+const FARE_RATE_BOUNDS = {
+  min: 0,
+  max: 1000,
+  clamp: (value: number) => Math.min(1000, Math.max(0, Number(value) || 0)),
+};
+
 /** Ready-made brand colours, so an admin without a hex code still has good options. */
 const PRESETS = ['#0FAE9E', '#2563EB', '#7C3AED', '#DB2777', '#E5484D', '#F97316', '#CA8A04', '#16A34A'];
 
@@ -115,6 +132,30 @@ export class SettingsComponent implements OnInit {
     return `${this.translation.translate('cfg_hail_ttl_preview')} ${parts.join(' ')}`;
   });
 
+  /**
+   * What a typical ride would list at, so an admin setting rates sees a price
+   * rather than two abstract numbers. Ten kilometres because it is the length
+   * of an ordinary city trip here, and one seat because that is the figure the
+   * server actually stores.
+   */
+  readonly farePreview = computed(() => {
+    const m = this.model();
+    const perSeat =
+      FARE_RATE_BOUNDS.clamp(Number(m.fareBaseAmount)) +
+      FARE_RATE_BOUNDS.clamp(Number(m.farePerKm)) * FARE_PREVIEW_KM;
+    // Same locale and precision as the currency sample above, so the two
+    // previews on this page cannot disagree about how money is written.
+    const digits = Math.min(3, Math.max(0, Number(m.currencyDecimals) || 0));
+    const text = new Intl.NumberFormat(this.translation.lang(), {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    }).format(perSeat);
+    const amount = Number(m.currencyPosition) === CurrencyPosition.After
+      ? `${text} ${m.currencySymbol}`
+      : `${m.currencySymbol}${text}`;
+    return `${this.translation.translate('cfg_fare_preview')} ${amount}`;
+  });
+
   ngOnInit(): void {
     // Bootstrap already fetched this, so the form opens on the live values
     // without a second round trip.
@@ -196,6 +237,8 @@ export class SettingsComponent implements OnInit {
         primaryColor: m.primaryColor.trim(),
         fontFamily: Number(m.fontFamily),
         hailRequestTtlMinutes: HAIL_TTL_BOUNDS.clamp(Number(m.hailRequestTtlMinutes)),
+        fareBaseAmount: FARE_RATE_BOUNDS.clamp(Number(m.fareBaseAmount)),
+        farePerKm: FARE_RATE_BOUNDS.clamp(Number(m.farePerKm)),
         supportPhone: (m.supportPhone ?? '').trim(),
         supportWhatsApp: (m.supportWhatsApp ?? '').trim(),
         supportEmail: email,
