@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Wanes.Areas.Services.Bookings;
 using Wanes.Areas.Services.Bookings.Models;
 using Wanes.Shareds.Attributes;
@@ -20,6 +20,7 @@ public class BookingsController : BaseApiController
     [HttpPost("{id:int}/cancel")]
     public async Task<BaseResponse> Cancel(int id)
         => await bookingService.Cancel(id);
+
 
     [HttpGet("mine")]
     public async Task<BaseResponse<List<BookingOutput>>> Mine()

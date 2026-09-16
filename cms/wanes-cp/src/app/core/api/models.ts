@@ -50,11 +50,41 @@ export interface AppConfiguration {
    * see `core/services/app-font.ts` for what each value resolves to here.
    */
   fontFamily: AppFont;
+
   /**
-   * Minutes an unanswered hail stays open before it expires and stops being
-   * offered to drivers. 1-240; the backend clamps anything outside that.
+   * Minutes before departure a driver has to have answered the run-or-cancel
+   * question on a trip short of its seat threshold, and minutes before that
+   * cutoff they are asked. Riders stood down have to learn in time to find
+   * another ride, and how much time that takes is a local question.
    */
-  hailRequestTtlMinutes: number;
+  confirmCutoffMinutes: number;
+  confirmDecisionLeadMinutes: number;
+
+  /**
+   * How many passengers a new trip asks for before it confirms, unless its
+   * driver says otherwise.
+   *
+   * Marketplace policy rather than a per-driver invention: what makes a run
+   * worth driving is a fact about the city, and a driver filling in a posting
+   * form is the wrong person to decide it from scratch. It only seeds the
+   * trip's own threshold — raising it never re-decides a trip that exists.
+   */
+  minimumPassengersDefault: number;
+
+  /**
+   * How long a ride request collects driver offers before one is selected.
+   * Zero — the shipped value — means the first interested driver gets it,
+   * which is first-come-first-served. Above zero the same data is ranked and
+   * the best offer wins, with no other change anywhere.
+   */
+  driverSelectionWindowMinutes: number;
+
+  /**
+   * Average speed behind every duration estimate, in km/h. Drives the earliest
+   * departure a rider may post for — one leg-time per seat, because a driver has
+   * to gather everybody — as well as the arrival estimate they are shown.
+   */
+  averageSpeedKmh: number;
 
   /** Flag-fall and per-km rate behind a derived per-seat price (see cfg_fare). */
   fareBaseAmount: number;
@@ -96,6 +126,18 @@ export enum AppFont {
   Tajawal = 5,
   /** The browser's own UI face; no webfont is downloaded. */
   System = 6,
+  /** Almarai, both scripts — Arabic-first geometric. */
+  Almarai = 7,
+  /** Readex Pro, both scripts. */
+  ReadexPro = 8,
+  /** Alexandria, both scripts. */
+  Alexandria = 9,
+  /** Poppins + Almarai. */
+  Poppins = 10,
+  /** Montserrat + El Messiri. */
+  Montserrat = 11,
+  /** Amiri, both scripts — the only serif. */
+  Amiri = 12,
 }
 
 // ── Enums (kept in sync with the backend) ──
@@ -110,6 +152,14 @@ export enum DriverStatus {
   Verified = 2,
   Rejected = 3,
   Suspended = 4,
+}
+
+export enum DriverDocumentType {
+  LicenseFront = 1,
+  LicenseBack = 2,
+  IdDocument = 3,
+  VehicleRegistration = 4,
+  Insurance = 5,
 }
 
 export enum DeviceType {
@@ -134,8 +184,15 @@ export enum Language {
   Ar = 2,
 }
 
+/**
+ * A trip's LIFECYCLE. Whether it is full and whether it is confirmed are
+ * separate dimensions in v2, answered by `isFull` and `isConfirmed` on the
+ * trip itself — capacity moves both ways and confirmation only moves one way,
+ * so neither ever belonged on this ladder.
+ */
 export enum TripStatus {
   Posted = 1,
+  /** @deprecated Capacity, not a status. Only rows written before v2 carry it. */
   Full = 2,
   Active = 3,
   Completed = 4,
@@ -148,6 +205,41 @@ export enum TripStatus {
    * the numbers cross all three stacks.
    */
   EnRoute = 7,
+  /**
+   * @deprecated Retired in v2. A rider's unmet demand is a RideRequest now,
+   * with a lifecycle of its own — see RideRequestStatus. Kept only so
+   * historical status-log rows still resolve to a label.
+   */
+  AwaitingDriver = 8,
+}
+
+/**
+ * Where a rider's demand stands. **Its own lifecycle, not a trip's** — demand
+ * that nobody is driving yet is a different kind of thing from transportation
+ * that exists, and "open" and "expired" have no trip status that means them.
+ */
+export enum RideRequestStatus {
+  /** Looking for a driver. Joinable by riders, discoverable by drivers. */
+  Open = 1,
+  /** A driver was selected and a trip was formed — see `matchedTripId`. */
+  Matched = 2,
+  /** The last participant left, or an admin closed it. */
+  Cancelled = 3,
+  /** Its departure came and went with nobody driving it. */
+  Expired = 4,
+}
+
+/**
+ * A driver's answer to demand. Interest is a signal, not a trip: it carries a
+ * car and a price so the marketplace can rank competing offers without any
+ * change to the domain.
+ */
+export enum DriverInterestStatus {
+  Interested = 1,
+  Withdrawn = 2,
+  Selected = 3,
+  Rejected = 4,
+  Expired = 5,
 }
 
 export enum BookingStatus {
@@ -162,11 +254,38 @@ export enum BookingStatus {
   NoShow = 7,
 }
 
-export enum RideRequestStatus {
-  Open = 1,
-  Matched = 2,
-  Expired = 3,
-  Cancelled = 4,
+/**
+ * Who a ride is open to, as a condition one side sets on the other
+ * (`Wanes.Shareds.Enums.GenderPolicy`).
+ *
+ * The same three values express both directions — a driver's condition on their
+ * riders, and a rider's on their driver and co-riders. Distinct from `Gender`,
+ * which is what a person *is*.
+ */
+export enum GenderPolicy {
+  Any = 0,
+  MaleOnly = 1,
+  FemaleOnly = 2,
+}
+
+/** How often a schedule produces a trip (`Wanes.Shareds.Enums.Recurrence`). */
+export enum Recurrence {
+  Daily = 1,
+  Weekly = 2,
+  /** On its day of the month, falling back to the last day of shorter months. */
+  Monthly = 3,
+}
+
+/** Bit flags, ordered to match `DayOfWeek`. Weekly schedules only. */
+export enum WeekDays {
+  None = 0,
+  Sunday = 1,
+  Monday = 2,
+  Tuesday = 4,
+  Wednesday = 8,
+  Thursday = 16,
+  Friday = 32,
+  Saturday = 64,
 }
 
 export enum RatingDirection {
@@ -175,7 +294,7 @@ export enum RatingDirection {
 }
 
 export enum NotificationType {
-  RideRequestNearby = 1,
+  RiderTripNearby = 1,
   BookingConfirmed = 2,
   TripCancelled = 3,
   DriverAccepted = 4,
@@ -187,6 +306,13 @@ export enum NotificationType {
   DriverRejected = 10,
   RatingReceived = 11,
   DriverArrived = 12,
+  FeedbackReplied = 13,
+  /** A trip reached the seats its driver asked for; every held seat is committed. */
+  TripConfirmed = 14,
+  /** A trip was called off for want of riders. */
+  TripNotEnoughRiders = 15,
+  /** The driver has to say whether a trip short of its threshold still runs. */
+  ConfirmDecision = 16,
   General = 100,
 }
 
@@ -227,6 +353,14 @@ export interface NotificationRow {
   dataJson?: string | null;
   isRead: boolean;
   creationDate: string;
+
+  /**
+   * Cleared — by the owner off their own inbox, or by an admin off this table.
+   * Either way the console is the only place the row is still visible, so it is
+   * shown here rather than filtered out.
+   */
+  isDeleted: boolean;
+  deletionDate?: string | null;
 }
 
 /** Create/update payload for one user's notification. */
@@ -283,6 +417,8 @@ export interface NotificationStats {
   total: number;
   unread: number;
   read: number;
+  /** Cleared rows; still counted in `total`. */
+  deleted: number;
   last24Hours: number;
   recipients: number;
   byType: NotificationTypeCount[];
@@ -346,6 +482,28 @@ export interface DriverRow {
   name: string;
   driverStatus: DriverStatus;
   licenseNumber?: string;
+  /** When they submitted — the queue is worked oldest-first. */
+  appliedAt?: string;
+  /** Documents on file. A row showing 0 needs no opening. */
+  documentCount: number;
+  /** The note left on the last decision, when there was one. */
+  reviewNote?: string;
+  reviewedAt?: string;
+}
+
+/**
+ * A document a driver uploaded. Carries no URL: the bytes come from an
+ * admin-only endpoint that audits every read, so the panel fetches them as a
+ * blob rather than pointing an `<img src>` at a public address.
+ */
+export interface DriverDocument {
+  id: number;
+  type: DriverDocumentType;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+  uploadedAt: string;
+  isPdf: boolean;
 }
 
 export interface AuditRow {
@@ -423,11 +581,11 @@ export interface AnalyticsOverview {
   completedBookings: number;
   cancelledBookings: number;
   bookingCancelRate: number;
-  requests: number;
-  newRequests: number;
-  openRequests: number;
-  matchedRequests: number;
-  expiredRequests: number;
+  riderTrips: number;
+  newRiderTrips: number;
+  openRiderTrips: number;
+  claimedRiderTrips: number;
+  expiredRiderTrips: number;
   matchRate: number;
   avgSeatsPerBooking: number;
 
@@ -450,7 +608,7 @@ export interface AnalyticsOverview {
   usersTrend: number | null;
   tripsTrend: number | null;
   bookingsTrend: number | null;
-  requestsTrend: number | null;
+  riderTripsTrend: number | null;
 }
 
 export interface AnalyticsTimeSeries {
@@ -459,7 +617,7 @@ export interface AnalyticsTimeSeries {
   newUsers: SeriesPoint[];
   newTrips: SeriesPoint[];
   newBookings: SeriesPoint[];
-  newRequests: SeriesPoint[];
+  newRiderTrips: SeriesPoint[];
   completedTrips: SeriesPoint[];
   cancelledTrips: SeriesPoint[];
   logins: SeriesPoint[];
@@ -469,7 +627,7 @@ export interface AnalyticsTimeSeries {
 export interface AnalyticsBreakdowns {
   tripsByStatus: MetricPoint[];
   bookingsByStatus: MetricPoint[];
-  requestsByStatus: MetricPoint[];
+  riderTripsByStatus: MetricPoint[];
   usersByDriverStatus: MetricPoint[];
   usersByLanguage: MetricPoint[];
   usersByGender: MetricPoint[];

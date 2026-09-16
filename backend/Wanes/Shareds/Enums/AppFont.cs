@@ -38,4 +38,22 @@ public enum AppFont
     /// downloaded, so first paint carries no type-loading cost at all.
     /// </summary>
     System = 6,
+
+    /// <summary>Almarai, both scripts — Arabic-first geometric, no 600 weight.</summary>
+    Almarai = 7,
+
+    /// <summary>Readex Pro, both scripts. Drawn for Latin and Arabic together.</summary>
+    ReadexPro = 8,
+
+    /// <summary>Alexandria, both scripts — geometric, wide weight range.</summary>
+    Alexandria = 9,
+
+    /// <summary>Poppins + Almarai. Round geometric Latin display.</summary>
+    Poppins = 10,
+
+    /// <summary>Montserrat + El Messiri. Wide Latin, Arabic with matching flair.</summary>
+    Montserrat = 11,
+
+    /// <summary>Amiri, both scripts — the only serif in the set, editorial.</summary>
+    Amiri = 12,
 }

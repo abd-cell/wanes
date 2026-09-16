@@ -1,4 +1,4 @@
-﻿using Wanes.Areas.Domain.Requests;
+using Wanes.Areas.Domain.RideRequests;
 using Wanes.Areas.Domain.Trips;
 using Wanes.Areas.Domain.Users;
 using Wanes.Areas.Services.Notifications.Models;
@@ -54,34 +54,36 @@ public interface INotificationService
         string? dataJson);
 
     /// <summary>
-    /// Notifies verified, online drivers near the request origin who are free to
-    /// take it — a driver mid-trip, or already promised to a departure this
-    /// close, is skipped. Returns the count reached.
+    /// Notifies verified, online drivers near an open ride request who are free
+    /// to serve it and satisfy its conditions — a driver mid-trip, already
+    /// promised to a departure this close, on the request themselves, or
+    /// excluded by the riders' own requirements is skipped. Returns the count
+    /// reached.
     /// </summary>
     Task<int> NotifyNearbyDrivers(RideRequest request);
 
     /// <summary>
-    /// Tells every connected client that a hail is no longer open, so a driver
-    /// holding its card drops it instead of tapping Accept on something that
-    /// cannot be accepted.
+    /// Tells every connected client that a trip is no longer waiting for a
+    /// driver, so a driver holding its card drops it instead of tapping Take on
+    /// something that cannot be taken.
     ///
     /// Deliberately not a notification: it writes no inbox row and raises no
     /// push. A driver does not need to be told, out of app and by name, that a
-    /// request they never answered went away — they need the card gone the
-    /// moment it does. <paramref name="reason"/> is the status the request
-    /// landed on (Cancelled / Matched / Expired), which is what the driver's
-    /// screen words its one-line notice from.
+    /// trip they never answered went away — they need the card gone the moment
+    /// it does. <paramref name="reason"/> is what became of it, which is what the
+    /// driver's screen words its one-line notice from — see
+    /// <see cref="RiderTripClosedReason"/> for why it is not the trip's status.
     /// </summary>
-    Task NotifyRideRequestClosed(int requestId, RideRequestStatus reason);
+    Task NotifyRideRequestClosed(int rideRequestId, RiderTripClosedReason reason);
 
     /// <summary>
     /// The reverse of <see cref="NotifyNearbyDrivers"/>: tells riders sitting on
-    /// an open hail that a trip they could take now exists. Best-effort, and
+    /// an open request that a trip they could take now exists. Best-effort, and
     /// called after the trip is committed.
     ///
-    /// Both routes into a new trip use it — a driver posting one, and a driver
-    /// accepting a hail. The second matters as much as the first: that trip has
-    /// the seats the accepting driver did not sell to the hailing rider, and
+    /// Both routes into a new trip use it — a driver publishing one, and a trip
+    /// formed from demand. The second matters as much as the first: that trip
+    /// carries the seats the selected driver did not sell to the pool, and
     /// without this nobody else ever learns it is there.
     /// </summary>
     Task NotifyWaitingRiders(Trip trip, User driver);
@@ -89,6 +91,13 @@ public interface INotificationService
     Task<BaseResponse<NotificationFeed>> GetUserNotifications();
     Task<BaseResponse> MarkRead(int id);
     Task<BaseResponse> MarkAllRead();
+
+    /// <summary>
+    /// Clears one notification off the caller's own inbox. Soft delete: the row
+    /// stays in the table and the admin console still lists it, it just stops
+    /// being served to — or counted for — the user who owns it.
+    /// </summary>
+    Task<BaseResponse> Delete(int id);
 
     /// <summary>Attaches an FCM token to the calling device session.</summary>
     Task<BaseResponse> RegisterDevice(RegisterDeviceInput input);

@@ -1,4 +1,4 @@
-namespace Wanes.Areas.Services.Management.Models.Analytics;
+﻿namespace Wanes.Areas.Services.Management.Models.Analytics;
 
 /// <summary>
 /// Headline counters for the CMS dashboard. Totals are lifetime (excluding
@@ -43,11 +43,11 @@ public class OverviewOutput
     public int CompletedBookings { get; set; }
     public int CancelledBookings { get; set; }
     public double BookingCancelRate { get; set; }
-    public int Requests { get; set; }
-    public int NewRequests { get; set; }
-    public int OpenRequests { get; set; }
-    public int MatchedRequests { get; set; }
-    public int ExpiredRequests { get; set; }
+    public int RiderTrips { get; set; }
+    public int NewRiderTrips { get; set; }
+    public int OpenRiderTrips { get; set; }
+    public int ClaimedRiderTrips { get; set; }
+    public int ExpiredRiderTrips { get; set; }
     /// <summary>Matched ÷ all closed-or-open requests, 0–1.</summary>
     public double MatchRate { get; set; }
     public double AvgSeatsPerBooking { get; set; }
@@ -76,5 +76,5 @@ public class OverviewOutput
     public double? UsersTrend { get; set; }
     public double? TripsTrend { get; set; }
     public double? BookingsTrend { get; set; }
-    public double? RequestsTrend { get; set; }
+    public double? RiderTripsTrend { get; set; }
 }

@@ -38,11 +38,11 @@ void main() {
 
   group('the payload the API sends', () {
     test('every wire type the API can send maps to a kind of its own', () {
-      // NotificationType on the backend: 1..12 plus General. A type with no
+      // NotificationType on the backend: 1..17 plus General. A type with no
       // case here would fall through to `general` and route nowhere — which is
       // exactly how DriverArrived used to get lost.
       const wire = [
-        'RideRequestNearby',
+        'RiderTripNearby',
         'BookingConfirmed',
         'TripCancelled',
         'DriverAccepted',
@@ -54,6 +54,10 @@ void main() {
         'DriverRejected',
         'RatingReceived',
         'DriverArrived',
+        'FeedbackReplied',
+        'TripConfirmed',
+        'TripNotEnoughRiders',
+        'ConfirmDecision',
       ];
       for (final value in wire) {
         expect(NotificationKind.fromWire(value), isNot(NotificationKind.general),
@@ -69,9 +73,9 @@ void main() {
   });
 
   group('routing', () {
-    test('a nearby hail opens the accept sheet', () async {
+    test('a nearby posting opens the driver board', () async {
       final target =
-          await destination(notification('RideRequestNearby', data: {'requestId': 3}));
+          await destination(notification('RiderTripNearby', data: {'riderTripId': 3}));
       expect(target, isA<RequestsScreen>());
     });
 
@@ -122,10 +126,10 @@ void main() {
         home: const Scaffold(),
       ));
 
-      // Nearby-hail is the one kind that decides from the payload alone, so the
-      // push happens without a server to ask.
+      // A nearby posting is the one kind that decides from the payload alone,
+      // so the push happens without a server to ask.
       unawaited(NotificationRouter.open(
-          notification('RideRequestNearby', data: {'requestId': 3})));
+          notification('RiderTripNearby', data: {'riderTripId': 3})));
       await tester.pump();
       await tester.pump();
 

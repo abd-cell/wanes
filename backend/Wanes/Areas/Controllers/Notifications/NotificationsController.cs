@@ -26,6 +26,11 @@ public class NotificationsController : BaseApiController
     public async Task<BaseResponse> MarkAllRead()
         => await notificationService.MarkAllRead();
 
+    /// <summary>Clears one notification off the caller's inbox (soft delete).</summary>
+    [HttpDelete("{id:int}")]
+    public async Task<BaseResponse> Delete(int id)
+        => await notificationService.Delete(id);
+
     /// <summary>
     /// Registers the caller's FCM token. The app calls this on every launch and
     /// again whenever Firebase rotates the token, so it is an upsert.

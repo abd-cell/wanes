@@ -8,6 +8,7 @@ import '../../widgets/language_picker.dart';
 import '../../widgets/wanes_alerts.dart';
 import '../notifications_screen.dart';
 import '../../widgets/wanes_ui.dart';
+import '../schedules_screen.dart';
 import '../contact_us_screen.dart';
 import '../edit_profile_screen.dart';
 import '../login_screen.dart';
@@ -291,6 +292,13 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
 
   Widget _settingsGroup(WanesTokens t, bool verified) {
     return GroupedCard(children: [
+      GroupedRow(
+        icon: Icons.repeat_rounded,
+        title: context.tr('schedule.title'),
+        subtitle: context.tr('schedule.subtitleDriver'),
+        onTap: () => Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const SchedulesScreen(asDriver: true))),
+      ),
       GroupedRow(
         icon: Icons.person_outline_rounded,
         title: context.tr('profile.editProfile'),

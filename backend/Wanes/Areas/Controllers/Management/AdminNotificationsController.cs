@@ -20,8 +20,9 @@ public class AdminNotificationsController : BaseApiController
         [FromQuery] PageInput page,
         [FromQuery] NotificationType? type,
         [FromQuery] int? userId,
-        [FromQuery] bool? isRead)
-        => await service.List(page, type, userId, isRead);
+        [FromQuery] bool? isRead,
+        [FromQuery] bool? isDeleted)
+        => await service.List(page, type, userId, isRead, isDeleted);
 
     [HttpGet("{id:int}")]
     public async Task<BaseResponse<NotificationRow>> Get(int id) => await service.Get(id);

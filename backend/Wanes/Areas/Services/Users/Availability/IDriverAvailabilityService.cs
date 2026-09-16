@@ -1,4 +1,5 @@
-﻿using Wanes.Shareds.Attributes;
+using Wanes.Areas.Services.Users.Availability.Models;
+using Wanes.Shareds.Attributes;
 using Wanes.Shareds.Models;
 
 namespace Wanes.Areas.Services.Users.Availability;
@@ -14,6 +15,16 @@ public interface IDriverAvailabilityService
 {
     /// <summary>The driver is out on a trip right now (at a pickup, or carrying riders).</summary>
     Task<bool> IsEngaged(int driverId);
+
+    /// <summary>
+    /// The caller own's diary, for a client that has to show which departures
+    /// are open before one is chosen. Same rule as <see cref="CheckCanCommit"/>,
+    /// handed over as data instead of a verdict on one instant.
+    ///
+    /// <paramref name="ignoreTripId"/> excludes the trip being edited, so its
+    /// own departure does not grey itself out.
+    /// </summary>
+    Task<BaseResponse<DriverAvailabilityOutput>> GetMySchedule(int? ignoreTripId = null);
 
     /// <summary>
     /// May this driver commit to a trip departing at <paramref name="departAt"/>?

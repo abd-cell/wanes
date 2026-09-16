@@ -1,11 +1,11 @@
 using Wanes.Areas.Domain.Bookings;
-using Wanes.Areas.Domain.Requests;
+using Wanes.Areas.Domain.RideRequests;
 using Wanes.Areas.Domain.Trips;
 using Wanes.Areas.Domain.Users;
 using Wanes.Areas.Domain.Vehicles;
 using Wanes.Areas.Services.Bookings;
 using Wanes.Areas.Services.Bookings.Models;
-using Wanes.Areas.Services.Requests;
+using Wanes.Areas.Services.RideRequests;
 using Wanes.Areas.Services.Users.Availability;
 using Wanes.Shareds.Constants;
 using Wanes.Shareds.Enums;
@@ -39,19 +39,13 @@ public class ConcurrencyTests
     private const int RiderId = 5;
     private const int OtherRiderId = 6;
     private const int TripId = 10;
-    private const int RequestId = 30;
+    private const int PostingId = 30;
 
     private static BookingService Bookings(FakeUnitOfWork uow, int riderId = RiderId) =>
-        new(uow, new FakeSecurityManager(riderId), new FakeAuditService(),
-            new FakeNotificationService(),
-            uow.Repository<Booking>(), uow.Repository<Trip>());
+        Make.Bookings(uow, riderId);
 
-    private static RideRequestService Requests(FakeUnitOfWork uow, int driverId) =>
-        new(uow, new FakeSecurityManager(driverId), new FakeAuditService(),
-            new FakeNotificationService(), new DriverAvailabilityService(uow.Repository<Trip>()),
-            new FakeAppConfigurationService(),
-            uow.Repository<RideRequest>(), uow.Repository<User>(), uow.Repository<Vehicle>(),
-            uow.Repository<Trip>(), uow.Repository<Booking>());
+    private static DriverInterestService Interests(FakeUnitOfWork uow, int driverId) =>
+        Make.Interests(uow, driverId);
 
     /// <summary>One posted trip with <paramref name="seatsLeft"/> seats going.</summary>
     private static FakeUnitOfWork TripScene(int seatsLeft = 1)
@@ -59,6 +53,7 @@ public class ConcurrencyTests
         var uow = new FakeUnitOfWork();
         uow.Store<User>().Add(Build.Driver(DriverId));
         uow.Store<User>().Add(Build.Rider(RiderId));
+        uow.Store<User>().Add(Build.Rider(OtherRiderId));
         var trip = Build.Trip(TripId, driverId: DriverId, vehicleId: 1, seatsTotal: 4);
         trip.SeatsLeft = seatsLeft;
         uow.Store<Trip>().Add(trip);
@@ -161,8 +156,8 @@ public class ConcurrencyTests
 
     // ── First driver to accept wins ──────────────────────────────────────────
 
-    /// <summary>An open hail and two verified drivers who could both take it.</summary>
-    private static FakeUnitOfWork HailScene()
+    /// <summary>An open posting and two verified drivers who could both take it.</summary>
+    private static FakeUnitOfWork PostingScene()
     {
         var uow = new FakeUnitOfWork();
         foreach (var id in new[] { DriverId, DriverId + 1 })
@@ -174,77 +169,65 @@ public class ConcurrencyTests
             uow.Store<Vehicle>().Add(Build.Vehicle(id, userId: id));
         }
         uow.Store<User>().Add(Build.Rider(RiderId));
-        uow.Store<RideRequest>().Add(new RideRequest
-        {
-            Id = RequestId,
-            RiderId = RiderId,
-            Seats = 1,
-            OriginAddress = "A",
-            Origin = GeoFactory.Point(31.95, 35.92),
-            DestinationAddress = "B",
-            Destination = GeoFactory.Point(32.01, 35.87),
-            RadiusMeters = MatchRules.NearRadiusMeters,
-            Status = RideRequestStatus.Open,
-            RequestedAt = DateTime.UtcNow,
-            WantedDepartAt = DateTime.UtcNow,
-            ExpiresAt = DateTime.UtcNow.AddMinutes(10),
-        });
+        Build.Demand(uow, PostingId, RiderId, departAt: DateTime.UtcNow.AddHours(2));
         return uow;
     }
 
     [Fact]
-    public async Task Only_the_first_driver_to_accept_gets_a_trip()
+    public async Task Only_the_first_driver_to_claim_gets_a_trip()
     {
-        var uow = HailScene();
+        var uow = PostingScene();
 
-        var first = await Requests(uow, DriverId).Accept(RequestId);
-        var second = await Requests(uow, DriverId + 1).Accept(RequestId);
+        var first = await Interests(uow, DriverId).ExpressInterest(PostingId);
+        var second = await Interests(uow, DriverId + 1).ExpressInterest(PostingId);
 
         Assert.True(first.Success);
         Assert.False(second.Success);
-        Assert.Equal(ErrorCode.RequestNotOpen, second.ErrorCode);
+        Assert.Equal(ErrorCode.RideRequestNotOpen, second.ErrorCode);
         Assert.Single(uow.Store<Trip>());
         Assert.Single(uow.Store<Booking>());
     }
 
     [Fact]
-    public async Task A_driver_who_loses_the_claim_leaves_no_trip_behind()
+    public async Task A_driver_who_loses_the_race_leaves_no_trip_behind()
     {
         // The trip and booking are staged before the claim is written, so losing
         // has to discard them. A stranded trip would be worse than a refusal:
         // it would sit in search offering a ride nobody is driving.
-        var uow = HailScene();
+        var uow = PostingScene();
         uow.LoseNextCommits = 1;
         uow.OnLostCommit = () =>
         {
+            // Another driver got there first: the request is matched to their
+            // trip, and this attempt's staged rows have to go with it.
             var request = uow.Store<RideRequest>().Single();
             request.Status = RideRequestStatus.Matched;
             request.MatchedTripId = 999;
         };
 
-        var res = await Requests(uow, DriverId).Accept(RequestId);
+        var res = await Interests(uow, DriverId).ExpressInterest(PostingId);
 
         Assert.False(res.Success);
-        Assert.Equal(ErrorCode.RequestNotOpen, res.ErrorCode);
+        Assert.Equal(ErrorCode.RideRequestNotOpen, res.ErrorCode);
     }
 
     [Fact]
-    public async Task Accepting_twice_yields_one_trip_and_succeeds_both_times()
+    public async Task Claiming_twice_yields_one_trip_and_succeeds_both_times()
     {
         // A double tap, or a client retrying a request whose response it never
         // saw. The second call must not build a second trip, and must not tell
         // the driver holding the trip that the hail is gone.
-        var uow = HailScene();
-        var service = Requests(uow, DriverId);
+        var uow = PostingScene();
+        var service = Interests(uow, DriverId);
 
-        var first = await service.Accept(RequestId);
-        var second = await service.Accept(RequestId);
+        var first = await service.ExpressInterest(PostingId);
+        var second = await service.ExpressInterest(PostingId);
 
         Assert.True(first.Success);
         Assert.True(second.Success);
         Assert.Single(uow.Store<Trip>());
         Assert.Single(uow.Store<Booking>());
-        Assert.Equal(first.Data!.MatchedTripId, second.Data!.MatchedTripId);
+        Assert.Equal(first.Data!.Id, second.Data!.Id);
     }
 
     [Fact]
@@ -253,12 +236,12 @@ public class ConcurrencyTests
         // The idempotency check is scoped to the driver who owns the matched
         // trip. Widening it would hand the loser a success and a trip id that
         // is not theirs.
-        var uow = HailScene();
-        await Requests(uow, DriverId).Accept(RequestId);
+        var uow = PostingScene();
+        await Interests(uow, DriverId).ExpressInterest(PostingId);
 
-        var other = await Requests(uow, DriverId + 1).Accept(RequestId);
+        var other = await Interests(uow, DriverId + 1).ExpressInterest(PostingId);
 
         Assert.False(other.Success);
-        Assert.Equal(ErrorCode.RequestNotOpen, other.ErrorCode);
+        Assert.Equal(ErrorCode.RideRequestNotOpen, other.ErrorCode);
     }
 }

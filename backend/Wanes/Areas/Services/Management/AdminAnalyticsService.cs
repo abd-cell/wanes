@@ -5,7 +5,7 @@ using Wanes.Areas.Domain.Bookings;
 using Wanes.Areas.Domain.Logging;
 using Wanes.Areas.Domain.Notifications;
 using Wanes.Areas.Domain.Ratings;
-using Wanes.Areas.Domain.Requests;
+using Wanes.Areas.Domain.RideRequests;
 using Wanes.Areas.Domain.Trips;
 using Wanes.Areas.Domain.Users;
 using Wanes.Areas.Domain.Vehicles;
@@ -37,8 +37,8 @@ public class AdminAnalyticsService : IAdminAnalyticsService
     private readonly IRepository<Vehicle> vehicleRepository;
     private readonly IRepository<Trip> tripRepository;
     private readonly IRepository<TripStatusHistory> tripHistoryRepository;
+    private readonly IRepository<RideRequest> requestRepository;
     private readonly IRepository<Booking> bookingRepository;
-    private readonly IRepository<RideRequest> rideRequestRepository;
     private readonly IRepository<Rating> ratingRepository;
     private readonly IRepository<UserNotification> notificationRepository;
     private readonly IRepository<ApiLog> apiLogRepository;
@@ -51,8 +51,8 @@ public class AdminAnalyticsService : IAdminAnalyticsService
         IRepository<Vehicle> vehicleRepository,
         IRepository<Trip> tripRepository,
         IRepository<TripStatusHistory> tripHistoryRepository,
+        IRepository<RideRequest> requestRepository,
         IRepository<Booking> bookingRepository,
-        IRepository<RideRequest> rideRequestRepository,
         IRepository<Rating> ratingRepository,
         IRepository<UserNotification> notificationRepository,
         IRepository<ApiLog> apiLogRepository,
@@ -64,8 +64,8 @@ public class AdminAnalyticsService : IAdminAnalyticsService
         this.vehicleRepository = vehicleRepository;
         this.tripRepository = tripRepository;
         this.tripHistoryRepository = tripHistoryRepository;
+        this.requestRepository = requestRepository;
         this.bookingRepository = bookingRepository;
-        this.rideRequestRepository = rideRequestRepository;
         this.ratingRepository = ratingRepository;
         this.notificationRepository = notificationRepository;
         this.apiLogRepository = apiLogRepository;
@@ -119,13 +119,24 @@ public class AdminAnalyticsService : IAdminAnalyticsService
         output.BookingCancelRate = Ratio(output.CancelledBookings, output.Bookings);
         output.AvgSeatsPerBooking = Math.Round(await Average(bookingRepository.Query(), b => (double?)b.Seats), 2);
 
-        var byRequestStatus = await CountBy(rideRequestRepository.Query(), r => (int)r.Status);
-        output.Requests = byRequestStatus.Values.Sum();
-        output.NewRequests = await InRange(rideRequestRepository.Query(), w).CountAsync();
-        output.OpenRequests = byRequestStatus.GetValueOrDefault((int)RideRequestStatus.Open);
-        output.MatchedRequests = byRequestStatus.GetValueOrDefault((int)RideRequestStatus.Matched);
-        output.ExpiredRequests = byRequestStatus.GetValueOrDefault((int)RideRequestStatus.Expired);
-        output.MatchRate = Ratio(output.MatchedRequests, output.Requests);
+        // Demand, read straight off its own table.
+        //
+        // This used to be inferred from the status log, because demand was a
+        // Trips row and the only record of it having been one was an
+        // AwaitingDriver history entry. Now that demand is its own object the
+        // question is literal, and every figure below is a count rather than a
+        // reconstruction.
+        var demand = requestRepository.Query();
+
+        output.RiderTrips = await demand.CountAsync();
+        output.NewRiderTrips = await InRange(demand, w).CountAsync();
+        output.OpenRiderTrips = await demand.CountAsync(r => r.Status == RideRequestStatus.Open);
+
+        // Matched with a driver, versus reached its departure with nobody
+        // driving. Both are terminal facts about the same rows.
+        output.ClaimedRiderTrips = await demand.CountAsync(r => r.Status == RideRequestStatus.Matched);
+        output.ExpiredRiderTrips = await demand.CountAsync(r => r.Status == RideRequestStatus.Expired);
+        output.MatchRate = Ratio(output.ClaimedRiderTrips, output.RiderTrips);
 
         // quality
         output.Ratings = await ratingRepository.Query().CountAsync();
@@ -154,8 +165,8 @@ public class AdminAnalyticsService : IAdminAnalyticsService
             await InPrevRange(tripRepository.Query(), prevFrom, w.From).CountAsync());
         output.BookingsTrend = Trend(output.NewBookings,
             await InPrevRange(bookingRepository.Query(), prevFrom, w.From).CountAsync());
-        output.RequestsTrend = Trend(output.NewRequests,
-            await InPrevRange(rideRequestRepository.Query(), prevFrom, w.From).CountAsync());
+        output.RiderTripsTrend = Trend(output.NewRiderTrips,
+            await InPrevRange(requestRepository.Query(), prevFrom, w.From).CountAsync());
 
         return new BaseResponse<OverviewOutput>(output);
     }
@@ -171,7 +182,7 @@ public class AdminAnalyticsService : IAdminAnalyticsService
             NewUsers = await Daily(InRange(userRepository.Query(), w), w),
             NewTrips = await Daily(InRange(tripRepository.Query(), w), w),
             NewBookings = await Daily(InRange(bookingRepository.Query(), w), w),
-            NewRequests = await Daily(InRange(rideRequestRepository.Query(), w), w),
+            NewRiderTrips = await Daily(InRange(requestRepository.Query(), w), w),
             Logins = await Daily(InRange(userLoginRepository.Query(), w), w),
             CompletedTrips = await Daily(
                 InRange(tripHistoryRepository.Query(), w).Where(h => h.Status == TripStatus.Completed), w),
@@ -191,7 +202,12 @@ public class AdminAnalyticsService : IAdminAnalyticsService
         {
             TripsByStatus = Complete<TripStatus>(await CountBy(tripRepository.Query(), t => (int)t.Status)),
             BookingsByStatus = Complete<BookingStatus>(await CountBy(bookingRepository.Query(), b => (int)b.Status)),
-            RequestsByStatus = Complete<RideRequestStatus>(await CountBy(rideRequestRepository.Query(), r => (int)r.Status)),
+            // Demand by its own lifecycle now, not by a trip's. The two never
+            // lined up — "open" and "expired" have no trip status that means
+            // them — and the chart was showing Cancelled for both a request
+            // nobody took and one whose riders withdrew.
+            RiderTripsByStatus = Complete<RideRequestStatus>(
+                await CountBy(requestRepository.Query(), r => (int)r.Status)),
             UsersByDriverStatus = Complete<DriverStatus>(await CountBy(userRepository.Query(), u => (int)u.DriverStatus)),
             UsersByLanguage = Complete<Language>(await CountBy(userRepository.Query(), u => (int)u.Language)),
             UsersByGender = Complete<Gender>(await CountBy(userRepository.Query(), u => (int)u.Gender)),
@@ -209,7 +225,8 @@ public class AdminAnalyticsService : IAdminAnalyticsService
         // Hour-of-day and weekday are grouped in memory: the window bounds the row
         // count, and DATEPART translation is provider-specific.
         var bookingTimes = await InRange(bookingRepository.Query(), w).Select(b => b.CreationDate).ToListAsync();
-        var requestTimes = await InRange(rideRequestRepository.Query(), w).Select(r => r.CreationDate).ToListAsync();
+        var requestTimes = await InRange(requestRepository.Query(), w)
+            .Select(r => r.CreationDate).ToListAsync();
         var demand = bookingTimes.Concat(requestTimes)
             .GroupBy(d => d.Hour)
             .ToDictionary(g => g.Key, g => g.Count());
@@ -284,8 +301,9 @@ public class AdminAnalyticsService : IAdminAnalyticsService
         var w = Window(days);
         var output = new LeaderboardsOutput();
 
-        var driverTrips = await InRange(tripRepository.Query(), w)
-            .GroupBy(t => t.DriverId)
+        // Trips nobody is driving have no driver to credit.
+        var driverTrips = await InRange(tripRepository.Query().Where(t => t.DriverId != null), w)
+            .GroupBy(t => t.DriverId!.Value)
             .Select(g => new { UserId = g.Key, Trips = g.Count(), Seats = g.Sum(t => t.SeatsTotal) })
             .OrderByDescending(x => x.Trips)
             .Take(TopN)

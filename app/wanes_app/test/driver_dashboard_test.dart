@@ -39,13 +39,13 @@ void main() {
     });
   });
 
-  group('a hail card', () {
-    RideRequestRow request() => RideRequestRow(
+  group('a rider-posted trip card', () {
+    RiderTrip request() => RiderTrip(
           id: 3,
           originAddress: 'Abdoun Circle',
           destinationAddress: 'Sweifieh',
-          seats: 2,
-          requestedAt: DateTime.now().toUtc(),
+          seatsWanted: 2,
+          departAt: DateTime.now().add(const Duration(hours: 2)),
           riderId: 9,
           originLat: 31.9539,
           originLng: 35.9106,

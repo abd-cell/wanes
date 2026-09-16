@@ -1,5 +1,5 @@
 using Wanes.Areas.Domain.Bookings;
-using Wanes.Areas.Domain.Requests;
+using Wanes.Areas.Domain.RiderTrips;
 using Wanes.Areas.Domain.Trips;
 using Wanes.Areas.Domain.Users;
 using Wanes.Areas.Domain.Vehicles;
@@ -19,9 +19,10 @@ public class TripServiceTests
     {
         var uow = new FakeUnitOfWork();
         var svc = new TripService(uow, new FakeSecurityManager(driverId), new FakeAuditService(),
-            new FakeNotificationService(), new DriverAvailabilityService(uow.Repository<Trip>()),
+            new FakeNotificationService(), new DriverAvailabilityService(uow.Repository<Trip>(), new FakeSecurityManager()),
+            new FakeAppConfigurationService(),
             uow.Repository<Trip>(), uow.Repository<TripStatusHistory>(), uow.Repository<Vehicle>(),
-            uow.Repository<User>(), uow.Repository<Booking>(), uow.Repository<RideRequest>());
+            uow.Repository<User>(), uow.Repository<Booking>());
         return (svc, uow);
     }
 

@@ -1,6 +1,7 @@
 using Wanes.Areas.Domain.Bookings;
 using Wanes.Areas.Domain.Ratings;
-using Wanes.Areas.Domain.Requests;
+using Wanes.Areas.Domain.RiderTrips;
+using Wanes.Areas.Domain.RideRequests;
 using Wanes.Areas.Domain.Trips;
 using Wanes.Areas.Domain.Users;
 using Wanes.Areas.Domain.Vehicles;
@@ -27,39 +28,33 @@ public class SearchServiceTests
     };
 
     [Fact]
-    public async Task No_match_opens_a_hail_request()
+    public async Task No_match_leaves_the_rider_to_post_their_own()
     {
         var uow = new FakeUnitOfWork();
-        var notifications = new FakeNotificationService { NearbyDriverCount = 3 };
-        var svc = new SearchService(uow, new FakeSecurityManager(1), new FakeAuditService(), notifications,
-            new FakeAppConfigurationService(),
-            uow.Repository<Trip>(), uow.Repository<User>(), uow.Repository<Vehicle>(), uow.Repository<RideRequest>(),
-            uow.Repository<Booking>());
+        uow.Store<User>().Add(Build.Rider(1));
 
-        var res = await svc.Search(Input());
+        var res = await Service(uow).Search(Input());
 
         Assert.True(res.Success);
-        Assert.Equal(SearchMode.Hail, res.Data!.Mode);
-        Assert.NotNull(res.Data.RideRequestId);
-        Assert.Equal(3, res.Data.DriversNotified);
-        Assert.Single(uow.Store<RideRequest>());
+        Assert.Empty(res.Data!.Matches);
+        Assert.Empty(res.Data.Requests);
+
+        // Nothing is created on the rider's behalf. Search says what it found
+        // and what the rider could ask for; creating demand is their own act.
+        Assert.Empty(uow.Store<RideRequest>());
+        Assert.True(res.Data.EarliestDepartAt > DateTime.UtcNow);
     }
 
     [Fact]
-    public async Task Matching_trip_returns_carpool()
+    public async Task A_matching_trip_comes_back_as_a_direct_match()
     {
         var uow = new FakeUnitOfWork();
         uow.Store<User>().Add(Build.Driver(2));
         uow.Store<Trip>().Add(Build.Trip(id: 10, driverId: 2, vehicleId: 1, seatsTotal: 3));
-        var svc = new SearchService(uow, new FakeSecurityManager(1), new FakeAuditService(),
-            new FakeNotificationService(), new FakeAppConfigurationService(),
-            uow.Repository<Trip>(), uow.Repository<User>(), uow.Repository<Vehicle>(), uow.Repository<RideRequest>(),
-            uow.Repository<Booking>());
-
-        var res = await svc.Search(Input());
+        var res = await Service(uow).Search(Input());
 
         Assert.True(res.Success);
-        Assert.Equal(SearchMode.Carpool, res.Data!.Mode);
+        Assert.NotEmpty(res.Data!.Matches);
         Assert.Single(res.Data.Matches);
         Assert.Empty(uow.Store<RideRequest>());
     }
@@ -81,7 +76,7 @@ public class SearchServiceTests
         var res = await Service(uow).Search(input);
 
         Assert.True(res.Success);
-        Assert.Equal(SearchMode.Hail, res.Data!.Mode);
+        Assert.Empty(res.Data!.Matches);
     }
 
     [Fact]
@@ -103,7 +98,7 @@ public class SearchServiceTests
         var res = await Service(uow).Search(input);
 
         Assert.True(res.Success);
-        Assert.Equal(SearchMode.Carpool, res.Data!.Mode);
+        Assert.NotEmpty(res.Data!.Matches);
         Assert.Single(res.Data.Matches);
     }
 
@@ -121,7 +116,7 @@ public class SearchServiceTests
         var res = await Service(uow).Search(Input());
 
         Assert.True(res.Success);
-        Assert.Equal(SearchMode.Hail, res.Data!.Mode);
+        Assert.Empty(res.Data!.Matches);
     }
 
     [Fact]
@@ -138,7 +133,7 @@ public class SearchServiceTests
         var res = await Service(uow).Search(Input());
 
         Assert.True(res.Success);
-        Assert.Equal(SearchMode.Carpool, res.Data!.Mode);
+        Assert.NotEmpty(res.Data!.Matches);
         Assert.Single(res.Data.Matches);
     }
 
@@ -156,7 +151,7 @@ public class SearchServiceTests
         var res = await Service(uow).Search(Input());
 
         Assert.True(res.Success);
-        Assert.Equal(SearchMode.Hail, res.Data!.Mode);
+        Assert.Empty(res.Data!.Matches);
     }
 
     [Fact]
@@ -177,7 +172,7 @@ public class SearchServiceTests
         var res = await Service(uow).Search(input);
 
         Assert.True(res.Success);
-        Assert.Equal([11, 12, 10], res.Data!.Matches.Select(m => m.Id));
+        Assert.Equal([11, 12, 10], res.Data!.Matches.Select(m => m.Trip.Id));
     }
 
     [Fact]
@@ -199,7 +194,7 @@ public class SearchServiceTests
 
         Assert.True(res.Success);
         // A trip with no price set is not the cheapest one -- it sinks.
-        Assert.Equal([12, 10, 11], res.Data!.Matches.Select(m => m.Id));
+        Assert.Equal([12, 10, 11], res.Data!.Matches.Select(m => m.Trip.Id));
     }
 
     [Fact]
@@ -219,7 +214,7 @@ public class SearchServiceTests
         var res = await Service(uow).Search(input);
 
         Assert.True(res.Success);
-        Assert.Equal([11, 12, 10], res.Data!.Matches.Select(m => m.Id));
+        Assert.Equal([11, 12, 10], res.Data!.Matches.Select(m => m.Trip.Id));
     }
 
     [Fact]
@@ -243,11 +238,54 @@ public class SearchServiceTests
         Assert.Equal(2, res.Data!.Matches.Count);
     }
 
-    private static SearchService Service(FakeUnitOfWork uow, INotificationService? notifications = null) =>
-        new(uow, new FakeSecurityManager(1), new FakeAuditService(),
-            notifications ?? new FakeNotificationService(), new FakeAppConfigurationService(),
-            uow.Repository<Trip>(), uow.Repository<User>(), uow.Repository<Vehicle>(), uow.Repository<RideRequest>(),
-            uow.Repository<Booking>());
+    [Fact]
+    public async Task Nobody_is_offered_a_seat_on_their_own_trip()
+    {
+        // You cannot be your own passenger, and the refusal on the way in
+        // (CannotBookOwnTrip) is the backstop, not the manners. A trip the
+        // caller drives has no business in their own results: showing it and
+        // then refusing the tap is the stale-screen bug in slow motion.
+        var uow = new FakeUnitOfWork();
+        uow.Store<User>().Add(Build.Driver(SearchingRiderId));
+        uow.Store<Trip>().Add(Build.Trip(id: 10, driverId: SearchingRiderId, vehicleId: 1, seatsTotal: 3));
+
+        var res = await Service(uow).Search(Input());
+
+        Assert.True(res.Success);
+        Assert.Empty(res.Data!.Matches);
+    }
+
+    [Fact]
+    public async Task Nor_a_place_on_a_posting_they_wrote_themselves()
+    {
+        // Same rule on the other board. Their own request is already theirs —
+        // they are on it — so joining it is not an offer to make.
+        var uow = new FakeUnitOfWork();
+        Build.Demand(uow, 30, SearchingRiderId, departAt: DateTime.UtcNow.AddMinutes(20));
+
+        var res = await Service(uow).Search(Input());
+
+        Assert.True(res.Success);
+        Assert.Empty(res.Data!.Requests);
+    }
+
+    private const int SearchingRiderId = 1;
+
+    /// <summary>
+    /// Search as one rider, with their own row seeded if a test did not need to
+    /// arrange it.
+    ///
+    /// Search reads the caller's own conditions — who they will ride with, and
+    /// their age for the driver's bounds — so it needs them to exist. That is
+    /// true of every authenticated call and interesting to none of these tests,
+    /// which is exactly the sort of arrangement that belongs in one place.
+    /// </summary>
+    private static SearchService Service(FakeUnitOfWork uow)
+    {
+        if (uow.Store<User>().All(u => u.Id != SearchingRiderId))
+            uow.Store<User>().Add(Build.Rider(SearchingRiderId));
+        return Make.Search(uow, SearchingRiderId);
+    }
 }
 
 public class RatingServiceTests

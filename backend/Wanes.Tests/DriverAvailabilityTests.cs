@@ -1,10 +1,11 @@
 using Wanes.Areas.Domain.Bookings;
-using Wanes.Areas.Domain.Requests;
+using Wanes.Areas.Domain.RiderTrips;
+using Wanes.Areas.Domain.RideRequests;
 using Wanes.Areas.Domain.Trips;
 using Wanes.Areas.Domain.Users;
 using Wanes.Areas.Domain.Vehicles;
 using Wanes.Areas.Services.Audit;
-using Wanes.Areas.Services.Requests;
+using Wanes.Areas.Services.RideRequests;
 using Wanes.Areas.Services.Trips;
 using Wanes.Areas.Services.Trips.Models;
 using Wanes.Areas.Services.Users.Availability;
@@ -20,8 +21,9 @@ namespace Wanes.Tests;
 /// <summary>
 /// One driver drives one car: while they are out on a trip they are not
 /// available, and they never hold two departures at the same moment. Every
-/// door into a second ride is closed here — posting, editing, accepting a
-/// hail, the hail list, the hail push and the presence flag itself.
+/// door into a second ride is closed here — posting, editing, claiming a
+/// rider-posted trip, the driver's board, the push, and the presence flag
+/// itself.
 /// </summary>
 public class DriverAvailabilityTests
 {
@@ -30,20 +32,23 @@ public class DriverAvailabilityTests
 
     private static TripService Trips(FakeUnitOfWork uow, int driverId = DriverId) =>
         new(uow, new FakeSecurityManager(driverId), new FakeAuditService(), new FakeNotificationService(),
-            new DriverAvailabilityService(uow.Repository<Trip>()),
+            new DriverAvailabilityService(uow.Repository<Trip>(), new FakeSecurityManager()),
+            new FakeAppConfigurationService(),
             uow.Repository<Trip>(), uow.Repository<TripStatusHistory>(), uow.Repository<Vehicle>(),
-            uow.Repository<User>(), uow.Repository<Booking>(), uow.Repository<RideRequest>());
+            uow.Repository<User>(), uow.Repository<Booking>());
 
     private static RideRequestService Requests(FakeUnitOfWork uow, int driverId = DriverId) =>
-        new(uow, new FakeSecurityManager(driverId), new FakeAuditService(), new FakeNotificationService(),
-            new DriverAvailabilityService(uow.Repository<Trip>()),
-            new FakeAppConfigurationService(),
-            uow.Repository<RideRequest>(), uow.Repository<User>(), uow.Repository<Vehicle>(),
-            uow.Repository<Trip>(), uow.Repository<Booking>());
+        Make.Requests(uow, driverId);
+
+    private static DriverInterestService Interests(FakeUnitOfWork uow, int driverId = DriverId) =>
+        Make.Interests(uow, driverId);
 
     private static PresenceService Presence(FakeUnitOfWork uow, int driverId = DriverId) =>
-        new(uow, new FakeSecurityManager(driverId), new DriverAvailabilityService(uow.Repository<Trip>()),
+        new(uow, new FakeSecurityManager(driverId), new DriverAvailabilityService(uow.Repository<Trip>(), new FakeSecurityManager()),
             uow.Repository<User>());
+
+    private static DriverAvailabilityService Availability(FakeUnitOfWork uow, int driverId = DriverId) =>
+        new(uow.Repository<Trip>(), new FakeSecurityManager(driverId));
 
     private static CreateTripInput Input(int minutesAhead = 60) => new()
     {
@@ -73,18 +78,15 @@ public class DriverAvailabilityTests
         return trip;
     }
 
-    private static RideRequest OpenHail(int id = 30)
-    {
-        return new RideRequest
-        {
-            Id = id, RiderId = RiderId, Seats = 1,
-            OriginAddress = "A", Origin = GeoFactory.Point(31.95, 35.92),
-            DestinationAddress = "B", Destination = GeoFactory.Point(32.01, 35.87),
-            RadiusMeters = 5000,
-            Status = RideRequestStatus.Open,
-            ExpiresAt = DateTime.UtcNow.AddMinutes(10),
-        };
-    }
+    /// <summary>
+    /// An open posting a driver could take, two hours out.
+    ///
+    /// Far enough ahead that the lead-time rule is satisfied, so the departures
+    /// these tests clash against are the only variable — a posting for "now"
+    /// would be refused for a different reason entirely.
+    /// </summary>
+    private static RideRequest OpenRequest(FakeUnitOfWork uow, int id = 30, int minutesAhead = 120) =>
+        Build.Demand(uow, id, RiderId, seats: 1, departAt: DateTime.UtcNow.AddMinutes(minutesAhead));
 
     // ── Posting a trip ───────────────────────────────────────────────────────
 
@@ -166,46 +168,48 @@ public class DriverAvailabilityTests
         Assert.True(res.Success);
     }
 
-    // ── Taking a hail ────────────────────────────────────────────────────────
+    // ── Claiming a rider-posted trip ─────────────────────────────────────────
 
     [Fact]
-    public async Task Accept_fails_while_the_driver_is_out_on_a_trip()
+    public async Task Claim_fails_while_the_driver_is_out_on_a_trip()
     {
         var uow = Driver();
         uow.Store<Trip>().Add(Held(10, TripStatus.Active, minutesAhead: -20));
-        uow.Store<RideRequest>().Add(OpenHail());
+        OpenRequest(uow);
 
-        var res = await Requests(uow).Accept(30);
+        var res = await Interests(uow).ExpressInterest(30);
 
         Assert.False(res.Success);
         Assert.Equal(ErrorCode.DriverOnActiveTrip, res.ErrorCode);
-        Assert.Equal(RideRequestStatus.Open, uow.Store<RideRequest>()[0].Status);
+        // The request is untouched — and it is not in the trips table at all
+        // any more, which is the point of it being its own object.
+        Assert.Equal(RideRequestStatus.Open, uow.Store<RideRequest>().Single(r => r.Id == 30).Status);
     }
 
     [Fact]
-    public async Task Accept_fails_when_a_posted_trip_leaves_within_the_window()
+    public async Task Offering_fails_when_a_posted_trip_leaves_within_the_window()
     {
         var uow = Driver();
-        uow.Store<Trip>().Add(Held(10, TripStatus.Posted, minutesAhead: 15));
-        uow.Store<RideRequest>().Add(OpenHail());
+        uow.Store<Trip>().Add(Held(10, TripStatus.Posted, minutesAhead: 125));
+        OpenRequest(uow);
 
-        var res = await Requests(uow).Accept(30);
+        var res = await Interests(uow).ExpressInterest(30);
 
         Assert.False(res.Success);
         Assert.Equal(ErrorCode.DriverTripTimeConflict, res.ErrorCode);
     }
 
     [Fact]
-    public async Task Accept_succeeds_when_the_next_trip_is_hours_away()
+    public async Task Offering_succeeds_when_the_next_trip_is_hours_away()
     {
         var uow = Driver();
-        uow.Store<Trip>().Add(Held(10, TripStatus.Posted, minutesAhead: 180));
-        uow.Store<RideRequest>().Add(OpenHail());
+        uow.Store<Trip>().Add(Held(10, TripStatus.Posted, minutesAhead: 480));
+        OpenRequest(uow);
 
-        var res = await Requests(uow).Accept(30);
+        var res = await Interests(uow).ExpressInterest(30);
 
         Assert.True(res.Success);
-        Assert.Equal(RideRequestStatus.Matched, uow.Store<RideRequest>()[0].Status);
+        Assert.Equal(TripStatus.Posted, uow.Store<Trip>()[0].Status);
     }
 
     [Fact]
@@ -213,7 +217,7 @@ public class DriverAvailabilityTests
     {
         var uow = Driver();
         uow.Store<Trip>().Add(Held(10, TripStatus.Active, minutesAhead: -20));
-        uow.Store<RideRequest>().Add(OpenHail());
+        OpenRequest(uow);
 
         var res = await Requests(uow).GetNearby(31.95, 35.92, 5000);
 
@@ -222,10 +226,10 @@ public class DriverAvailabilityTests
     }
 
     [Fact]
-    public async Task GetNearby_still_lists_hails_for_a_free_driver()
+    public async Task GetNearby_still_lists_postings_for_a_free_driver()
     {
         var uow = Driver();
-        uow.Store<RideRequest>().Add(OpenHail());
+        OpenRequest(uow);
 
         var res = await Requests(uow).GetNearby(31.95, 35.92, 5000);
 
@@ -233,7 +237,7 @@ public class DriverAvailabilityTests
         Assert.Single(res.Data!);
     }
 
-    // ── Who the hail push reaches ────────────────────────────────────────────
+    // ── Who the push reaches ─────────────────────────────────────────────────
 
     [Fact]
     public async Task BusyDrivers_skips_a_driver_on_a_trip_and_one_departing_soon()
@@ -247,10 +251,111 @@ public class DriverAvailabilityTests
         leavingLater.DepartAt = DateTime.UtcNow.AddMinutes(120);
         uow.Store<Trip>().AddRange([onTheRoad, leavingSoon, leavingLater]);
 
-        var svc = new DriverAvailabilityService(uow.Repository<Trip>());
+        var svc = new DriverAvailabilityService(uow.Repository<Trip>(), new FakeSecurityManager());
         var busy = await svc.BusyDrivers([2, 3, 4, 5], DateTime.UtcNow);
 
         Assert.Equal([2, 3], busy.OrderBy(id => id));
+    }
+
+    // ── The diary a client greys its picker with ─────────────────────────────
+
+    [Fact]
+    public async Task My_schedule_lists_the_departures_already_promised()
+    {
+        var uow = Driver();
+        uow.Store<Trip>().Add(Held(10, TripStatus.Posted, minutesAhead: 60));
+        uow.Store<Trip>().Add(Held(11, TripStatus.Full, minutesAhead: 300));
+
+        // Neither of these holds a slot any more.
+        uow.Store<Trip>().Add(Held(12, TripStatus.Completed, minutesAhead: 120));
+        uow.Store<Trip>().Add(Held(13, TripStatus.Cancelled, minutesAhead: 180));
+
+        var res = await Availability(uow).GetMySchedule();
+
+        Assert.True(res.Success);
+        Assert.Equal(2, res.Data!.CommittedDepartures.Count);
+        Assert.False(res.Data.IsEngaged);
+
+        // The window travels with the list: a client that carried its own copy
+        // of the number would eventually grey out a slot the API would take.
+        Assert.Equal((int)DriverAvailabilityRules.ClashWindow.TotalMinutes, res.Data.ClashWindowMinutes);
+    }
+
+    [Fact]
+    public async Task My_schedule_reports_a_driver_who_is_out_on_the_road()
+    {
+        var uow = Driver();
+        uow.Store<Trip>().Add(Held(10, TripStatus.Active, minutesAhead: -20));
+
+        var res = await Availability(uow).GetMySchedule();
+
+        // A different sentence to a clash: not "not then" but "not yet".
+        Assert.True(res.Data!.IsEngaged);
+    }
+
+    [Fact]
+    public async Task My_schedule_leaves_out_the_trip_being_edited()
+    {
+        var uow = Driver();
+        uow.Store<Trip>().Add(Held(10, TripStatus.Posted, minutesAhead: 60));
+
+        var res = await Availability(uow).GetMySchedule(ignoreTripId: 10);
+
+        // Otherwise moving a trip's time would find the trip itself blocking
+        // every slot around where it already is.
+        Assert.Empty(res.Data!.CommittedDepartures);
+    }
+
+    [Fact]
+    public async Task My_schedule_is_only_ever_the_callers_own()
+    {
+        var uow = Driver();
+        uow.Store<Trip>().Add(Held(10, TripStatus.Posted, minutesAhead: 60));
+
+        var somebodyElse = new DriverAvailabilityService(
+            uow.Repository<Trip>(), new FakeSecurityManager(RiderId));
+        var res = await somebodyElse.GetMySchedule();
+
+        Assert.Empty(res.Data!.CommittedDepartures);
+    }
+
+    /// <summary>
+    /// A driver who has set off holds their slot like any other. The three
+    /// queries that answer this used to spell the status list out by hand and
+    /// had all dropped <see cref="TripStatus.EnRoute"/> — the one status where
+    /// the driver is already on the road — so the trip they were driving to
+    /// blocked nothing and a second departure could be promised on top of it.
+    /// </summary>
+    [Fact]
+    public async Task A_driver_on_their_way_to_a_pickup_cannot_promise_another_departure()
+    {
+        var uow = Driver();
+        uow.Store<Trip>().Add(Held(10, TripStatus.EnRoute, minutesAhead: 5));
+
+        var res = await Trips(uow).Create(Input(minutesAhead: 240));
+
+        Assert.False(res.Success);
+        Assert.Equal(ErrorCode.DriverOnActiveTrip, res.ErrorCode);
+
+        var schedule = await Availability(uow).GetMySchedule();
+        Assert.True(schedule.Data!.IsEngaged);
+        Assert.Single(schedule.Data.CommittedDepartures);
+    }
+
+    [Fact]
+    public async Task BusyDrivers_counts_a_driver_who_has_set_off()
+    {
+        var uow = new FakeUnitOfWork();
+        var enRoute = Build.Trip(10, driverId: 2, vehicleId: 1, status: TripStatus.EnRoute);
+        enRoute.DepartAt = DateTime.UtcNow.AddMinutes(5);
+        uow.Store<Trip>().Add(enRoute);
+
+        var svc = new DriverAvailabilityService(uow.Repository<Trip>(), new FakeSecurityManager());
+        var busy = await svc.BusyDrivers([2, 3], DateTime.UtcNow.AddHours(4));
+
+        // Four hours out is no clash at all — this driver is excluded because
+        // they are already driving, which the query used not to see.
+        Assert.Equal([2], busy);
     }
 
     // ── The presence flag ────────────────────────────────────────────────────

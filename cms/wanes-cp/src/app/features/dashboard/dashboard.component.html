@@ -51,8 +51,8 @@
 
           <app-stat-tile
             [label]="'kpi_new_requests' | translate"
-            [value]="(overview()?.newRequests ?? 0).toLocaleString()"
-            [delta]="overview()?.requestsTrend ?? null"
+            [value]="(overview()?.newRiderTrips ?? 0).toLocaleString()"
+            [delta]="overview()?.riderTripsTrend ?? null"
             [note]="rangeNote()"
             [spark]="activitySeries()[3]?.values ?? []" />
 
@@ -157,7 +157,7 @@
             <app-column-chart
               [slices]="demandByHour()"
               [labelEvery]="3"
-              [unitLabel]="'series_requests' | translate"
+              [unitLabel]="'series_rider_trips' | translate"
               [title]="'chart_demand_hour' | translate" />
           </app-chart-card>
 

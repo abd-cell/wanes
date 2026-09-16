@@ -28,16 +28,16 @@ class RequestsScreen extends StatefulWidget {
 }
 
 class _RequestsScreenState extends State<RequestsScreen> {
-  final _service = RideRequestService();
+  final _service = RiderTripService();
   final _presence = PresenceService();
   final Place _here = kPlaces.first;
 
-  List<RideRequestRow> _list = [];
+  List<RiderTrip> _list = [];
   final Set<int> _declined = {};
   bool _loading = true;
   bool _accepting = false;
   Timer? _tick;
-  StreamSubscription<RideRequestClosed>? _closed;
+  StreamSubscription<RiderTripClosed>? _closed;
 
   @override
   void initState() {
@@ -46,10 +46,11 @@ class _RequestsScreenState extends State<RequestsScreen> {
     _tick = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() {}); // countdown ring + label
     });
-    // The countdown only covers a hail that ran its full window. One the rider
-    // withdrew, or another driver took, ends early and without warning — the
-    // server says so over SSE and the card has to go the moment it does.
-    _closed = PushService.instance.requestClosed.listen(_onClosed);
+    // The countdown only covers a posting that runs to its own departure. One
+    // whose riders all left, or that another driver claimed, ends early and
+    // without warning — the server says so over SSE and the card has to go the
+    // moment it does.
+    _closed = PushService.instance.riderTripClosed.listen(_onClosed);
   }
 
   @override
@@ -59,15 +60,15 @@ class _RequestsScreenState extends State<RequestsScreen> {
     super.dispose();
   }
 
-  void _onClosed(RideRequestClosed closed) {
+  void _onClosed(RiderTripClosed closed) {
     if (!mounted) return;
     // Only worth a word if it is the card in front of them. One further down
     // the queue can leave silently — the driver never saw it.
-    final wasShowing = _queue.isNotEmpty && _queue.first.id == closed.requestId;
-    final held = _list.any((r) => r.id == closed.requestId);
+    final wasShowing = _queue.isNotEmpty && _queue.first.id == closed.riderTripId;
+    final held = _list.any((r) => r.id == closed.riderTripId);
     if (!held) return;
 
-    setState(() => _list.removeWhere((r) => r.id == closed.requestId));
+    setState(() => _list.removeWhere((r) => r.id == closed.riderTripId));
     if (wasShowing && !_accepting) {
       WanesAlerts.info(context, context.tr(closed.reason.messageKey));
     }
@@ -84,12 +85,13 @@ class _RequestsScreenState extends State<RequestsScreen> {
     });
   }
 
-  /// Live queue: not declined, not expired.
-  List<RideRequestRow> get _queue => _list
-      .where((r) => !_declined.contains(r.id) && r.expiresAt.isAfter(DateTime.now()))
+  /// Live queue: not declined, not already departed. A posting runs until its
+  /// own departure rather than on a countdown of its own, so that is the clock.
+  List<RiderTrip> get _queue => _list
+      .where((r) => !_declined.contains(r.id) && r.departAt.isAfter(DateTime.now()))
       .toList();
 
-  Future<void> _accept(RideRequestRow r) async {
+  Future<void> _claim(RiderTrip r) async {
     // A hail carries no price, so the driver names one before they commit. The
     // sheet opens on the same distance estimate the card shows, so this is a
     // figure they confirm rather than invent against the countdown.
@@ -97,14 +99,14 @@ class _RequestsScreenState extends State<RequestsScreen> {
       context,
       suggestion: Fare.perSeat(Geo.distanceKm(
           r.originLat, r.originLng, r.destinationLat, r.destinationLng)),
-      seats: r.seats,
+      seats: r.seatsWanted,
     );
     // Backing out of the sheet is declining to accept, not accepting at the
     // suggested figure.
     if (price == null || !mounted) return;
 
     setState(() => _accepting = true);
-    final res = await _service.accept(r.id, pricePerSeat: price);
+    final res = await _service.offer(r.id, pricePerSeat: price);
     if (!mounted) return;
     setState(() {
       _accepting = false;
@@ -115,12 +117,12 @@ class _RequestsScreenState extends State<RequestsScreen> {
           message: context.tr('driver.requestAcceptedBody'));
     } else {
       WanesAlerts.failure(context, res,
-          title: context.tr('driver.acceptFailed'), onRetry: () => _accept(r));
+          title: context.tr('driver.acceptFailed'), onRetry: () => _claim(r));
     }
     if (res.success && _queue.isEmpty && mounted) Navigator.pop(context);
   }
 
-  void _decline(RideRequestRow r) => setState(() => _declined.add(r.id));
+  void _decline(RiderTrip r) => setState(() => _declined.add(r.id));
 
   @override
   Widget build(BuildContext context) {
@@ -200,12 +202,18 @@ class _RequestsScreenState extends State<RequestsScreen> {
     );
   }
 
-  Widget _requestBody(WanesTokens t, RideRequestRow r) {
-    final left = r.expiresAt.difference(DateTime.now());
-    final progress = left.inMilliseconds / r.ttl.inMilliseconds;
+  Widget _requestBody(WanesTokens t, RiderTrip r) {
+    final left = r.departAt.difference(DateTime.now());
+
+    // A posting has no window of its own — it runs until it leaves — so the
+    // ring measures the wait against the notify horizon it entered the board
+    // on. Full at an hour out, emptying as the departure comes.
+    const horizon = Duration(hours: 1);
+    final progress =
+        (left.inMilliseconds / horizon.inMilliseconds).clamp(0.0, 1.0).toDouble();
     final pickupKm = Geo.distanceKm(_here.lat, _here.lng, r.originLat, r.originLng);
     final fare = Fare.estimateBetween(
-      r.originLat, r.originLng, r.destinationLat, r.destinationLng, seats: r.seats);
+      r.originLat, r.originLng, r.destinationLat, r.destinationLng, seats: r.seatsWanted);
 
     return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Row(children: [
@@ -223,7 +231,7 @@ class _RequestsScreenState extends State<RequestsScreen> {
             // evening and matched nothing is asking for this evening, and the
             // trip Accept creates leaves then — so this is the time the driver
             // is actually agreeing to, and the card has to say it.
-            Text(_leaving(context, r.wantedDepartAt),
+            Text(_leaving(context, r.departAt),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: WanesTheme.mono(
@@ -249,8 +257,8 @@ class _RequestsScreenState extends State<RequestsScreen> {
                   style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: t.ink)),
               const SizedBox(height: 1),
               Text(
-                  '${context.trPlural('vehicle.seatCount', r.seats)} · '
-                  '${context.tr('driver.requestedAgo', {'ago': _ago(context, r.requestedAt)})}',
+                  '${context.trPlural('vehicle.seatCount', r.seatsWanted)} · '
+                  '${context.tr('driver.leavesIn', {'left': _ago(context, r.departAt)})}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: WanesTheme.mono(size: 11, weight: FontWeight.w500, color: t.ink2, spacing: 0)),
@@ -314,7 +322,7 @@ class _RequestsScreenState extends State<RequestsScreen> {
             label: context.tr('driver.acceptRide'),
             arrow: false,
             busy: _accepting,
-            onPressed: _accepting ? null : () => _accept(r),
+            onPressed: _accepting ? null : () => _claim(r),
           ),
         ),
       ]),

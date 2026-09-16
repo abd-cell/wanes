@@ -4,10 +4,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Wanes — a ride-matching platform. A rider asks for a trip **from → to**; Wanes first shows
-trips drivers already posted (**carpool**), and if nothing matches it opens a request and
-notifies nearby drivers to accept (**hail**). One trip carries several riders. **No payments
-in scope.** Bilingual throughout (en LTR / ar RTL).
+Wanes — a two-sided ride-sharing **marketplace**. Drivers create supply by publishing trips
+they are driving (route, time, seats, price, conditions); riders create demand by publishing
+the journeys they need. **Demand is its own object** — a `RideRequest` with participants, not
+a driverless trip — and it becomes a `Trip` only when a driver offers and is selected
+(interest → selection → formation). Other riders **join** a request rather than duplicating
+it. **Both sides search from → to**: riders find trips going their way, drivers find requests
+going theirs. One trip carries several riders, and may need a minimum number of passengers
+before it confirms. **No payments in scope.** Bilingual throughout (en LTR / ar RTL).
+
+A trip's state is **three dimensions**, never one enum: lifecycle
+(`posted → en_route → arrived → active → completed`), confirmation
+(`gathering → confirmed`, stored on `Trip.ConfirmedAt` and one-way), and capacity
+(`IsFull`, derived from `SeatsLeft` and free to move both ways).
 
 Three stacks in one repo, each with its own toolchain:
 
@@ -17,8 +26,17 @@ Three stacks in one repo, each with its own toolchain:
 | `cms/wanes-cp/` | Angular 22 (standalone, SSR, signals) | admin control panel |
 | `app/wanes_app/` | Flutter 3.47 / Dart 3.13 | rider + driver mobile app |
 
-`docs/BUSINESS_LOGIC.md` is the authority on domain rules (trip/booking/request lifecycles,
-seat math, ranking, audit). Read it before changing any state transition.
+`docs/BUSINESS_LOGIC.md` is the authority on domain rules (supply/demand, trip / ride request /
+booking lifecycles, conditions, seat math, tiered search, schedules, audit). Read it before
+changing any state transition.
+
+**It is v2, and the code implements it.** Two settings decide how much of v2 a deployment
+feels, and both ship at v1's behaviour: `DriverSelectionWindowMinutes = 0` (the first driver
+to offer is selected immediately, in the same round-trip — first-come-first-served as a
+*setting*, not an invariant) and `MinimumPassengersDefault = 3` (the one deliberate behaviour
+change). §22 of the doc maps every rule to its file and records how the demand split was
+migrated — including the one place an id changes, at trip formation, where
+`RideRequest.MatchedTripId` is the only thread across.
 
 ## Toolchain
 
@@ -97,8 +115,11 @@ Adding a feature means adding a slice to all three, not a new layer.
 - **Data access.** `IRepository<T>` + `IUnitOfWork`. Multi-row invariants (seat reservation,
   first-wins request accept) run inside `unitOfWork.BeginTransactionAsync()` with a rollback
   helper that returns the error envelope — `BookingService.Create` is the model to copy.
-- **Soft delete is not automatic.** `BaseEntity.IsDeleted` exists but there is **no global query
-  filter** — every query must add `.Where(x => !x.IsDeleted)` itself.
+- **Soft delete lives in the repository, not in EF.** There is no global query filter, but
+  `IRepository<T>.Query()` (and everything built on it — `Where`, `FirstOrDefault`, `CountAsync`,
+  `GetByIdAsync`) excludes `IsDeleted` rows by default, so `SoftDelete(entity)` is enough to hide
+  something everywhere. A caller that wants the deleted rows back must ask: `Query(includeDeleted:
+  true)`, which is how the admin console still lists notifications a user cleared.
 - **Audit is explicit, by design.** Each mutating service calls
   `auditService.LogAsync(AuditActions.X, nameof(Entity), id)` after commit. A generic request
   interceptor was considered and rejected: the per-service call captures domain context a filter

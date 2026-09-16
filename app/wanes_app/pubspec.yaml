@@ -13,6 +13,10 @@ dependencies:
     sdk: flutter
   cupertino_icons: ^1.0.8
   http: ^1.2.2
+  # Named explicitly (it already arrives with `http`) so the multipart upload in
+  # ApiClient can set a part's content type without leaning on a transitive dep.
+  http_parser: ^4.0.2
+  image_picker: ^1.1.2
   shared_preferences: ^2.3.2
   intl: ^0.20.3
   google_fonts: ^8.2.1

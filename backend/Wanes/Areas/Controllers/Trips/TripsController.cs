@@ -9,8 +9,13 @@ namespace Wanes.Areas.Controllers.Trips;
 public class TripsController : BaseApiController
 {
     private readonly ITripService tripService;
+    private readonly ITripConfirmationService tripConfirmationService;
 
-    public TripsController(ITripService tripService) => this.tripService = tripService;
+    public TripsController(ITripService tripService, ITripConfirmationService tripConfirmationService)
+    {
+        this.tripService = tripService;
+        this.tripConfirmationService = tripConfirmationService;
+    }
 
     [AppAuthorize]
     [HttpPost]
@@ -28,6 +33,25 @@ public class TripsController : BaseApiController
     [AppAuthorize]
     [HttpGet("mine")]
     public async Task<BaseResponse<List<TripOutput>>> Mine() => await tripService.GetUserTrips();
+
+    /// <summary>
+    /// The driver running a trip that never reached the seats they asked for.
+    /// Every held seat is committed and the condition is dropped.
+    /// </summary>
+    [AppAuthorize]
+    [HttpPost("{id:int}/confirm")]
+    public async Task<BaseResponse<TripOutput>> Confirm(int id)
+        => await tripConfirmationService.ConfirmNow(id);
+
+    /// <summary>
+    /// The driver calling a trip off for want of riders. Distinct from an
+    /// ordinary cancel: the riders are told why, in the words of the empty
+    /// seats rather than of a driver who changed their mind about them.
+    /// </summary>
+    [AppAuthorize]
+    [HttpPost("{id:int}/cancel-low-seats")]
+    public async Task<BaseResponse<TripOutput>> CancelForLowSeats(int id)
+        => await tripConfirmationService.CancelForLowSeats(id);
 
     [AppAuthorize]
     [HttpGet("{id:int}/bookings")]

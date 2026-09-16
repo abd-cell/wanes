@@ -17,6 +17,12 @@ public enum ErrorCode
     Forbidden = 5,
     Conflict = 6,
 
+    /// <summary>The upload is bigger than the endpoint will take.</summary>
+    FileTooLarge = 7,
+
+    /// <summary>The upload is not a file type the endpoint accepts, or its bytes contradict its declared type.</summary>
+    UnsupportedFileType = 8,
+
     // Auth / accounts
     InvalidCredentials = 100,
     PhoneNotVerified = 101,
@@ -36,6 +42,12 @@ public enum ErrorCode
     /// <summary>The driver already has a trip departing at about the same time.</summary>
     DriverTripTimeConflict = 204,
 
+    /// <summary>The application is missing one of the documents a reviewer needs to decide.</summary>
+    DriverDocumentsIncomplete = 205,
+
+    /// <summary>The document is not this driver's, or no longer exists.</summary>
+    DriverDocumentNotFound = 206,
+
     // Trips
     TripNotFound = 300,
     TripNotBookable = 301,
@@ -44,6 +56,15 @@ public enum ErrorCode
     OriginEqualsDestination = 304,
     GeocodingFailed = 305,
     TripNotEditable = 306,
+
+    /// <summary>
+    /// The trip is not waiting on a seat threshold, so there is nothing for the
+    /// driver's run-or-cancel decision to answer.
+    /// </summary>
+    TripNotConfirmable = 307,
+
+    /// <summary>More seats must confirm the trip than the trip offers.</summary>
+    MinSeatsExceedTotal = 308,
 
     // Bookings
     BookingNotFound = 400,
@@ -54,9 +75,75 @@ public enum ErrorCode
     /// <summary>The driver asked for a seat move its current status does not allow.</summary>
     BookingStatusNotAllowed = 404,
 
-    // Ride requests
-    RequestNotFound = 500,
-    RequestNotOpen = 501,
+    /// <summary>
+    /// The trip's conditions ask for a profile detail this rider has not given
+    /// (gender, date of birth). Refused rather than assumed.
+    /// </summary>
+    RiderProfileIncomplete = 406,
+
+    /// <summary>The rider does not meet the driver's conditions for this trip.</summary>
+    RiderNotEligible = 407,
+
+    /// <summary>The driver does not meet the rider's conditions for this ride.</summary>
+    DriverNotEligible = 408,
+
+    /// <summary>
+    /// The rider already holds a seat leaving at about this time. One rider
+    /// rides in one car — see
+    /// <c>Areas/Domain/Bookings/RiderAvailabilityRules</c>.
+    /// </summary>
+    RiderSeatTimeConflict = 409,
+
+    /// <summary>
+    /// The rider is on a ride right now, so no departure is open to them until
+    /// it ends. Distinct from <see cref="RiderSeatTimeConflict"/> because it is
+    /// a different sentence: not "not then" but "not yet".
+    /// </summary>
+    RiderOnActiveTrip = 410,
+
+    // Demand — ride requests (§7). The numbers are unchanged from when these
+    // were "rider-posted trips": the meanings are identical and every client
+    // maps by number, so renaming the members costs nothing and renumbering
+    // them would silently re-label every mapped string.
+    RideRequestNotFound = 500,
+    RideRequestNotOpen = 501,
+
+    /// <summary>
+    /// The departure is sooner than a driver could gather this many riders and
+    /// run the leg — see <c>Areas/Domain/RiderTrips/RiderTripRules</c>.
+    /// </summary>
+    DepartureTooSoon = 502,
+
+    /// <summary>Joining would take the posting past the seats any one car can carry.</summary>
+    RideRequestSeatsExceeded = 503,
+
+    /// <summary>
+    /// The joining rider's own conditions would exclude somebody already
+    /// holding a seat on this posting.
+    /// </summary>
+    RideRequestConditionsConflict = 504,
+
+    /// <summary>The rider holds no seat on this posting, so there is nothing to leave.</summary>
+    RideRequestNotJoined = 505,
+
+    /// <summary>The rider is already a participant of this request.</summary>
+    AlreadyJoined = 506,
+
+    /// <summary>
+    /// The driver is on this request as a rider. Nobody drives themselves, and
+    /// the board already hides these — but a board is a cache, and this is the
+    /// call that would actually commit them to both sides of the same journey.
+    /// </summary>
+    CannotServeOwnRequest = 507,
+
+    /// <summary>The driver has no live interest on this request to withdraw.</summary>
+    DriverInterestNotFound = 508,
+
+    // Schedules
+    ScheduleNotFound = 550,
+
+    /// <summary>The recurrence describes no dates — no weekday chosen, or the window is empty.</summary>
+    ScheduleHasNoOccurrences = 551,
 
     // Ratings
     RatingNotAllowed = 600,

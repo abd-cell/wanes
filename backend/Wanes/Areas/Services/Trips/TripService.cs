@@ -1,10 +1,11 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Wanes.Areas.Domain.Bookings;
-using Wanes.Areas.Domain.Requests;
+using Wanes.Areas.Domain.RiderTrips;
 using Wanes.Areas.Domain.Trips;
 using Wanes.Areas.Domain.Users;
 using Wanes.Areas.Domain.Vehicles;
 using Wanes.Areas.Services.Audit;
+using Wanes.Areas.Services.Configuration;
 using Wanes.Areas.Services.Notifications;
 using Wanes.Areas.Services.Trips.Models;
 using Wanes.Areas.Services.Users.Availability;
@@ -26,12 +27,13 @@ public class TripService : ITripService
     private readonly IAuditService auditService;
     private readonly INotificationService notificationService;
     private readonly IDriverAvailabilityService driverAvailabilityService;
+    private readonly IAppConfigurationService appConfigurationService;
     private readonly IRepository<Trip> tripRepository;
     private readonly IRepository<TripStatusHistory> tripHistoryRepository;
     private readonly IRepository<Vehicle> vehicleRepository;
     private readonly IRepository<User> userRepository;
     private readonly IRepository<Booking> bookingRepository;
-    private readonly IRepository<RideRequest> rideRequestRepository;
+
 
     public TripService(
         IUnitOfWork unitOfWork,
@@ -39,25 +41,34 @@ public class TripService : ITripService
         IAuditService auditService,
         INotificationService notificationService,
         IDriverAvailabilityService driverAvailabilityService,
+        IAppConfigurationService appConfigurationService,
         IRepository<Trip> tripRepository,
         IRepository<TripStatusHistory> tripHistoryRepository,
         IRepository<Vehicle> vehicleRepository,
         IRepository<User> userRepository,
-        IRepository<Booking> bookingRepository,
-        IRepository<RideRequest> rideRequestRepository)
+        IRepository<Booking> bookingRepository)
     {
         this.unitOfWork = unitOfWork;
         this.securityManager = securityManager;
         this.auditService = auditService;
         this.notificationService = notificationService;
         this.driverAvailabilityService = driverAvailabilityService;
+        this.appConfigurationService = appConfigurationService;
         this.tripRepository = tripRepository;
         this.tripHistoryRepository = tripHistoryRepository;
         this.vehicleRepository = vehicleRepository;
         this.userRepository = userRepository;
         this.bookingRepository = bookingRepository;
-        this.rideRequestRepository = rideRequestRepository;
     }
+
+    /// <summary>
+    /// The marketplace's seed for a trip whose driver named no threshold.
+    /// Read per call rather than cached: an admin who raises it means the next
+    /// trip, not the next restart.
+    /// </summary>
+    private async Task<int> MinimumPassengersDefault() =>
+        (await appConfigurationService.Get()).Data?.MinimumPassengersDefault
+        ?? TripConfirmationRules.DefaultMinimumPassengers;
 
     public async Task<BaseResponse<TripOutput>> Create(CreateTripInput input)
     {
@@ -87,6 +98,13 @@ public class TripService : ITripService
         if (seats > vehicle.SeatCapacity)
             return new BaseResponse<TripOutput>(default, ErrorCode.SeatsExceedCapacity);
 
+        // A threshold the trip cannot reach would cancel itself at the cutoff
+        // however many riders turned up. Refused rather than clamped: the driver
+        // meant something by the number, and quietly changing it would confirm a
+        // trip they intended to be conditional.
+        if (input.MinSeatsToConfirm > seats)
+            return new BaseResponse<TripOutput>(default, ErrorCode.MinSeatsExceedTotal);
+
         var origin = GeoFactory.Point(input.Origin.Lat, input.Origin.Lng);
         var destination = GeoFactory.Point(input.Destination.Lat, input.Destination.Lng);
 
@@ -103,6 +121,11 @@ public class TripService : ITripService
             SeatsTotal = seats,
             SeatsLeft = seats,
             PricePerSeat = input.PricePerSeat,
+            MinSeatsToConfirm = TripConfirmationRules.SeededThresholdFor(
+                input.MinSeatsToConfirm, seats, await MinimumPassengersDefault()),
+            GenderPolicy = input.GenderPolicy,
+            MinAge = input.MinAge,
+            MaxAge = input.MaxAge,
             Status = TripStatus.Posted,
         };
 
@@ -112,9 +135,9 @@ public class TripService : ITripService
         await unitOfWork.SaveAsync();
         await auditService.LogAsync(AuditActions.TripCreate, nameof(Trip), trip.Id);
 
-        // The other half of matching: riders who searched a minute ago and found
-        // nothing are sitting on an open hail. This trip may be exactly what they
-        // asked for, and without this they would never hear about it.
+        // The other half of matching: riders sitting on their own open postings
+        // along this route. This trip may be exactly what they asked for, and
+        // without this they would never hear about it.
         await notificationService.NotifyWaitingRiders(trip, driver);
 
         return new BaseResponse<TripOutput>(new TripOutput(trip, driver, vehicle));
@@ -155,6 +178,8 @@ public class TripService : ITripService
         var seats = input.SeatsTotal <= 0 ? vehicle.SeatCapacity : input.SeatsTotal;
         if (seats > vehicle.SeatCapacity)
             return new BaseResponse<TripOutput>(default, ErrorCode.SeatsExceedCapacity);
+        if (input.MinSeatsToConfirm > seats)
+            return new BaseResponse<TripOutput>(default, ErrorCode.MinSeatsExceedTotal);
 
         var origin = GeoFactory.Point(input.Origin.Lat, input.Origin.Lng);
         var destination = GeoFactory.Point(input.Destination.Lat, input.Destination.Lng);
@@ -169,6 +194,17 @@ public class TripService : ITripService
         trip.SeatsTotal = seats;
         trip.SeatsLeft = seats;              // no bookings yet, so every seat is free
         trip.PricePerSeat = input.PricePerSeat;
+        trip.MinSeatsToConfirm = TripConfirmationRules.SeededThresholdFor(
+            input.MinSeatsToConfirm, seats, await MinimumPassengersDefault());
+        trip.GenderPolicy = input.GenderPolicy;
+        trip.MinAge = input.MinAge;
+        trip.MaxAge = input.MaxAge;
+
+        // A trip nobody has booked has nothing to decide, so an edit clears any
+        // prompt it was already sent — the driver may have just moved it to a
+        // better hour, and asking them again about the old deadline would be
+        // asking about a trip that no longer exists.
+        trip.ConfirmPromptedAt = null;
 
         tripRepository.Update(trip);
         await unitOfWork.SaveAsync();
@@ -353,7 +389,7 @@ public class TripService : ITripService
         // A seat lost before departure goes back on the trip, exactly as a rider's
         // own cancel returns it. Once the trip has left, seats_left no longer
         // describes anything bookable, so it is left alone.
-        if (status == BookingStatus.NoShow && trip.Status is TripStatus.Posted or TripStatus.Full)
+        if (status == BookingStatus.NoShow && TripStatusRules.IsOpenForSeats(trip.Status))
             trip.SeatsLeft += booking.Seats;
 
         ApplyDerivedStatus(trip, bookings, driverId);
@@ -373,15 +409,15 @@ public class TripService : ITripService
     private static bool CanTransition(TripStatus from, TripStatus to) => to switch
     {
         // Setting off is only possible from a trip still waiting to go.
-        TripStatus.EnRoute => from is TripStatus.Posted or TripStatus.Full,
+        TripStatus.EnRoute => TripStatusRules.IsOpenForSeats(from),
 
         // Reaching a kerb, or boarding someone, does not require having pressed
         // "set off" first — a driver who just starts collecting is not doing
         // anything wrong, and refusing them would only teach them to tap a
         // button that means nothing to them.
-        TripStatus.Arrived => from is TripStatus.Posted or TripStatus.Full or TripStatus.EnRoute,
-        TripStatus.Active => from is TripStatus.Posted or TripStatus.Full
-            or TripStatus.EnRoute or TripStatus.Arrived,
+        TripStatus.Arrived => TripStatusRules.IsOpenForSeats(from) || from is TripStatus.EnRoute,
+        TripStatus.Active => TripStatusRules.IsOpenForSeats(from)
+            || from is TripStatus.EnRoute or TripStatus.Arrived,
         TripStatus.Completed => from is TripStatus.Active,
         _ => false,
     };

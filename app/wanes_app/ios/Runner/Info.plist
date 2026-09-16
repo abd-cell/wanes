@@ -18,6 +18,11 @@
 	     "when in use" key is the only one declared. -->
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Wanes uses your location to set your pick-up point and show nearby places first.</string>
+	<!-- image_picker: the driver photographs their licence and id for verification. -->
+	<key>NSCameraUsageDescription</key>
+	<string>Wanes uses the camera so you can photograph your driving licence and id for verification.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Wanes needs your photo library so you can attach pictures of your driving licence and id.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>

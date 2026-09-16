@@ -8,7 +8,12 @@ namespace Wanes.Areas.Services.Management;
 [TransientInjectable]
 public interface IAdminNotificationService
 {
-    Task<BaseResponse<PageOutput<NotificationRow>>> List(PageInput page, NotificationType? type, int? userId, bool? isRead);
+    /// <summary>
+    /// The whole table, cleared rows included — <paramref name="isDeleted"/>
+    /// narrows to one side when the admin wants only one.
+    /// </summary>
+    Task<BaseResponse<PageOutput<NotificationRow>>> List(PageInput page, NotificationType? type, int? userId,
+        bool? isRead, bool? isDeleted);
     Task<BaseResponse<NotificationRow>> Get(int id);
     Task<BaseResponse<NotificationRow>> Create(NotificationInput input);
 

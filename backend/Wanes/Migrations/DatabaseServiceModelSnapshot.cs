@@ -89,6 +89,9 @@ namespace Wanes.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<int>("CoRiderGenderPolicy")
+                        .HasColumnType("int");
+
                     b.Property<int?>("CreatedBy")
                         .HasColumnType("int");
 
@@ -101,13 +104,16 @@ namespace Wanes.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
+                    b.Property<int?>("MaxAge")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("MinAge")
+                        .HasColumnType("int");
+
                     b.Property<DateTime?>("ModificationDate")
                         .HasColumnType("datetime2");
 
                     b.Property<int?>("ModifiedBy")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("RideRequestId")
                         .HasColumnType("int");
 
                     b.Property<int>("RiderId")
@@ -126,7 +132,9 @@ namespace Wanes.Migrations
 
                     b.HasIndex("RiderId");
 
-                    b.HasIndex("TripId", "RiderId");
+                    b.HasIndex("TripId", "RiderId")
+                        .IsUnique()
+                        .HasFilter("[Status] <> 4 AND [Status] <> 5 AND [Status] <> 7 AND [IsDeleted] = 0");
 
                     b.ToTable("Bookings");
                 });
@@ -138,6 +146,15 @@ namespace Wanes.Migrations
                         .HasColumnType("int");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<double>("AverageSpeedKmh")
+                        .HasColumnType("float");
+
+                    b.Property<int>("ConfirmCutoffMinutes")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ConfirmDecisionLeadMinutes")
+                        .HasColumnType("int");
 
                     b.Property<int?>("CreatedBy")
                         .HasColumnType("int");
@@ -164,6 +181,9 @@ namespace Wanes.Migrations
                     b.Property<DateTime?>("DeletionDate")
                         .HasColumnType("datetime2");
 
+                    b.Property<int>("DriverSelectionWindowMinutes")
+                        .HasColumnType("int");
+
                     b.Property<decimal>("FareBaseAmount")
                         .HasColumnType("decimal(18,2)");
 
@@ -173,11 +193,11 @@ namespace Wanes.Migrations
                     b.Property<int>("FontFamily")
                         .HasColumnType("int");
 
-                    b.Property<int>("HailRequestTtlMinutes")
-                        .HasColumnType("int");
-
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
+
+                    b.Property<int>("MinimumPassengersDefault")
+                        .HasColumnType("int");
 
                     b.Property<DateTime?>("ModificationDate")
                         .HasColumnType("datetime2");
@@ -382,7 +402,7 @@ namespace Wanes.Migrations
                     b.ToTable("Ratings");
                 });
 
-            modelBuilder.Entity("Wanes.Areas.Domain.Requests.RideRequest", b =>
+            modelBuilder.Entity("Wanes.Areas.Domain.RideRequests.DriverInterest", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -399,6 +419,68 @@ namespace Wanes.Migrations
                     b.Property<DateTime?>("DeletionDate")
                         .HasColumnType("datetime2");
 
+                    b.Property<int>("DriverId")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Message")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<DateTime?>("ModificationDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("PricePerSeat")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<int>("RideRequestId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<int>("VehicleId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DriverId");
+
+                    b.HasIndex("VehicleId");
+
+                    b.HasIndex("RideRequestId", "DriverId")
+                        .IsUnique()
+                        .HasFilter("[Status] = 1 AND [IsDeleted] = 0");
+
+                    b.ToTable("DriverInterests");
+                });
+
+            modelBuilder.Entity("Wanes.Areas.Domain.RideRequests.RideRequest", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreationDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DeletionDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("DepartAt")
+                        .HasColumnType("datetime2");
+
                     b.Property<Point>("Destination")
                         .IsRequired()
                         .HasColumnType("geography");
@@ -408,13 +490,203 @@ namespace Wanes.Migrations
                         .HasMaxLength(300)
                         .HasColumnType("nvarchar(300)");
 
-                    b.Property<DateTime?>("ExpiresAt")
+                    b.Property<int>("DriverGenderPolicy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("FirstInterestAt")
                         .HasColumnType("datetime2");
+
+                    b.Property<int>("GenderPolicy")
+                        .HasColumnType("int");
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
                     b.Property<int?>("MatchedTripId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("MaxAge")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("MinAge")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ModificationDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("NotifiedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateOnly?>("OccurrenceDate")
+                        .HasColumnType("date");
+
+                    b.Property<Point>("Origin")
+                        .IsRequired()
+                        .HasColumnType("geography");
+
+                    b.Property<string>("OriginAddress")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<int>("RadiusMeters")
+                        .HasColumnType("int");
+
+                    b.Property<LineString>("Route")
+                        .HasColumnType("geography");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<int?>("ScheduleId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SeatsRequested")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<int>("TimeWindowMinutes")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MatchedTripId");
+
+                    b.HasIndex("ScheduleId", "OccurrenceDate")
+                        .IsUnique()
+                        .HasFilter("[ScheduleId] IS NOT NULL AND [IsDeleted] = 0");
+
+                    b.HasIndex("Status", "DepartAt");
+
+                    b.HasIndex("Status", "FirstInterestAt");
+
+                    b.HasIndex("Status", "NotifiedAt");
+
+                    b.ToTable("RideRequests");
+                });
+
+            modelBuilder.Entity("Wanes.Areas.Domain.RideRequests.RideRequestParticipant", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("CoRiderGenderPolicy")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreationDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DeletionDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<int?>("MaxAge")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("MinAge")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ModificationDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
+
+                    b.Property<int>("RideRequestId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("RiderId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Seats")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RiderId");
+
+                    b.HasIndex("RideRequestId", "RiderId")
+                        .IsUnique()
+                        .HasFilter("[Status] = 1 AND [IsDeleted] = 0");
+
+                    b.ToTable("RideRequestParticipants");
+                });
+
+            modelBuilder.Entity("Wanes.Areas.Domain.Schedules.TripSchedule", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("CoRiderGenderPolicy")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreationDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("DayOfMonth")
+                        .HasColumnType("int");
+
+                    b.Property<int>("DaysOfWeek")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("DeletionDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Point>("Destination")
+                        .IsRequired()
+                        .HasColumnType("geography");
+
+                    b.Property<string>("DestinationAddress")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<DateOnly?>("EndDate")
+                        .HasColumnType("date");
+
+                    b.Property<int>("GenderPolicy")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsPaused")
+                        .HasColumnType("bit");
+
+                    b.Property<DateOnly?>("MaterialisedThrough")
+                        .HasColumnType("date");
+
+                    b.Property<int?>("MaxAge")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("MinAge")
+                        .HasColumnType("int");
+
+                    b.Property<int>("MinSeatsToConfirm")
                         .HasColumnType("int");
 
                     b.Property<DateTime?>("ModificationDate")
@@ -432,36 +704,44 @@ namespace Wanes.Migrations
                         .HasMaxLength(300)
                         .HasColumnType("nvarchar(300)");
 
-                    b.Property<int>("RadiusMeters")
+                    b.Property<int>("OwnerId")
                         .HasColumnType("int");
 
-                    b.Property<DateTime>("RequestedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int>("RiderId")
+                    b.Property<int>("OwnerRole")
                         .HasColumnType("int");
 
-                    b.Property<byte[]>("RowVersion")
-                        .IsConcurrencyToken()
-                        .ValueGeneratedOnAddOrUpdate()
-                        .HasColumnType("rowversion");
+                    b.Property<decimal?>("PricePerSeat")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<int>("Recurrence")
+                        .HasColumnType("int");
 
                     b.Property<int>("Seats")
                         .HasColumnType("int");
 
-                    b.Property<int>("Status")
-                        .HasColumnType("int");
+                    b.Property<DateOnly>("StartDate")
+                        .HasColumnType("date");
 
-                    b.Property<DateTime>("WantedDepartAt")
-                        .HasColumnType("datetime2");
+                    b.Property<TimeOnly>("TimeOfDay")
+                        .HasColumnType("time");
+
+                    b.Property<string>("TimeZoneId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<int?>("VehicleId")
+                        .HasColumnType("int");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("RiderId");
+                    b.HasIndex("OwnerId");
 
-                    b.HasIndex("Status");
+                    b.HasIndex("VehicleId");
 
-                    b.ToTable("RideRequests");
+                    b.HasIndex("IsPaused", "MaterialisedThrough");
+
+                    b.ToTable("TripSchedules");
                 });
 
             modelBuilder.Entity("Wanes.Areas.Domain.Support.FaqItem", b =>
@@ -596,6 +876,12 @@ namespace Wanes.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<DateTime?>("ConfirmPromptedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("ConfirmedAt")
+                        .HasColumnType("datetime2");
+
                     b.Property<int?>("CreatedBy")
                         .HasColumnType("int");
 
@@ -617,17 +903,38 @@ namespace Wanes.Migrations
                         .HasMaxLength(300)
                         .HasColumnType("nvarchar(300)");
 
-                    b.Property<int>("DriverId")
+                    b.Property<int>("DriverGenderPolicy")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("DriverId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("GenderPolicy")
                         .HasColumnType("int");
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
+
+                    b.Property<int?>("MaxAge")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("MinAge")
+                        .HasColumnType("int");
+
+                    b.Property<int>("MinSeatsToConfirm")
+                        .HasColumnType("int");
 
                     b.Property<DateTime?>("ModificationDate")
                         .HasColumnType("datetime2");
 
                     b.Property<int?>("ModifiedBy")
                         .HasColumnType("int");
+
+                    b.Property<DateTime?>("NotifiedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateOnly?>("OccurrenceDate")
+                        .HasColumnType("date");
 
                     b.Property<Point>("Origin")
                         .IsRequired()
@@ -642,6 +949,9 @@ namespace Wanes.Migrations
                         .HasPrecision(10, 2)
                         .HasColumnType("decimal(10,2)");
 
+                    b.Property<int>("RadiusMeters")
+                        .HasColumnType("int");
+
                     b.Property<LineString>("Route")
                         .HasColumnType("geography");
 
@@ -649,6 +959,9 @@ namespace Wanes.Migrations
                         .IsConcurrencyToken()
                         .ValueGeneratedOnAddOrUpdate()
                         .HasColumnType("rowversion");
+
+                    b.Property<int?>("ScheduleId")
+                        .HasColumnType("int");
 
                     b.Property<int>("SeatsLeft")
                         .HasColumnType("int");
@@ -659,7 +972,7 @@ namespace Wanes.Migrations
                     b.Property<int>("Status")
                         .HasColumnType("int");
 
-                    b.Property<int>("VehicleId")
+                    b.Property<int?>("VehicleId")
                         .HasColumnType("int");
 
                     b.HasKey("Id");
@@ -668,7 +981,13 @@ namespace Wanes.Migrations
 
                     b.HasIndex("VehicleId");
 
+                    b.HasIndex("ScheduleId", "OccurrenceDate")
+                        .IsUnique()
+                        .HasFilter("[ScheduleId] IS NOT NULL AND [IsDeleted] = 0");
+
                     b.HasIndex("Status", "DepartAt");
+
+                    b.HasIndex("Status", "NotifiedAt");
 
                     b.ToTable("Trips");
                 });
@@ -707,6 +1026,63 @@ namespace Wanes.Migrations
                     b.HasIndex("TripId");
 
                     b.ToTable("TripStatusHistories");
+                });
+
+            modelBuilder.Entity("Wanes.Areas.Domain.Users.DriverDocument", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreationDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DeletionDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(260)
+                        .HasColumnType("nvarchar(260)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("ModificationDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("StorageKey")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("int");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "IsDeleted", "Type");
+
+                    b.ToTable("DriverDocuments");
                 });
 
             modelBuilder.Entity("Wanes.Areas.Domain.Users.OtpCode", b =>
@@ -841,6 +1217,19 @@ namespace Wanes.Migrations
                         .HasMaxLength(150)
                         .HasColumnType("nvarchar(150)");
 
+                    b.Property<DateTime?>("DriverAppliedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DriverReviewNote")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime?>("DriverReviewedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("DriverReviewedBy")
+                        .HasColumnType("int");
+
                     b.Property<int>("DriverStatus")
                         .HasColumnType("int");
 
@@ -864,9 +1253,6 @@ namespace Wanes.Migrations
 
                     b.Property<int>("Gender")
                         .HasColumnType("int");
-
-                    b.Property<string>("IdDocumentUrl")
-                        .HasColumnType("nvarchar(max)");
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
@@ -901,10 +1287,8 @@ namespace Wanes.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<string>("LicenseNumber")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("LicensePhotoUrl")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<DateTime?>("ModificationDate")
                         .HasColumnType("datetime2");
@@ -1170,15 +1554,85 @@ namespace Wanes.Migrations
                     b.Navigation("ToUser");
                 });
 
-            modelBuilder.Entity("Wanes.Areas.Domain.Requests.RideRequest", b =>
+            modelBuilder.Entity("Wanes.Areas.Domain.RideRequests.DriverInterest", b =>
                 {
+                    b.HasOne("Wanes.Areas.Domain.Users.User", "Driver")
+                        .WithMany()
+                        .HasForeignKey("DriverId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Wanes.Areas.Domain.RideRequests.RideRequest", "RideRequest")
+                        .WithMany("Interests")
+                        .HasForeignKey("RideRequestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Wanes.Areas.Domain.Vehicles.Vehicle", "Vehicle")
+                        .WithMany()
+                        .HasForeignKey("VehicleId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Driver");
+
+                    b.Navigation("RideRequest");
+
+                    b.Navigation("Vehicle");
+                });
+
+            modelBuilder.Entity("Wanes.Areas.Domain.RideRequests.RideRequest", b =>
+                {
+                    b.HasOne("Wanes.Areas.Domain.Trips.Trip", "MatchedTrip")
+                        .WithMany()
+                        .HasForeignKey("MatchedTripId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Wanes.Areas.Domain.Schedules.TripSchedule", "Schedule")
+                        .WithMany()
+                        .HasForeignKey("ScheduleId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("MatchedTrip");
+
+                    b.Navigation("Schedule");
+                });
+
+            modelBuilder.Entity("Wanes.Areas.Domain.RideRequests.RideRequestParticipant", b =>
+                {
+                    b.HasOne("Wanes.Areas.Domain.RideRequests.RideRequest", "RideRequest")
+                        .WithMany("Participants")
+                        .HasForeignKey("RideRequestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
                     b.HasOne("Wanes.Areas.Domain.Users.User", "Rider")
                         .WithMany()
                         .HasForeignKey("RiderId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.Navigation("RideRequest");
+
                     b.Navigation("Rider");
+                });
+
+            modelBuilder.Entity("Wanes.Areas.Domain.Schedules.TripSchedule", b =>
+                {
+                    b.HasOne("Wanes.Areas.Domain.Users.User", "Owner")
+                        .WithMany()
+                        .HasForeignKey("OwnerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Wanes.Areas.Domain.Vehicles.Vehicle", "Vehicle")
+                        .WithMany()
+                        .HasForeignKey("VehicleId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Owner");
+
+                    b.Navigation("Vehicle");
                 });
 
             modelBuilder.Entity("Wanes.Areas.Domain.Support.Feedback", b =>
@@ -1204,16 +1658,21 @@ namespace Wanes.Migrations
                     b.HasOne("Wanes.Areas.Domain.Users.User", "Driver")
                         .WithMany()
                         .HasForeignKey("DriverId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Wanes.Areas.Domain.Schedules.TripSchedule", "Schedule")
+                        .WithMany()
+                        .HasForeignKey("ScheduleId")
+                        .OnDelete(DeleteBehavior.SetNull);
 
                     b.HasOne("Wanes.Areas.Domain.Vehicles.Vehicle", "Vehicle")
                         .WithMany()
                         .HasForeignKey("VehicleId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Driver");
+
+                    b.Navigation("Schedule");
 
                     b.Navigation("Vehicle");
                 });
@@ -1227,6 +1686,17 @@ namespace Wanes.Migrations
                         .IsRequired();
 
                     b.Navigation("Trip");
+                });
+
+            modelBuilder.Entity("Wanes.Areas.Domain.Users.DriverDocument", b =>
+                {
+                    b.HasOne("Wanes.Areas.Domain.Users.User", "User")
+                        .WithMany("DriverDocuments")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("Wanes.Areas.Domain.Users.SavedPlace", b =>
@@ -1273,6 +1743,13 @@ namespace Wanes.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("Wanes.Areas.Domain.RideRequests.RideRequest", b =>
+                {
+                    b.Navigation("Interests");
+
+                    b.Navigation("Participants");
+                });
+
             modelBuilder.Entity("Wanes.Areas.Domain.Trips.Trip", b =>
                 {
                     b.Navigation("History");
@@ -1280,6 +1757,8 @@ namespace Wanes.Migrations
 
             modelBuilder.Entity("Wanes.Areas.Domain.Users.User", b =>
                 {
+                    b.Navigation("DriverDocuments");
+
                     b.Navigation("SavedPlaces");
 
                     b.Navigation("Vehicles");

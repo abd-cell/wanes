@@ -1,10 +1,10 @@
 using Wanes.Areas.Domain.Bookings;
-using Wanes.Areas.Domain.Requests;
+using Wanes.Areas.Domain.RideRequests;
 using Wanes.Areas.Domain.Trips;
 using Wanes.Areas.Domain.Users;
 using Wanes.Areas.Domain.Vehicles;
-using Wanes.Areas.Services.Requests;
-using Wanes.Areas.Services.Requests.Models;
+using Wanes.Areas.Services.RideRequests;
+using Wanes.Areas.Services.RideRequests.Models;
 using Wanes.Areas.Services.Users.Availability;
 using Wanes.Shareds.Constants;
 using Wanes.Shareds.Enums;
@@ -38,12 +38,9 @@ public class FarePricingTests
     private const double DestLat = 32.0728;
     private const double DestLng = 36.0876;
 
-    private static RideRequestService Requests(FakeUnitOfWork uow, FakeAppConfigurationService config) =>
-        new(uow, new FakeSecurityManager(DriverId), new FakeAuditService(),
-            new FakeNotificationService(), new DriverAvailabilityService(uow.Repository<Trip>()),
-            config,
-            uow.Repository<RideRequest>(), uow.Repository<User>(), uow.Repository<Vehicle>(),
-            uow.Repository<Trip>(), uow.Repository<Booking>());
+    private static DriverInterestService Interests(FakeUnitOfWork uow,
+        FakeAppConfigurationService config) =>
+        Make.Interests(uow, DriverId, config: config);
 
     private static FakeUnitOfWork Scene()
     {
@@ -54,21 +51,9 @@ public class FarePricingTests
         uow.Store<User>().Add(driver);
         uow.Store<User>().Add(Build.Rider(RiderId));
         uow.Store<Vehicle>().Add(Build.Vehicle(1, userId: DriverId));
-        uow.Store<RideRequest>().Add(new RideRequest
-        {
-            Id = 30,
-            RiderId = RiderId,
-            Seats = 1,
-            OriginAddress = "A",
-            Origin = GeoFactory.Point(OriginLat, OriginLng),
-            DestinationAddress = "B",
-            Destination = GeoFactory.Point(DestLat, DestLng),
-            RadiusMeters = MatchRules.NearRadiusMeters,
-            Status = RideRequestStatus.Open,
-            RequestedAt = DateTime.UtcNow,
-            WantedDepartAt = DateTime.UtcNow,
-            ExpiresAt = DateTime.UtcNow.AddMinutes(10),
-        });
+        var posting = Build.Demand(uow, 30, RiderId, departAt: DateTime.UtcNow.AddHours(3));
+        posting.Origin = GeoFactory.Point(OriginLat, OriginLng);
+        posting.Destination = GeoFactory.Point(DestLat, DestLng);
         return uow;
     }
 
@@ -82,8 +67,8 @@ public class FarePricingTests
     {
         var uow = Scene();
 
-        var res = await Requests(uow, new FakeAppConfigurationService())
-            .Accept(30, new AcceptRideRequestInput { PricePerSeat = 7.25m });
+        var res = await Interests(uow, new FakeAppConfigurationService())
+            .ExpressInterest(30, new ExpressInterestInput { PricePerSeat = 7.25m });
 
         Assert.True(res.Success);
         Assert.Equal(7.25m, Assert.Single(uow.Store<Trip>()).PricePerSeat);
@@ -98,7 +83,7 @@ public class FarePricingTests
         var config = new FakeAppConfigurationService { FareBaseAmount = 50m, FarePerKm = 10m };
         var uow = Scene();
 
-        await Requests(uow, config).Accept(30, new AcceptRideRequestInput { PricePerSeat = 2m });
+        await Interests(uow, config).ExpressInterest(30, new ExpressInterestInput { PricePerSeat = 2m });
 
         Assert.Equal(2m, Assert.Single(uow.Store<Trip>()).PricePerSeat);
     }
@@ -111,8 +96,8 @@ public class FarePricingTests
         // charge for a favour.
         var uow = Scene();
 
-        await Requests(uow, new FakeAppConfigurationService())
-            .Accept(30, new AcceptRideRequestInput { PricePerSeat = 0m });
+        await Interests(uow, new FakeAppConfigurationService())
+            .ExpressInterest(30, new ExpressInterestInput { PricePerSeat = 0m });
 
         Assert.Equal(0m, Assert.Single(uow.Store<Trip>()).PricePerSeat);
     }
@@ -122,8 +107,8 @@ public class FarePricingTests
     {
         var uow = Scene();
 
-        await Requests(uow, new FakeAppConfigurationService())
-            .Accept(30, new AcceptRideRequestInput { PricePerSeat = -5m });
+        await Interests(uow, new FakeAppConfigurationService())
+            .ExpressInterest(30, new ExpressInterestInput { PricePerSeat = -5m });
 
         Assert.Equal(0m, Assert.Single(uow.Store<Trip>()).PricePerSeat);
     }
@@ -133,8 +118,8 @@ public class FarePricingTests
     {
         var uow = Scene();
 
-        await Requests(uow, new FakeAppConfigurationService())
-            .Accept(30, new AcceptRideRequestInput { PricePerSeat = 3.456m });
+        await Interests(uow, new FakeAppConfigurationService())
+            .ExpressInterest(30, new ExpressInterestInput { PricePerSeat = 3.456m });
 
         Assert.Equal(3.46m, Assert.Single(uow.Store<Trip>()).PricePerSeat);
     }
@@ -147,7 +132,7 @@ public class FarePricingTests
         var config = new FakeAppConfigurationService { FareBaseAmount = 3m, FarePerKm = 0.5m };
         var uow = Scene();
 
-        var res = await Requests(uow, config).Accept(30);
+        var res = await Interests(uow, config).ExpressInterest(30);
 
         Assert.True(res.Success);
         var trip = Assert.Single(uow.Store<Trip>());
@@ -241,7 +226,7 @@ public class FarePricingTests
     private static async Task<decimal?> PriceWith(FakeAppConfigurationService config)
     {
         var uow = Scene();
-        var res = await Requests(uow, config).Accept(30);
+        var res = await Interests(uow, config).ExpressInterest(30);
         Assert.True(res.Success);
         return Assert.Single(uow.Store<Trip>()).PricePerSeat;
     }

@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Wanes.Areas.Domain.Bookings;
 using Wanes.Areas.Services.Audit;
 using Wanes.Areas.Services.Management.Models;
@@ -91,7 +91,6 @@ public class AdminBookingService : IAdminBookingService
         booking.RiderId = input.RiderId;
         booking.Seats = input.Seats;
         booking.Status = input.Status;
-        booking.RideRequestId = input.RideRequestId;
     }
 
     private static BookingRow BuildRow(Booking booking) => new(booking)

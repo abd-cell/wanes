@@ -5,6 +5,7 @@ import '../core/theme.dart';
 import '../models/models.dart';
 import '../services/services.dart';
 import '../widgets/wanes_alerts.dart';
+import '../widgets/gathering_chip.dart';
 import '../widgets/wanes_ui.dart';
 import 'notifications_screen.dart';
 import 'booking_details_screen.dart';
@@ -136,6 +137,12 @@ class BookingsScreenState extends State<BookingsScreen> {
             dot: b.isLive,
           ),
         ]),
+        // A held seat is waiting on other riders, and the card says so: the
+        // status pill alone would only read "Pending".
+        if (b.isPending) ...[
+          const SizedBox(height: 11),
+          GatheringChip(booking: b),
+        ],
         const SizedBox(height: 12),
         Row(children: [
           const RouteDot(),

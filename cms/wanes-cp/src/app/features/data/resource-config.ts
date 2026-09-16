@@ -1,7 +1,7 @@
 import {
   ActiveRole, BookingStatus, DeviceType, DriverStatus, FaqCategory, FeedbackKind, FeedbackStatus,
-  Gender, Language, NotificationAudience, NotificationType, RatingDirection, RideRequestStatus,
-  Roles, SavedPlaceLabel, TripStatus,
+  Gender, GenderPolicy, Language, NotificationAudience, NotificationType, RatingDirection,
+  Recurrence, Roles, SavedPlaceLabel, TripStatus,
 } from '../../core/api/models';
 
 export type FieldType =
@@ -72,7 +72,8 @@ export const DRIVER_STATUS = opt(DriverStatus, 'driverstatus');
 export const LANGUAGE = opt(Language, 'language');
 export const TRIP_STATUS = opt(TripStatus, 'tripstatus');
 export const BOOKING_STATUS = opt(BookingStatus, 'bookingstatus');
-export const REQUEST_STATUS = opt(RideRequestStatus, 'requeststatus');
+export const GENDER_POLICY = opt(GenderPolicy, 'genderpolicy');
+export const RECURRENCE = opt(Recurrence, 'recurrence');
 export const RATING_DIR = opt(RatingDirection, 'ratingdir');
 export const NOTIF_TYPE = opt(NotificationType, 'notiftype');
 export const NOTIF_AUDIENCE = opt(NotificationAudience, 'audience');
@@ -138,6 +139,11 @@ export const RESOURCES: ResourceConfig[] = [
     ],
   },
   {
+    // Every trip, however it began: one a driver published, and one formed
+    // from a matched ride request. After formation the two are the same thing
+    // — see BUSINESS_LOGIC §21.1 rule 20 — so there is one grid, and nothing
+    // here can ask which way a trip came about. Demand itself is not in this
+    // grid at all: it is a different object now, with its own lifecycle.
     key: 'trips', route: 'trips', titleKey: 'res_trips',
     searchable: true, canCreate: true, canEdit: true, canDelete: true,
     columns: [
@@ -149,12 +155,15 @@ export const RESOURCES: ResourceConfig[] = [
       { field: 'departAt', labelKey: 'col_depart', type: 'datetime' },
       { field: 'seatsLeft', labelKey: 'col_seats_left' },
       { field: 'pricePerSeat', labelKey: 'col_price', type: 'currency' },
+      { field: 'minSeatsToConfirm', labelKey: 'col_min_seats' },
+      { field: 'genderPolicy', labelKey: 'col_gender_policy', type: 'enum', enum: GENDER_POLICY },
       { field: 'status', labelKey: 'col_status', type: 'enum', enum: TRIP_STATUS },
     ],
     filters: [{ name: 'status', labelKey: 'col_status', enum: TRIP_STATUS }],
     fields: [
-      { name: 'driverId', labelKey: 'col_driver', type: 'reference', lookup: 'drivers', required: true },
-      { name: 'vehicleId', labelKey: 'col_vehicle', type: 'reference', lookup: 'vehicles', required: true },
+      // Not required: a trip still waiting for a driver has neither.
+      { name: 'driverId', labelKey: 'col_driver', type: 'reference', lookup: 'drivers' },
+      { name: 'vehicleId', labelKey: 'col_vehicle', type: 'reference', lookup: 'vehicles' },
       { name: 'originAddress', labelKey: 'col_origin', type: 'text' },
       { name: 'originLat', labelKey: 'col_origin_lat', type: 'number', step: 'any' },
       { name: 'originLng', labelKey: 'col_origin_lng', type: 'number', step: 'any' },
@@ -165,6 +174,10 @@ export const RESOURCES: ResourceConfig[] = [
       { name: 'seatsTotal', labelKey: 'col_seats_total', type: 'number' },
       { name: 'seatsLeft', labelKey: 'col_seats_left', type: 'number' },
       { name: 'pricePerSeat', labelKey: 'col_price', type: 'number', step: 'any' },
+      { name: 'minSeatsToConfirm', labelKey: 'col_min_seats', type: 'number' },
+      { name: 'genderPolicy', labelKey: 'col_gender_policy', type: 'select', enum: GENDER_POLICY },
+      { name: 'minAge', labelKey: 'col_min_age', type: 'number' },
+      { name: 'maxAge', labelKey: 'col_max_age', type: 'number' },
       { name: 'status', labelKey: 'col_status', type: 'select', enum: TRIP_STATUS },
     ],
   },
@@ -185,37 +198,35 @@ export const RESOURCES: ResourceConfig[] = [
       { name: 'riderId', labelKey: 'col_rider', type: 'reference', lookup: 'riders', required: true },
       { name: 'seats', labelKey: 'col_seats', type: 'number', required: true },
       { name: 'status', labelKey: 'col_status', type: 'select', enum: BOOKING_STATUS },
-      { name: 'rideRequestId', labelKey: 'col_request', type: 'reference', lookup: 'requests' },
     ],
   },
   {
-    key: 'requests', route: 'requests', titleKey: 'res_requests',
-    searchable: true, canCreate: true, canEdit: true, canDelete: true,
+    // Recurring postings. Read mostly: what a desk needs is to see the pattern
+    // behind fourteen near-identical rows and to stop a runaway series, so the
+    // only writable fields are the pause, the hour and the end date. There is
+    // no create — a schedule is somebody's own commute.
+    key: 'schedules', route: 'schedules', titleKey: 'res_schedules',
+    searchable: true, canCreate: false, canEdit: true, canDelete: true,
     columns: [
       { field: 'id', labelKey: 'col_id' },
-      { field: 'riderName', labelKey: 'col_rider' },
+      { field: 'ownerName', labelKey: 'col_owner' },
+      { field: 'ownerRole', labelKey: 'col_role', type: 'enum', enum: ACTIVE_ROLE },
       { field: 'originAddress', labelKey: 'col_origin' },
       { field: 'destinationAddress', labelKey: 'col_destination' },
+      { field: 'recurrence', labelKey: 'col_recurrence', type: 'enum', enum: RECURRENCE },
+      { field: 'timeOfDay', labelKey: 'col_time' },
       { field: 'seats', labelKey: 'col_seats' },
-      { field: 'wantedDepartAt', labelKey: 'col_depart', type: 'datetime' },
-      { field: 'matchedTripSummary', labelKey: 'col_matched_trip' },
-      { field: 'status', labelKey: 'col_status', type: 'enum', enum: REQUEST_STATUS },
+      { field: 'isPaused', labelKey: 'col_paused', type: 'bool' },
+      { field: 'materialisedThrough', labelKey: 'col_generated_through', type: 'datetime' },
     ],
-    filters: [{ name: 'status', labelKey: 'col_status', enum: REQUEST_STATUS }],
+    filters: [{ name: 'ownerRole', labelKey: 'col_role', enum: ACTIVE_ROLE }],
     fields: [
-      { name: 'riderId', labelKey: 'col_rider', type: 'reference', lookup: 'riders', required: true },
-      { name: 'originAddress', labelKey: 'col_origin', type: 'text' },
-      { name: 'originLat', labelKey: 'col_origin_lat', type: 'number', step: 'any' },
-      { name: 'originLng', labelKey: 'col_origin_lng', type: 'number', step: 'any' },
-      { name: 'destinationAddress', labelKey: 'col_destination', type: 'text' },
-      { name: 'destLat', labelKey: 'col_dest_lat', type: 'number', step: 'any' },
-      { name: 'destLng', labelKey: 'col_dest_lng', type: 'number', step: 'any' },
-      { name: 'seats', labelKey: 'col_seats', type: 'number' },
-      { name: 'wantedDepartAt', labelKey: 'col_depart', type: 'datetime' },
-      { name: 'radiusMeters', labelKey: 'col_radius', type: 'number' },
-      { name: 'status', labelKey: 'col_status', type: 'select', enum: REQUEST_STATUS },
-      { name: 'matchedTripId', labelKey: 'col_matched_trip', type: 'reference', lookup: 'trips' },
-      { name: 'expiresAt', labelKey: 'col_expires', type: 'datetime' },
+      { name: 'ownerName', labelKey: 'col_owner', type: 'readonly' },
+      { name: 'originAddress', labelKey: 'col_origin', type: 'readonly' },
+      { name: 'destinationAddress', labelKey: 'col_destination', type: 'readonly' },
+      { name: 'isPaused', labelKey: 'col_paused', type: 'checkbox' },
+      { name: 'timeOfDay', labelKey: 'col_time', type: 'text' },
+      { name: 'endDate', labelKey: 'col_end_date', type: 'datetime' },
     ],
   },
   {

@@ -1,6 +1,8 @@
 using Microsoft.Extensions.Logging.Abstractions;
+using Wanes.Areas.Domain.Bookings;
 using Wanes.Areas.Domain.Notifications;
-using Wanes.Areas.Domain.Requests;
+using Wanes.Areas.Domain.RiderTrips;
+using Wanes.Areas.Domain.RideRequests;
 using Wanes.Areas.Domain.Trips;
 using Wanes.Areas.Domain.Users;
 using Wanes.Areas.Services.Notifications;
@@ -33,11 +35,13 @@ public class ReverseMatchTests
     private const int DriverId = 2;
 
     private static NotificationService Service(FakeUnitOfWork uow) =>
-        new(uow, new FakeSecurityManager(DriverId), new FakeFcmSender(), new SseConnectionManager(),
+        new(uow, new FakeAuditService(), new FakeSecurityManager(DriverId), new FakeFcmSender(),
+            new SseConnectionManager(),
             NullLogger<NotificationService>.Instance,
             uow.Repository<UserNotification>(), uow.Repository<UserLogin>(), uow.Repository<User>(),
-            uow.Repository<RideRequest>(),
-            new DriverAvailabilityService(uow.Repository<Trip>()));
+            uow.Repository<Trip>(), uow.Repository<Booking>(),
+            uow.Repository<RideRequest>(), uow.Repository<RideRequestParticipant>(),
+            new DriverAvailabilityService(uow.Repository<Trip>(), new FakeSecurityManager()));
 
     private static Trip TheTrip(int seatsLeft = 3)
     {
@@ -47,20 +51,21 @@ public class ReverseMatchTests
         return trip;
     }
 
-    /// <summary>An open hail on the same route, asking for one seat, opened just now.</summary>
-    private static RideRequest Hail(int id, int riderId, int seats = 1)
-    {
-        return new RideRequest
-        {
-            Id = id, RiderId = riderId, Seats = seats,
-            OriginAddress = "A", Origin = GeoFactory.Point(31.95, 35.92),
-            DestinationAddress = "B", Destination = GeoFactory.Point(32.01, 35.87),
-            RadiusMeters = MatchRules.NearRadiusMeters,
-            Status = RideRequestStatus.Open,
-            RequestedAt = DateTime.UtcNow,
-            ExpiresAt = DateTime.UtcNow.AddMinutes(10),
-        };
-    }
+    /// <summary>
+    /// An open posting on the same route, wanting one seat at about the hour the
+    /// trip leaves — which is what the reverse match compares against.
+    /// </summary>
+    /// <summary>
+    /// A trip waiting for a driver, on the same route, wanting one seat at about
+    /// the hour the trip leaves — which is what the reverse match compares
+    /// against.
+    ///
+    /// Seeded with its rider's participation, because that is where the riders
+    /// to tell come from: a request with nobody on it is a pool nobody is
+    /// waiting on.
+    /// </summary>
+    private static RideRequest Posting(FakeUnitOfWork uow, int id, int riderId, int seats = 1) =>
+        Build.Demand(uow, id, riderId, seats, departAt: DateTime.UtcNow.AddMinutes(5));
 
     private static async Task<List<int>> Told(FakeUnitOfWork uow, Trip trip)
     {
@@ -76,31 +81,29 @@ public class ReverseMatchTests
     {
         var uow = new FakeUnitOfWork();
         uow.Store<User>().Add(Build.Rider(9));
-        uow.Store<RideRequest>().Add(Hail(31, riderId: 9));
+        Posting(uow, 31, riderId: 9);
 
         Assert.Equal([9], await Told(uow, TheTrip()));
     }
 
     [Fact]
-    public async Task A_rider_whose_hail_already_closed_is_not_told()
+    public async Task A_rider_whose_request_already_closed_is_not_told()
     {
         var uow = new FakeUnitOfWork();
-        var hail = Hail(31, riderId: 9);
-        hail.Status = RideRequestStatus.Cancelled;
-        uow.Store<RideRequest>().Add(hail);
+        var request = Posting(uow, 31, riderId: 9);
+        request.Status = RideRequestStatus.Cancelled;
 
         Assert.Empty(await Told(uow, TheTrip()));
     }
 
     [Fact]
-    public async Task A_rider_whose_hail_has_expired_is_not_told()
+    public async Task A_rider_whose_posting_has_already_departed_is_not_told()
     {
         // Still Open on the row — the sweeper has not caught up — but past its
-        // deadline, so the rider has already been shown the request as over.
+        // departure has come and gone, so it is over whatever the column says.
         var uow = new FakeUnitOfWork();
-        var hail = Hail(31, riderId: 9);
-        hail.ExpiresAt = DateTime.UtcNow.AddSeconds(-1);
-        uow.Store<RideRequest>().Add(hail);
+        var posting = Posting(uow, 31, riderId: 9);
+        posting.DepartAt = DateTime.UtcNow.AddSeconds(-1);
 
         Assert.Empty(await Told(uow, TheTrip()));
     }
@@ -109,7 +112,7 @@ public class ReverseMatchTests
     public async Task A_rider_asking_for_more_seats_than_are_left_is_not_told()
     {
         var uow = new FakeUnitOfWork();
-        uow.Store<RideRequest>().Add(Hail(31, riderId: 9, seats: 3));
+        Posting(uow, 31, riderId: 9, seats: 3);
 
         Assert.Empty(await Told(uow, TheTrip(seatsLeft: 2)));
     }
@@ -118,17 +121,17 @@ public class ReverseMatchTests
     public async Task The_driver_is_never_told_about_their_own_trip()
     {
         var uow = new FakeUnitOfWork();
-        uow.Store<RideRequest>().Add(Hail(31, riderId: DriverId));
+        Posting(uow, 31, riderId: DriverId);
 
         Assert.Empty(await Told(uow, TheTrip()));
     }
 
     [Fact]
-    public async Task Each_waiting_rider_is_told_once_however_many_hails_they_hold()
+    public async Task Each_waiting_rider_is_told_once_however_many_postings_they_hold()
     {
         var uow = new FakeUnitOfWork();
-        uow.Store<RideRequest>().Add(Hail(31, riderId: 9));
-        uow.Store<RideRequest>().Add(Hail(32, riderId: 9));
+        Posting(uow, 31, riderId: 9);
+        Posting(uow, 32, riderId: 9);
 
         Assert.Equal([9], await Told(uow, TheTrip()));
     }

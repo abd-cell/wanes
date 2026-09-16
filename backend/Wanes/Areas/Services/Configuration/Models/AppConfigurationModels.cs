@@ -1,6 +1,7 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
+using Wanes.Areas.Domain.RiderTrips;
+using Wanes.Areas.Domain.RideRequests;
 using Wanes.Areas.Domain.Trips;
-using Wanes.Shareds.Constants;
 using Wanes.Shareds.Enums;
 
 namespace Wanes.Areas.Services.Configuration.Models;
@@ -25,12 +26,39 @@ public class AppConfigurationOutput
     public AppFont FontFamily { get; set; }
 
     /// <summary>
-    /// Minutes an unanswered hail stays open. The clients need it as well as the
-    /// server: the rider's search screen and the driver's request card both draw
-    /// a countdown, and a window they guessed at would disagree with the one the
-    /// server actually enforces.
+    /// Minutes before departure a seat threshold has to be decided, and minutes
+    /// before that the driver is asked. Both are on the wire because both draw
+    /// clocks: the driver's card counts down to the decision, and the rider's
+    /// seat says when they will know whether the trip runs.
     /// </summary>
-    public int HailRequestTtlMinutes { get; set; }
+    public int ConfirmCutoffMinutes { get; set; }
+
+    public int ConfirmDecisionLeadMinutes { get; set; }
+
+    /// <summary>
+    /// How many passengers a new trip asks for before it confirms, unless its
+    /// driver says otherwise. On the wire because the posting form has to open
+    /// on the marketplace's number rather than on 1 — a driver who never looks
+    /// at the field should still get the platform's answer, and the app cannot
+    /// guess it.
+    /// </summary>
+    public int MinimumPassengersDefault { get; set; }
+
+    /// <summary>
+    /// How long a ride request collects driver offers before one is selected.
+    /// Zero — the shipped value — means the first interested driver gets it
+    /// immediately. On the wire because the driver's card has to know whether
+    /// tapping "I can drive this" hands them a trip or an offer in a queue.
+    /// </summary>
+    public int DriverSelectionWindowMinutes { get; set; }
+
+    /// <summary>
+    /// The average speed behind every duration estimate. Sent because the app
+    /// computes the earliest departure a rider may post for *before* it calls
+    /// the server — a rider should be told "not before 08:40" while they are
+    /// picking the time, not refused after they tap Post.
+    /// </summary>
+    public double AverageSpeedKmh { get; set; }
 
     /// <summary>
     /// Flag-fall and per-kilometre rate behind a derived per-seat price.
@@ -72,7 +100,11 @@ public class AppConfigurationOutput
         CurrencyDecimals = e.CurrencyDecimals;
         PrimaryColor = e.PrimaryColor;
         FontFamily = e.FontFamily;
-        HailRequestTtlMinutes = e.HailRequestTtlMinutes;
+        ConfirmCutoffMinutes = e.ConfirmCutoffMinutes;
+        ConfirmDecisionLeadMinutes = e.ConfirmDecisionLeadMinutes;
+        MinimumPassengersDefault = e.MinimumPassengersDefault;
+        DriverSelectionWindowMinutes = e.DriverSelectionWindowMinutes;
+        AverageSpeedKmh = e.AverageSpeedKmh;
         FareBaseAmount = e.FareBaseAmount;
         FarePerKm = e.FarePerKm;
         SupportPhone = e.SupportPhone;
@@ -116,12 +148,41 @@ public class AppConfigurationInput
     public AppFont FontFamily { get; set; } = AppFont.Jakarta;
 
     /// <summary>
-    /// Hail lifetime in minutes. Bounded rather than free: a sub-minute window
-    /// expires before any driver could answer, and a multi-hour one leaves a
-    /// request the rider has long since given up on still reaching drivers.
+    /// How long before departure a seat threshold has to be decided. The floor
+    /// is what makes the answer useful to a stood-down rider; the ceiling stops
+    /// a trip being called off while it was still filling.
     /// </summary>
-    [Range(MatchRules.MinHailTtlMinutes, MatchRules.MaxHailTtlMinutes)]
-    public int HailRequestTtlMinutes { get; set; } = MatchRules.DefaultHailTtlMinutes;
+    [Range(TripConfirmationRules.MinCutoffMinutes, TripConfirmationRules.MaxCutoffMinutes)]
+    public int ConfirmCutoffMinutes { get; set; } = TripConfirmationRules.DefaultCutoffMinutes;
+
+    /// <summary>How much warning the driver gets before that cutoff.</summary>
+    [Range(TripConfirmationRules.MinDecisionLeadMinutes, TripConfirmationRules.MaxDecisionLeadMinutes)]
+    public int ConfirmDecisionLeadMinutes { get; set; } = TripConfirmationRules.DefaultDecisionLeadMinutes;
+
+    /// <summary>
+    /// The passenger threshold a new trip starts with. Bounded above by what an
+    /// ordinary car can seat: a default no vehicle can reach would post trips
+    /// that can never confirm.
+    /// </summary>
+    [Range(TripConfirmationRules.NoThreshold, TripConfirmationRules.MaxMinimumPassengers)]
+    public int MinimumPassengersDefault { get; set; } = TripConfirmationRules.DefaultMinimumPassengers;
+
+    /// <summary>
+    /// Minutes a ride request collects offers before a driver is selected. Zero
+    /// keeps first-come-first-served, which is what ships; the ceiling is there
+    /// because riders waiting on a decision the marketplace could have made for
+    /// them is the failure this window trades against.
+    /// </summary>
+    [Range(DriverSelectionRules.ImmediateSelection, DriverSelectionRules.MaxSelectionWindowMinutes)]
+    public int DriverSelectionWindowMinutes { get; set; } = DriverSelectionRules.ImmediateSelection;
+
+    /// <summary>
+    /// Average speed for duration estimates, in km/h. Bounded because it divides:
+    /// zero would make every estimate infinite, and an unrealistic ceiling would
+    /// let a rider post a four-seat trip leaving in ten minutes.
+    /// </summary>
+    [Range(RiderTripRules.MinAverageSpeedKmh, RiderTripRules.MaxAverageSpeedKmh)]
+    public double AverageSpeedKmh { get; set; } = RiderTripRules.DefaultAverageSpeedKmh;
 
     /// <summary>
     /// Flag-fall for a derived per-seat price. Zero is allowed and means the

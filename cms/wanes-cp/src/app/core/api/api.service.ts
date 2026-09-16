@@ -7,7 +7,8 @@ import {
   AdminPage, AnalyticsBreakdowns, AnalyticsLeaderboards, AnalyticsOperations,
   AnalyticsOverview, AnalyticsTimeSeries, AppConfiguration, AppResponse, AuditRow,
   AuthResult, BroadcastInput, BroadcastResult, BulkNotificationInput, BulkNotificationResult,
-  DeviceType, DriverRow, LookupOption, NotificationStats, PageQuery, ResourceRecord, Roles,
+  DeviceType, DriverDocument, DriverRow, DriverStatus, LookupOption, NotificationStats, PageQuery,
+  ResourceRecord, Roles,
   TargetedSendInput, TargetedSendResult,
 } from './models';
 
@@ -59,12 +60,28 @@ export class ApiService {
     this.http.put<AppResponse<AppConfiguration>>(`${this.base}admin/configuration`, body);
 
   // ── admin: drivers (verification queue) ──
-  pendingDrivers = (q: PageQuery): Observable<AppResponse<AdminPage<DriverRow>>> =>
+  /** Defaults to applications awaiting a decision; pass a status to reopen the decided ones. */
+  pendingDrivers = (q: PageQuery, status?: DriverStatus): Observable<AppResponse<AdminPage<DriverRow>>> =>
     this.http.get<AppResponse<AdminPage<DriverRow>>>(`${this.base}admin/drivers/pending`,
-      { params: this.toParams(q) });
+      { params: this.toParams(q, { status }) });
 
-  verifyDriver = (userId: number, approve: boolean): Observable<AppResponse> =>
-    this.http.post<AppResponse>(`${this.base}admin/drivers/${userId}/verify`, { approve });
+  driverDocuments = (userId: number): Observable<AppResponse<DriverDocument[]>> =>
+    this.http.get<AppResponse<DriverDocument[]>>(`${this.base}admin/drivers/${userId}/documents`);
+
+  /**
+   * The bytes of one document.
+   *
+   * Fetched as a blob and shown from an object URL rather than handed to an
+   * `<img src>`: the endpoint is admin-only, and an image tag cannot carry the
+   * bearer token the interceptor puts on this call. It is also the only
+   * response in the app that is not the JSON envelope — the body is a JPEG.
+   */
+  driverDocumentContent = (documentId: number): Observable<Blob> =>
+    this.http.get(`${this.base}admin/drivers/documents/${documentId}/content`,
+      { responseType: 'blob' });
+
+  verifyDriver = (userId: number, approve: boolean, note?: string): Observable<AppResponse> =>
+    this.http.post<AppResponse>(`${this.base}admin/drivers/${userId}/verify`, { approve, note });
 
   // ── admin: audit ──
   audit = (q: PageQuery, action?: string): Observable<AppResponse<AdminPage<AuditRow>>> =>

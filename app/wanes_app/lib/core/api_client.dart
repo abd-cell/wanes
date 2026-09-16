@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart' show MediaType;
 import 'api_log.dart';
 import 'app_response.dart';
 import 'error_messages.dart';
@@ -35,6 +37,10 @@ class ApiClient {
 
   final _http = http.Client();
   static const _timeout = Duration(seconds: 20);
+
+  /// Uploads carry megabytes over whatever connection the phone has, so they
+  /// get their own budget: 20 seconds fails a photo that would have arrived.
+  static const _uploadTimeout = Duration(seconds: 90);
 
   /// In-flight refresh, shared by every call that 401s while it runs. Refresh
   /// tokens rotate on use, so two concurrent refreshes would race and one of
@@ -106,6 +112,97 @@ class ApiClient {
     return _send<T>('DELETE', uri, null, () => _http.delete(uri, headers: _headers()), parse);
   }
 
+  /// Posts one file as `multipart/form-data` — how the driver's licence and id
+  /// photos reach the API. Base64 in a JSON body would cost a third more bytes
+  /// on a connection that is already the slow part of the upload.
+  ///
+  /// Answers the usual envelope, so callers handle it like any other call.
+  Future<AppResponse<T>> postFile<T>(
+    String path, {
+    required String field,
+    required Uint8List bytes,
+    required String filename,
+    required String contentType,
+    Map<String, String> fields = const {},
+    T Function(Object? data)? parse,
+  }) {
+    final uri = _uri(path);
+
+    Future<http.Response> send() async {
+      final request = http.MultipartRequest('POST', uri);
+      // The multipart body writes its own Content-Type with the boundary; ours
+      // would replace it and the server would fail to parse a single part.
+      request.headers.addAll(_headers()..remove('Content-Type'));
+      request.fields.addAll(fields);
+      request.files.add(http.MultipartFile.fromBytes(field, bytes,
+          filename: filename, contentType: MediaType.parse(contentType)));
+      return http.Response.fromStream(await request.send());
+    }
+
+    // The log keeps what was sent, not the megabytes of it.
+    final logged = {...fields, field: filename, 'bytes': bytes.length};
+    return _send<T>('POST', uri, logged, send, parse, timeout: _uploadTimeout);
+  }
+
+  /// Fetches a binary body — a stored document, not an envelope.
+  ///
+  /// Its own path rather than a variant of [get] because there is no JSON to
+  /// decode on success. The failure paths still are: the API answers a refused
+  /// or missing file with the normal envelope, which is decoded here so the
+  /// caller sees the same typed error it would from any other call.
+  Future<AppResponse<Uint8List>> getBytes(String path, {bool allowRetry = true}) async {
+    final uri = _uri(path);
+    final authenticated = Session.instance.token != null;
+    final watch = Stopwatch()..start();
+
+    late http.Response res;
+    try {
+      res = await _http.get(uri, headers: _headers()).timeout(_timeout);
+    } catch (_) {
+      ApiLog.instance.recordFailure(
+        method: 'GET',
+        uri: uri,
+        requestBody: null,
+        failure: 'file fetch failed',
+        durationMs: watch.elapsedMilliseconds,
+        authenticated: authenticated,
+      );
+      return AppResponse<Uint8List>.failure(ClientErrorCode.network);
+    }
+
+    ApiLog.instance.recordResponse(
+      method: 'GET',
+      uri: uri,
+      requestBody: null,
+      statusCode: res.statusCode,
+      responseBody: '<${res.bodyBytes.length} bytes>',
+      durationMs: watch.elapsedMilliseconds,
+      authenticated: authenticated,
+    );
+
+    if (res.statusCode == 401 && allowRetry && authenticated) {
+      switch (await _refreshSession()) {
+        case _RefreshOutcome.renewed:
+          return getBytes(path, allowRetry: false);
+        case _RefreshOutcome.rejected:
+          return AppResponse<Uint8List>.failure(105); // SessionExpired
+        case _RefreshOutcome.unavailable:
+          break;
+      }
+    }
+
+    final contentType = res.headers['content-type'] ?? '';
+    if (contentType.contains('json')) {
+      // The server refused, and said so in the envelope.
+      return _decode<Uint8List>(res.statusCode, res.body, null);
+    }
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      return AppResponse<Uint8List>.failure(ClientErrorCode.network);
+    }
+
+    return AppResponse<Uint8List>(success: true, errorCode: 0, data: res.bodyBytes);
+  }
+
   /// Runs [request], mapping every failure mode to a typed [AppResponse]:
   /// no network, timeout, non-JSON body, or a decoded error envelope.
   ///
@@ -119,6 +216,7 @@ class ApiClient {
     Future<http.Response> Function() request,
     T Function(Object? data)? parse, {
     bool allowRetry = true,
+    Duration? timeout,
   }) async {
     final authenticated = Session.instance.token != null;
     final watch = Stopwatch()..start();
@@ -137,7 +235,7 @@ class ApiClient {
 
     late http.Response res;
     try {
-      res = await request().timeout(_timeout);
+      res = await request().timeout(timeout ?? _timeout);
     } on TimeoutException {
       return transportFailure(ClientErrorCode.timeout, 'timeout');
     } on SocketException {
@@ -166,7 +264,8 @@ class ApiClient {
     if (res.statusCode == 401 && allowRetry && authenticated) {
       switch (await _refreshSession()) {
         case _RefreshOutcome.renewed:
-          return _send<T>(method, uri, body, request, parse, allowRetry: false);
+          return _send<T>(method, uri, body, request, parse,
+              allowRetry: false, timeout: timeout);
         case _RefreshOutcome.rejected:
           return AppResponse<T>.failure(105); // SessionExpired
         case _RefreshOutcome.unavailable:

@@ -1,10 +1,17 @@
 ﻿namespace Wanes.Shareds.Constants;
 
 /// <summary>
-/// The one place the rider↔driver matching envelope is defined. Search, the
-/// hail push and the reverse match a driver triggers by posting a trip all read
-/// from here — when these numbers lived in three services they drifted, and a
-/// rider could open a 50 km hail that only ever reached drivers 2 km away.
+/// The one place the rider↔driver matching envelope is defined. Tiered search,
+/// the driver's board of rider-posted trips and the reverse match a driver
+/// triggers by posting a trip all read from here — when these numbers lived in
+/// three services they drifted, and a rider could post a 50 km ask that only
+/// ever reached drivers 2 km away.
+///
+/// What is *not* here: when a seat threshold has to be decided
+/// (<c>Areas/Domain/Trips/TripConfirmationRules</c>), how far ahead
+/// a rider may post (<c>Areas/Domain/RiderTrips/RiderTripRules</c>) and how a
+/// recurrence unrolls (<c>Areas/Domain/Schedules/RecurrenceRules</c>). Those are
+/// lifecycle rules that happen to involve time; these are about *reach*.
 /// </summary>
 public static class MatchRules
 {
@@ -14,6 +21,8 @@ public static class MatchRules
     /// <summary>Rider chose "Anywhere": intercity, at the cost of a longer walk.</summary>
     public const int WideRadiusMeters = 50000;
 
+    public static int RadiusFor(bool nearby) => nearby ? NearRadiusMeters : WideRadiusMeters;
+
     /// <summary>
     /// How far either side of a wanted departure two rides count as the same
     /// moment.
@@ -21,14 +30,14 @@ public static class MatchRules
     /// Note what this is *not*: search does not filter on it. A trip with free
     /// seats that has not departed is discoverable whenever it leaves, and the
     /// rider's wanted time only ranks it (<see cref="RankTimeScale"/>). Used as
-    /// a hard window, this quietly hid a perfectly good trip two hours out and
-    /// sent the rider off to hail instead.
+    /// a hard window, this quietly hid a perfectly good trip two hours out.
     ///
     /// What still reads it: the driver clash window (two of one driver's
-    /// departures this close compete for the same driver) and the reverse-match
+    /// departures this close compete for the same driver), the reverse-match
     /// push (a rider is told about a *new* trip only if it serves roughly the
     /// hour they asked for — an unprompted push about next week is spam, which
-    /// is a different question from what a search may show).
+    /// is a different question from what a search may show) and the immediate
+    /// fan-out for a rider-posted trip leaving right away.
     /// </summary>
     public static readonly TimeSpan TimeWindow = TimeSpan.FromMinutes(30);
 
@@ -49,7 +58,7 @@ public static class MatchRules
     ///
     /// The database can order on one end or the other but not on the combined
     /// walk-and-wait score — that needs real distances, and the geography
-    /// operators only answer in metres inside a query. So a pool comes back
+    /// operators only answer in metres *inside* a query. So a pool comes back
     /// ordered by proximity and is ranked properly in memory. Wide enough that
     /// the trip a rider actually wants is inside it; capped because "every
     /// future trip on this route" has no natural ceiling.
@@ -57,44 +66,23 @@ public static class MatchRules
     public const int CandidatePool = 200;
 
     /// <summary>
-    /// How long an unanswered hail stays open, when nobody has said otherwise.
+    /// How far ahead a trip claimed from a rider-posted one departs, at the
+    /// earliest.
     ///
-    /// The live value is <c>AppConfiguration.HailRequestTtlMinutes</c>, which an
-    /// admin sets from the CMS — this is what a fresh install starts with, and
-    /// what a client falls back to before it has read the configuration.
+    /// A driver who takes a posting is not leaving this instant — they have to
+    /// reach the pickup. Stamping <c>DepartAt = UtcNow</c> made the row a lie
+    /// and, worse, an invisible one: search only offers trips departing in the
+    /// future, so the trip was already in the past by the time anyone looked,
+    /// and no second rider could ever join it.
     /// </summary>
-    public const int DefaultHailTtlMinutes = 10;
-
-    /// <summary>Bounds on the admin-set TTL. Below a minute no driver can answer;
-    /// above four hours a forgotten hail keeps pinging drivers all afternoon.</summary>
-    public const int MinHailTtlMinutes = 1;
-
-    public const int MaxHailTtlMinutes = 240;
-
-    /// <summary><see cref="DefaultHailTtlMinutes"/> as a span.</summary>
-    public static readonly TimeSpan HailTtl = TimeSpan.FromMinutes(DefaultHailTtlMinutes);
-
-    /// <summary>An admin-set TTL, clamped to something a hail can sanely live for.</summary>
-    public static TimeSpan HailTtlFor(int minutes) =>
-        TimeSpan.FromMinutes(Math.Clamp(minutes, MinHailTtlMinutes, MaxHailTtlMinutes));
-
-    /// <summary>
-    /// How far ahead a hail-accepted trip departs.
-    ///
-    /// A driver who takes a hail is not leaving this instant — they have to
-    /// reach the pickup first. Stamping <c>DepartAt = UtcNow</c> made the row a
-    /// lie and, worse, an invisible one: search only offers trips departing in
-    /// the future, so the trip was already in the past by the time anyone
-    /// looked, and no second rider could ever join it.
-    /// </summary>
-    public static readonly TimeSpan HailPickupLead = TimeSpan.FromMinutes(5);
+    public static readonly TimeSpan PickupLead = TimeSpan.FromMinutes(5);
 
     /// <summary>
     /// How long past its departure a trip that has not started is still
     /// offered — the rider is at the kerb, the driver is a few minutes late.
     ///
-    /// Search cannot simply require a future departure. That excludes the
-    /// hail-accepted trip above the moment its lead elapses, and it excludes
+    /// Search cannot simply require a future departure. That excludes a
+    /// just-claimed trip the moment its pickup lead elapses, and it excludes
     /// every posted trip whose driver is running late but has not pressed
     /// start. Keeping the grace short is what still excludes the case it was
     /// written for: a trip from this morning that was never started at all.
@@ -102,21 +90,21 @@ public static class MatchRules
     public static readonly TimeSpan BoardingGrace = TimeSpan.FromMinutes(15);
 
     /// <summary>
-    /// When a hail wanted for <paramref name="wantedDepartAt"/> would actually leave.
+    /// When a ride wanted for <paramref name="wantedDepartAt"/> would actually
+    /// leave.
     ///
-    /// A hail for "now" still leaves after <see cref="HailPickupLead"/> — the
-    /// driver has to reach the pickup. A hail for a scheduled time leaves at
-    /// that time, which is the whole point of carrying the rider's wanted
-    /// departure onto the request: a rider who searched for six this evening and
-    /// found nothing is asking a driver to take them at six, not right now.
+    /// A posting for "now" still leaves after <see cref="PickupLead"/> — the
+    /// driver has to reach the pickup. One for a scheduled time leaves at that
+    /// time, which is the whole point of a rider naming an hour: they are asking
+    /// a driver to take them at six, not right now.
     ///
     /// The lead is a floor, not an offset, so a wanted time that has since
-    /// slipped into the past — an old hail answered late — still produces a
+    /// slipped into the past — an old posting claimed late — still produces a
     /// departure search can offer.
     /// </summary>
-    public static DateTime HailDepartureFor(DateTime wantedDepartAt, DateTime now)
+    public static DateTime DepartureFor(DateTime wantedDepartAt, DateTime now)
     {
-        var earliest = now.Add(HailPickupLead);
+        var earliest = now.Add(PickupLead);
         return wantedDepartAt > earliest ? wantedDepartAt : earliest;
     }
 
@@ -150,5 +138,48 @@ public static class MatchRules
     public static bool IsLiveFix(DateTime? reportedAt, DateTime now) =>
         reportedAt != null && reportedAt > LiveFixFloor(now);
 
-    public static int RadiusFor(bool nearby) => nearby ? NearRadiusMeters : WideRadiusMeters;
+    // ── The corridor: trips that pass the rider's way ──
+
+    /// <summary>
+    /// How far off a trip's route the rider's own ends may sit and still count
+    /// as being on the way.
+    ///
+    /// Deliberately tighter than <see cref="NearRadiusMeters"/>. A direct match
+    /// asks the rider to walk to somebody's *planned* endpoint, which they
+    /// opted into by choosing Nearby or Anywhere; a corridor match asks the
+    /// driver to stop at a point they had not planned, and the driver never
+    /// opted into anything. So this one is fixed rather than following the
+    /// rider's toggle.
+    /// </summary>
+    public const int CorridorMeters = 2000;
+
+    /// <summary>
+    /// The most a corridor pickup and drop-off may add to the driver's run,
+    /// as a share of the run itself.
+    ///
+    /// A share rather than a distance because the same 4 km detour is trivial on
+    /// an intercity leg and absurd across town. <see cref="MinDetourMeters"/>
+    /// keeps the short end sane: on a 3 km hop a pure fraction would refuse
+    /// every joiner, so a small absolute allowance is always granted.
+    ///
+    /// Straight-line, like everything else in the MVP: it bounds the *ends*, not
+    /// the driving. A real added-distance figure needs route geometry, and this
+    /// is expressed against the route so it improves the day that arrives.
+    /// </summary>
+    public const double MaxDetourFraction = 0.25;
+
+    public const int MinDetourMeters = 1500;
+
+    /// <summary>The detour a run of <paramref name="routeKm"/> will tolerate, in km.</summary>
+    public static double MaxDetourKm(double routeKm) =>
+        Math.Max(MinDetourMeters / 1000.0, routeKm * MaxDetourFraction);
+
+    // ── Ranking across tiers ──
+    //
+    // There is deliberately no tier weight here any more. A direct match cannot
+    // be beaten by a corridor match, however convenient the corridor one looks,
+    // and that used to be arranged by adding a constant large enough to swamp
+    // every sort key — which held only while the keys stayed small, and two of
+    // them did not. The band is now the first key the ranking orders on
+    // (SearchService.Rank), so no magnitude of anything else can cross it.
 }

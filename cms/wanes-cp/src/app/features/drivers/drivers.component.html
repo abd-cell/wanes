@@ -2,7 +2,17 @@
   <div class="page-head">
     <h1>{{ 'drivers_title' | translate }}</h1>
     <span class="spacer"></span>
-    <button class="btn btn-ghost btn-sm" (click)="load()">{{ 'common_search' | translate }}</button>
+    <button class="btn btn-ghost btn-sm" (click)="load()">{{ 'common_refresh' | translate }}</button>
+  </div>
+
+  <!-- The decided piles are reachable too: without them a driver rejected by a
+       mis-click would be unreachable until they re-applied. -->
+  <div class="tabs">
+    @for (t of tabs; track t) {
+      <button class="tab" [class.on]="tab() === t" (click)="selectTab(t)">
+        {{ 'driverstatus_' + t | translate }}
+      </button>
+    }
   </div>
 
   <div class="card">
@@ -19,6 +29,8 @@
               <th>{{ 'col_name' | translate }}</th>
               <th>{{ 'col_phone' | translate }}</th>
               <th>{{ 'col_license' | translate }}</th>
+              <th>{{ 'col_documents' | translate }}</th>
+              <th>{{ 'col_applied_at' | translate }}</th>
               <th>{{ 'col_status' | translate }}</th>
               <th>{{ 'col_actions' | translate }}</th>
             </tr>
@@ -30,14 +42,84 @@
                 <td>{{ r.name || '—' }}</td>
                 <td>{{ r.phone }}</td>
                 <td class="muted">{{ r.licenseNumber || '—' }}</td>
-                <td><span class="badge badge-pending">{{ 'status_pending' | translate }}</span></td>
+                <td>
+                  @if (r.documentCount > 0) {
+                    <span class="doc-count">{{ r.documentCount }}</span>
+                  } @else {
+                    <span class="err">{{ 'drivers_no_documents' | translate }}</span>
+                  }
+                </td>
+                <td class="muted">{{ r.appliedAt ? (r.appliedAt | date: 'yyyy-MM-dd HH:mm') : '—' }}</td>
+                <td><span class="badge" [class]="statusBadge(r.driverStatus)">{{ 'driverstatus_' + r.driverStatus | translate }}</span></td>
                 <td>
                   <div class="row-actions">
-                    <button class="btn btn-primary btn-sm" (click)="decide(r, true)">{{ 'action_approve' | translate }}</button>
-                    <button class="btn btn-danger btn-sm" (click)="decide(r, false)">{{ 'action_reject' | translate }}</button>
+                    <button class="btn btn-primary btn-sm" (click)="toggle(r)">
+                      {{ (openId() === r.id ? 'action_close' : 'action_review') | translate }}
+                    </button>
                   </div>
                 </td>
               </tr>
+
+              @if (openId() === r.id) {
+                <tr class="review-row">
+                  <td colspan="8">
+                    <div class="review">
+                      <!-- The evidence first, the buttons after it: the point of
+                           the panel is that nobody decides without looking. -->
+                      @if (documentsLoading()) {
+                        <p class="hint">{{ 'common_loading' | translate }}</p>
+                      } @else if (documents().length === 0) {
+                        <p class="hint">{{ 'drivers_no_documents_hint' | translate }}</p>
+                      } @else {
+                        <div class="docs">
+                          @for (d of documents(); track d.id) {
+                            <figure class="doc">
+                              <button class="doc-frame" type="button"
+                                      (click)="d.isPdf ? openInNewTab(d) : lightbox.set(d)">
+                                @if (previewUrl(d) && !d.isPdf) {
+                                  <img [src]="previewUrl(d)" [alt]="documentLabel(d.type)" />
+                                } @else if (d.isPdf) {
+                                  <span class="doc-pdf">PDF</span>
+                                } @else {
+                                  <span class="doc-missing">{{ 'doc_unavailable' | translate }}</span>
+                                }
+                              </button>
+                              <figcaption>
+                                <strong>{{ documentLabel(d.type) }}</strong>
+                                <span class="muted">{{ fileSize(d.sizeBytes) }} · {{ d.uploadedAt | date: 'yyyy-MM-dd' }}</span>
+                              </figcaption>
+                            </figure>
+                          }
+                        </div>
+                      }
+
+                      @if (r.reviewNote) {
+                        <p class="prior-note">
+                          <strong>{{ 'driver_last_note' | translate }}</strong> {{ r.reviewNote }}
+                        </p>
+                      }
+
+                      <label class="note-label" [for]="'note-' + r.id">{{ 'driver_note_label' | translate }}</label>
+                      <textarea [id]="'note-' + r.id" class="note" rows="2" maxlength="500"
+                                [ngModel]="note()" (ngModelChange)="note.set($event)"
+                                [placeholder]="'driver_note_placeholder' | translate"></textarea>
+                      <p class="hint">{{ 'driver_note_hint' | translate }}</p>
+
+                      <div class="decide">
+                        <button class="btn btn-primary btn-sm" [disabled]="deciding()" (click)="decide(r, true)">
+                          {{ 'action_approve' | translate }}
+                        </button>
+                        <button class="btn btn-danger btn-sm" [disabled]="deciding()" (click)="decide(r, false)">
+                          {{ 'action_reject' | translate }}
+                        </button>
+                        <button class="btn btn-ghost btn-sm" (click)="closePanel()">
+                          {{ 'action_cancel' | translate }}
+                        </button>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              }
             }
           </tbody>
         </table>
@@ -45,3 +127,18 @@
     }
   </div>
 </div>
+
+@if (lightbox(); as doc) {
+  <div class="lightbox" (click)="lightbox.set(null)">
+    <div class="lightbox-body" (click)="$event.stopPropagation()">
+      <div class="lightbox-head">
+        <strong>{{ documentLabel(doc.type) }}</strong>
+        <span class="muted">{{ doc.fileName }}</span>
+        <span class="spacer"></span>
+        <button class="btn btn-ghost btn-sm" (click)="openInNewTab(doc)">{{ 'doc_open_tab' | translate }}</button>
+        <button class="btn btn-ghost btn-sm" (click)="lightbox.set(null)">{{ 'action_close' | translate }}</button>
+      </div>
+      <img [src]="previewUrl(doc)" [alt]="documentLabel(doc.type)" />
+    </div>
+  </div>
+}

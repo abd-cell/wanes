@@ -92,7 +92,10 @@ class GeocodingService {
       'q': q,
       'format': 'jsonv2',
       'addressdetails': '1',
-      'limit': '12',
+      // A slightly deeper page than the eye needs: the picker filter row
+      // narrows this client-side, and a category is only worth offering when
+      // enough of the answer came back to fill it.
+      'limit': '18',
       'accept-language': AppLocalizations.current.localeName,
       'viewbox': viewbox,
       // Bias by viewbox, restrict by country: a rider whose fix has drifted

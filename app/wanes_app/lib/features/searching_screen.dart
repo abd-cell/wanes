@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
-import '../core/app_config.dart';
 import '../core/error_messages.dart';
 import '../core/l10n.dart';
 import '../core/sse_client.dart';
@@ -15,29 +14,39 @@ import '../widgets/wanes_motion.dart';
 import '../widgets/wanes_ui.dart';
 import 'live_trip_screen.dart';
 
-/// Hail / no match — prototype screen 04. The map pings out from the rider's
-/// pin while nearby drivers are notified; a sheet reports how many were
-/// reached and how long the request has left.
+/// Waiting for a driver — prototype screen 04, re-pointed at the posting the
+/// rider just made. The map pings out from their pin while nearby drivers are
+/// told; the sheet counts down to the departure they asked for, because that is
+/// how long a driver has to take it.
+///
+/// The clock is the interesting change. A hail had a window of its own and
+/// expired on it; a posting runs until it leaves, so the countdown here is the
+/// wait itself. Nothing is invented locally: the departure came back on the row.
 class SearchingScreen extends StatefulWidget {
   const SearchingScreen({
     super.key,
-    this.rideRequestId,
+    this.riderTripId,
+    this.departAt,
+    this.seats = 1,
     this.driversNotified = 0,
-    this.expiresAt,
     this.originLat,
     this.originLng,
     this.destLat,
     this.destLng,
   });
 
-  final int? rideRequestId;
+  final int? riderTripId;
 
-  /// How many drivers the search actually reached (from the search response).
+  /// The departure the posting asked for — the deadline a driver has to claim
+  /// it by, and what this screen counts down to.
+  final DateTime? departAt;
+
+  /// Seats the posting wants, for the sheet's summary line.
+  final int seats;
+
+  /// How many drivers were told, when the caller knows. Zero simply means the
+  /// figure was not to hand — the posting is on the board either way.
   final int driversNotified;
-
-  /// The deadline the server stamped on the hail. Null on an older API, where
-  /// the configured window measured from now is the best guess available.
-  final DateTime? expiresAt;
 
   /// What the rider asked for. With these the screen draws a real map; without
   /// them it falls back to the prototype's illustration.
@@ -55,7 +64,7 @@ class _SearchingScreenState extends State<SearchingScreen>
   final _sse = SseClient();
   final _trips = TripService();
   final _bookings = BookingService();
-  final _requests = RideRequestService();
+  final _riderTrips = RiderTripService();
   StreamSubscription<Map<String, dynamic>>? _sseSub;
   Timer? _timer;
 
@@ -73,20 +82,19 @@ class _SearchingScreenState extends State<SearchingScreen>
       AnimationController(vsync: this, duration: WanesMotion.bob ~/ 2)
         ..repeat(reverse: true);
 
-  /// The hail's deadline, and the time left on it.
+  /// When the posting leaves, and the time left until then.
   ///
-  /// The server's stamp wins: the window is admin-set, so a screen counting
-  /// down its own idea of the TTL would keep saying "still looking" after the
-  /// request had closed.
+  /// The server's own departure wins. A screen counting down its own idea of a
+  /// window would keep saying "still looking" after the posting had gone.
   late final DateTime _expiresAt =
-      widget.expiresAt?.toLocal() ?? DateTime.now().add(AppConfigController.value.hailTtl);
+      widget.departAt?.toLocal() ?? DateTime.now().add(const Duration(minutes: 30));
   late Duration _left = _expiresAt.difference(DateTime.now());
 
-  /// The full window the bar measures against — from when this screen opened
-  /// to the deadline, so the strip starts full however long the hail was given.
+  /// The span the bar measures against — from when this screen opened to the
+  /// departure, so the strip starts full however far ahead the posting is.
   late final Duration _window = () {
     final span = _expiresAt.difference(DateTime.now());
-    return span > Duration.zero ? span : AppConfigController.value.hailTtl;
+    return span > Duration.zero ? span : const Duration(minutes: 30);
   }();
 
   bool _accepted = false;
@@ -113,15 +121,16 @@ class _SearchingScreenState extends State<SearchingScreen>
   Future<void> _listenForAccept() async {
     _sseSub = _sse.events.listen((event) {
       if (!mounted) return;
-      // The server closes a hail on every client at once. For the rider that
-      // means their own request ended without a driver — usually the window
-      // running out, which their countdown was only guessing at.
-      if (event['event'] == 'rideRequestClosed') {
-        final id = (event['requestId'] as num?)?.toInt();
-        final reason = RideRequestClosedReason.fromWire(event['reason'] as String?);
+      // The server closes a request on every client at once. For the rider
+      // that means their own request ended without a driver — its departure
+      // came, or an admin closed it — which their countdown was only guessing
+      // at.
+      if (event['event'] == 'riderTripClosed') {
+        final id = (event['rideRequestId'] as num?)?.toInt();
+        final reason = RiderTripClosedReason.fromWire(event['reason'] as String?);
         if (id != null &&
-            id == widget.rideRequestId &&
-            reason != RideRequestClosedReason.matched) {
+            id == widget.riderTripId &&
+            reason != RiderTripClosedReason.claimed) {
           _timer?.cancel();
           setState(() {
             _closed = true;
@@ -132,8 +141,10 @@ class _SearchingScreenState extends State<SearchingScreen>
       }
 
       if (event['type'] == 'DriverAccepted') {
-        // The payload carries the trip the driver just created for this hail —
-        // that is what lets us follow them, and hand over to live tracking.
+        // The payload carries the trip formation just produced. **This is
+        // the one place an id changes**: the request they were watching is
+        // matched, and the ride has an id of its own. Following tripId from
+        // here is what hands them over to the seat they now hold.
         final data = event['data'];
         final tripId = data is Map<String, dynamic> ? data['tripId'] as int? : null;
         setState(() {
@@ -162,28 +173,29 @@ class _SearchingScreenState extends State<SearchingScreen>
     setState(() => _driverAt = fix != null && fix.isUsable ? fix : null);
   }
 
-  /// Withdraws the hail before leaving.
+  /// Leaves the posting before going.
   ///
-  /// Backing out used to just pop the screen, which left the request Open: the
-  /// drivers it was pushed to kept the card, and one of them could still accept
-  /// a ride the rider had walked away from. Telling the server first is what
-  /// takes the card off their screens.
+  /// Backing out without telling the server leaves the posting Open: the
+  /// drivers it was pushed to keep the card, and one of them could still claim
+  /// a ride the rider has walked away from. Leaving is what takes the card off
+  /// their screens — and, when this rider was the last one on it, closes the
+  /// posting outright.
   Future<void> _cancel() async {
-    final id = widget.rideRequestId;
-    // Nothing to withdraw: no request was opened, or it has already closed.
+    final id = widget.riderTripId;
+    // Nothing to leave: nothing was posted, or it has already closed.
     if (id == null || _expired) {
       Navigator.pop(context);
       return;
     }
 
     setState(() => _cancelling = true);
-    final res = await _requests.cancel(id);
+    final res = await _riderTrips.leave(id);
     if (!mounted) return;
     setState(() => _cancelling = false);
 
-    // A hail that closed while the tap was in flight is not a failure — the
-    // rider wanted it gone and it is gone.
-    if (res.success || res.errorCode == ServerErrorCode.requestNotOpen) {
+    // A posting that closed while the tap was in flight is not a failure — the
+    // rider wanted out and they are out.
+    if (res.success || res.errorCode == ServerErrorCode.riderTripNotOpen) {
       Navigator.pop(context);
       return;
     }
@@ -191,8 +203,11 @@ class _SearchingScreenState extends State<SearchingScreen>
         title: context.tr('hail.cancelFailed'), onRetry: _cancel);
   }
 
-  /// Hands over to live tracking. Accepting a hail creates both the trip and a
-  /// confirmed booking, so both exist by the time this can be tapped.
+  /// Hands over to the seat itself.
+  ///
+  /// A claim creates the trip and a confirmed seat on it, so both exist by the
+  /// time this can be tapped — and the live-trip screen is where the rider sees
+  /// the price they are being charged and can leave if it does not suit.
   Future<void> _openTrip() async {
     final id = _tripId;
     if (id == null || _openingTrip) {

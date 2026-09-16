@@ -134,10 +134,25 @@ class NotificationRouter {
     final bookingId = n.bookingId;
 
     switch (n.kind) {
-      // A hail is worth something only while it is still open, so the driver
-      // lands on the accept sheet rather than on a summary of it.
-      case NotificationKind.rideRequestNearby:
+      // A posting is worth something only while it is still open, so the
+      // driver lands on the board rather than on a summary of it.
+      case NotificationKind.riderTripNearby:
         return (_) => const RequestsScreen();
+
+      // The decision itself is on the trip: the driver has to see how the seats
+      // stand before answering, and both answers live beside that.
+      case NotificationKind.confirmDecision:
+        if (tripId == null) return null;
+        return _driverTrip(tripId);
+
+      // Seat news the rider acts on, or simply reads. Either way it belongs on
+      // their own seat — the confirmed one, or the one that just lapsed.
+      case NotificationKind.tripConfirmed:
+      case NotificationKind.tripNotEnoughRiders:
+        final seat = await _myBooking(bookingId: bookingId, tripId: tripId);
+        if (seat != null) return _riderBooking(seat, n.kind);
+        if (tripId != null) return (_) => TripDetailsScreen(tripId: tripId, canBook: false);
+        return null;
 
       // Approval is the moment the driver side becomes usable, so step into it.
       case NotificationKind.driverVerified:
@@ -163,8 +178,9 @@ class NotificationRouter {
         if (tripId != null) return _driverTrip(tripId);
         return null;
 
-      // The rider's hail was taken: a trip and a seat on it now exist, but the
-      // payload names only the trip, so the booking is looked up by it.
+      // The rider's posting was claimed: a trip and a confirmed seat on it now
+      // exist, but the payload names only the trip, so the booking is looked up
+      // by it. The seat is where the price and the Leave button are.
       case NotificationKind.driverAccepted:
         if (tripId == null) return null;
         final seat = await _myBooking(tripId: tripId);

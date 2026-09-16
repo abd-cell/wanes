@@ -1,4 +1,4 @@
-using Wanes.Areas.Domain.Bookings;
+﻿using Wanes.Areas.Domain.Bookings;
 using Wanes.Shareds.Enums;
 
 namespace Wanes.Areas.Services.Management.Models;
@@ -13,7 +13,6 @@ public class BookingRow
     public string? RiderName { get; set; }
     public int Seats { get; set; }
     public BookingStatus Status { get; set; }
-    public int? RideRequestId { get; set; }
     public DateTime CreationDate { get; set; }
 
     public BookingRow() { }
@@ -25,7 +24,6 @@ public class BookingRow
         RiderId = b.RiderId;
         Seats = b.Seats;
         Status = b.Status;
-        RideRequestId = b.RideRequestId;
         CreationDate = b.CreationDate;
     }
 }
@@ -37,5 +35,4 @@ public class BookingInput
     public int RiderId { get; set; }
     public int Seats { get; set; } = 1;
     public BookingStatus Status { get; set; } = BookingStatus.Pending;
-    public int? RideRequestId { get; set; }
 }

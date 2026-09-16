@@ -8,10 +8,10 @@ namespace Wanes.Areas.Services.Trips.Models;
 public class TripOutput
 {
     public int Id { get; set; }
-    public int DriverId { get; set; }
+    public int? DriverId { get; set; }
     public string? DriverName { get; set; }
     public double DriverRating { get; set; }
-    public int VehicleId { get; set; }
+    public int? VehicleId { get; set; }
 
     /// <summary>"Toyota Prius" — shown to the rider on results/booking screens.</summary>
     public string? VehicleLabel { get; set; }
@@ -29,6 +29,43 @@ public class TripOutput
     public int SeatsLeft { get; set; }
     public decimal? PricePerSeat { get; set; }
     public TripStatus Status { get; set; }
+
+    // ── The driver's conditions ──
+
+    /// <summary>Seats needed before anybody is confirmed; 1 means no condition.</summary>
+    public int MinSeatsToConfirm { get; set; }
+
+    /// <summary>
+    /// Seats already held, committed or not. Arithmetic rather than a query:
+    /// every held seat is off <see cref="SeatsLeft"/> the moment it is taken.
+    /// </summary>
+    public int SeatsHeld { get; set; }
+
+    /// <summary>
+    /// The trip is short of the seats its driver asked for, so it may yet not
+    /// run. Shown on the card — hiding it would let a rider book a trip that
+    /// might be called off without knowing that was possible.
+    /// </summary>
+    public bool IsGathering { get; set; }
+
+    /// <summary>
+    /// Its passengers are committed. The other half of <see cref="IsGathering"/>
+    /// and not merely its negation: a trip with no threshold at all is neither
+    /// gathering nor confirmed until somebody takes a seat on it.
+    /// </summary>
+    public bool IsConfirmed { get; set; }
+
+    /// <summary>
+    /// No seats left. Sent rather than left to the client to work out, so both
+    /// apps and the console say "full" on exactly the same rule — it stopped
+    /// being a status and a client comparing against the old one would be
+    /// quietly wrong.
+    /// </summary>
+    public bool IsFull { get; set; }
+
+    public GenderPolicy GenderPolicy { get; set; }
+    public int? MinAge { get; set; }
+    public int? MaxAge { get; set; }
 
     /// <summary>
     /// When the driver actually started, from the status history. Lets the
@@ -70,6 +107,15 @@ public class TripOutput
         SeatsLeft = trip.SeatsLeft;
         PricePerSeat = trip.PricePerSeat;
         Status = trip.Status;
+        MinSeatsToConfirm = trip.MinSeatsToConfirm;
+        SeatsHeld = trip.SeatsTotal - trip.SeatsLeft;
+        IsGathering = TripConfirmationRules.IsGathering(
+            trip.Status, trip.MinSeatsToConfirm, SeatsHeld, trip.ConfirmedAt);
+        IsConfirmed = trip.IsConfirmed;
+        IsFull = trip.IsFull;
+        GenderPolicy = trip.GenderPolicy;
+        MinAge = trip.MinAge;
+        MaxAge = trip.MaxAge;
         StartedAt = trip.History?
             .Where(h => h.Status == TripStatus.Active)
             .OrderByDescending(h => h.Id)

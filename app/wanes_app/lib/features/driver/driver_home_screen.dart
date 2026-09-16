@@ -17,6 +17,7 @@ import '../notifications_screen.dart';
 import 'driver_profile_screen.dart';
 import 'my_trips_screen.dart';
 import 'post_trip_screen.dart';
+import 'find_riders_screen.dart';
 import 'requests_screen.dart';
 
 /// Driver app shell — Home · Trips · Profile behind the bottom nav
@@ -69,7 +70,7 @@ class DriverDashboard extends StatefulWidget {
 class _DriverDashboardState extends State<DriverDashboard> {
   final _presence = PresenceService();
   final _trips = TripService();
-  final _requests = RideRequestService();
+  final _requests = RiderTripService();
   final Place _here = kPlaces.first;
 
   bool _online = true;
@@ -78,7 +79,7 @@ class _DriverDashboardState extends State<DriverDashboard> {
   bool _refreshing = false;
   DateTime? _onlineSince;
   List<Trip> _myTrips = [];
-  List<RideRequestRow> _incoming = [];
+  List<RiderTrip> _incoming = [];
 
   /// Hails this driver waved away. The server has no decline verb — passing is
   /// only ever a local act — so remembering them here is the only thing that
@@ -95,7 +96,7 @@ class _DriverDashboardState extends State<DriverDashboard> {
 
   /// A hail can also end before its countdown does — withdrawn by the rider or
   /// taken by another driver. The server pushes that; the timer cannot see it.
-  StreamSubscription<RideRequestClosed>? _closed;
+  StreamSubscription<RiderTripClosed>? _closed;
 
   @override
   void initState() {
@@ -103,7 +104,7 @@ class _DriverDashboardState extends State<DriverDashboard> {
     _refresh();
     _tick = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
-      final live = _incoming.where((r) => r.expiresAt.isAfter(DateTime.now())).toList();
+      final live = _incoming.where((r) => r.departAt.isAfter(DateTime.now())).toList();
       final expired = live.length != _incoming.length;
       final label = _onlineFor;
       // Repaint only when something on screen actually moved: a countdown is
@@ -118,10 +119,10 @@ class _DriverDashboardState extends State<DriverDashboard> {
       });
       if (expired) _refresh();
     });
-    _closed = PushService.instance.requestClosed.listen((closed) {
+    _closed = PushService.instance.riderTripClosed.listen((closed) {
       if (!mounted) return;
-      if (!_incoming.any((r) => r.id == closed.requestId)) return;
-      setState(() => _incoming.removeWhere((r) => r.id == closed.requestId));
+      if (!_incoming.any((r) => r.id == closed.riderTripId)) return;
+      setState(() => _incoming.removeWhere((r) => r.id == closed.riderTripId));
     });
   }
 
@@ -179,7 +180,7 @@ class _DriverDashboardState extends State<DriverDashboard> {
         _online = online;
         _onlineSince = online ? (_onlineSince ?? DateTime.now()) : null;
         _incoming = _answerable(reqs == null
-            ? const <RideRequestRow>[]
+            ? const <RiderTrip>[]
             : reqs.success
                 ? (reqs.data ?? [])
                 : _incoming);
@@ -192,8 +193,8 @@ class _DriverDashboardState extends State<DriverDashboard> {
   /// Hails still worth showing: inside their window, and not one already passed
   /// on. Both filters have to run over every list the server hands back, or a
   /// declined card comes straight back on the next refresh.
-  List<RideRequestRow> _answerable(List<RideRequestRow> rows) => rows
-      .where((r) => !_declined.contains(r.id) && r.expiresAt.isAfter(DateTime.now()))
+  List<RiderTrip> _answerable(List<RiderTrip> rows) => rows
+      .where((r) => !_declined.contains(r.id) && r.departAt.isAfter(DateTime.now()))
       .toList();
 
   Future<void> _toggleOnline(bool value) async {
@@ -288,6 +289,8 @@ class _DriverDashboardState extends State<DriverDashboard> {
             _todayRow(t),
             const SizedBox(height: 14),
             _postTripButton(t),
+            const SizedBox(height: 10),
+            _findRidersRow(t),
             const SizedBox(height: 20),
             _incomingHeader(t),
             const SizedBox(height: 10),
@@ -324,23 +327,25 @@ class _DriverDashboardState extends State<DriverDashboard> {
   void _openRequests() =>
       Navigator.push(context, MaterialPageRoute(builder: (_) => const RequestsScreen())).then((_) => _refresh());
 
-  Future<void> _acceptRequest(RideRequestRow r) async {
+  Future<void> _acceptRequest(RiderTrip r) async {
     // One driver drives one car: a double tap, or a tap on a second card while
     // the first is still in flight, is an accept the server is bound to refuse.
     if (_accepting) return;
 
-    // Same sheet as the requests screen — a hail carries no price, so the driver
-    // names one wherever they answer from. Backing out is declining.
+    // Same sheet as the board — a posting carries no price, so the driver names
+    // one wherever they answer from. Backing out is declining.
     final price = await showAcceptPriceSheet(
       context,
-      suggestion: Fare.perSeat(Geo.distanceKm(
-          r.originLat, r.originLng, r.destinationLat, r.destinationLng)),
-      seats: r.seats,
+      suggestion: r.suggestedPricePerSeat > 0
+          ? r.suggestedPricePerSeat
+          : Fare.perSeat(Geo.distanceKm(
+              r.originLat, r.originLng, r.destinationLat, r.destinationLng)),
+      seats: r.seatsWanted,
     );
     if (price == null || !mounted) return;
 
     setState(() => _accepting = true);
-    final res = await _requests.accept(r.id, pricePerSeat: price);
+    final res = await _requests.offer(r.id, pricePerSeat: price);
     if (!mounted) return;
     setState(() {
       _accepting = false;
@@ -359,7 +364,7 @@ class _DriverDashboardState extends State<DriverDashboard> {
 
   /// Passing on a hail. Local by design — there is no decline verb — but it has
   /// to outlive the card, so the id goes into [_declined] as well.
-  void _decline(RideRequestRow r) => setState(() {
+  void _decline(RiderTrip r) => setState(() {
         _declined.add(r.id);
         _incoming.removeWhere((x) => x.id == r.id);
       });
@@ -504,6 +509,20 @@ class _DriverDashboardState extends State<DriverDashboard> {
     );
   }
 
+  /// The other way a driver fills a car.
+  ///
+  /// The stack below is push-driven and local: it answers "who needs a lift
+  /// around me, right now". A driver planning Thursday's run to Irbid cannot ask
+  /// that question at all, so the search sits here beside Post a trip — the two
+  /// things a driver does deliberately, rather than waits for.
+  Widget _findRidersRow(WanesTokens t) => WanesListRow(
+        icon: Icons.person_search_outlined,
+        title: context.tr('driver.findRiders'),
+        subtitle: context.tr('driver.findRidersBody'),
+        onTap: () => Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const FindRidersScreen())),
+      );
+
   Widget _incomingHeader(WanesTokens t) {
     if (_incoming.isEmpty) {
       return Text(context.tr('driver.incomingRequests').toUpperCase(),
@@ -545,7 +564,7 @@ class HailCard extends StatelessWidget {
     this.onTap,
   });
 
-  final RideRequestRow request;
+  final RiderTrip request;
   final Place from;
 
   /// Null while another accept is in flight — one driver can only take one.
@@ -571,9 +590,9 @@ class HailCard extends StatelessWidget {
     final fare = Fare.estimateBetween(
       request.originLat, request.originLng,
       request.destinationLat, request.destinationLng,
-      seats: request.seats,
+      seats: request.seatsWanted,
     );
-    final left = request.expiresAt.difference(DateTime.now());
+    final left = request.departAt.difference(DateTime.now());
 
     return Container(
       decoration: BoxDecoration(
@@ -601,7 +620,7 @@ class HailCard extends StatelessWidget {
                       Text(context.tr('driver.riderNumber', {'id': request.riderId}),
                           style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: t.ink)),
                       const SizedBox(width: 7),
-                      Text(context.trPlural('vehicle.seatCount', request.seats),
+                      Text(context.trPlural('vehicle.seatCount', request.seatsWanted),
                           style: WanesTheme.mono(size: 11, weight: FontWeight.w500, color: t.ink2, spacing: 0)),
                     ]),
                     const SizedBox(height: 2),

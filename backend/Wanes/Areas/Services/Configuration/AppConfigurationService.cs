@@ -1,10 +1,11 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Wanes.Areas.Services.Audit;
 using Wanes.Areas.Services.Configuration.Models;
 using Wanes.DataAccess.Repositories;
 using Wanes.DataAccess.UnitOfWorks;
+using Wanes.Areas.Domain.RiderTrips;
+using Wanes.Areas.Domain.RideRequests;
 using Wanes.Areas.Domain.Trips;
-using Wanes.Shareds.Constants;
 using Wanes.Shareds.Models;
 using Entity = Wanes.Areas.Domain.Configuration.AppConfiguration;
 
@@ -53,10 +54,17 @@ public class AppConfigurationService : IAppConfigurationService
         entity.CurrencyDecimals = input.CurrencyDecimals;
         entity.PrimaryColor = NormalizeHex(input.PrimaryColor);
         entity.FontFamily = input.FontFamily;
-        entity.HailRequestTtlMinutes =
-            Math.Clamp(input.HailRequestTtlMinutes, MatchRules.MinHailTtlMinutes, MatchRules.MaxHailTtlMinutes);
-        // Clamped as well as validated: the attribute answers the CMS, this
-        // answers everything else that can reach the row.
+        // Clamped as well as validated, here and below: the attributes answer
+        // the CMS, these answer everything else that can reach the row.
+        entity.ConfirmCutoffMinutes = Math.Clamp(input.ConfirmCutoffMinutes,
+            TripConfirmationRules.MinCutoffMinutes, TripConfirmationRules.MaxCutoffMinutes);
+        entity.ConfirmDecisionLeadMinutes = Math.Clamp(input.ConfirmDecisionLeadMinutes,
+            TripConfirmationRules.MinDecisionLeadMinutes, TripConfirmationRules.MaxDecisionLeadMinutes);
+        entity.MinimumPassengersDefault =
+            TripConfirmationRules.DefaultThreshold(input.MinimumPassengersDefault);
+        entity.DriverSelectionWindowMinutes =
+            DriverSelectionRules.WindowFor(input.DriverSelectionWindowMinutes);
+        entity.AverageSpeedKmh = RiderTripRules.SpeedFor(input.AverageSpeedKmh);
         entity.FareBaseAmount = FareRules.RateFor(input.FareBaseAmount);
         entity.FarePerKm = FareRules.RateFor(input.FarePerKm);
         entity.SupportPhone = Blank(input.SupportPhone);

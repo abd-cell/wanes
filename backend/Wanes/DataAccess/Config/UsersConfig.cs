@@ -22,10 +22,15 @@ public class UserConfig : IEntityTypeConfiguration<User>
         b.Property(u => u.Bio).HasMaxLength(500);
         b.Property(u => u.LastLocation).HasColumnType("geography");
 
+        b.Property(u => u.LicenseNumber).HasMaxLength(50);
+        b.Property(u => u.DriverReviewNote).HasMaxLength(500);
+
         b.HasMany(u => u.Vehicles).WithOne(v => v.User)
             .HasForeignKey(v => v.UserId).OnDelete(DeleteBehavior.Restrict);
         b.HasMany(u => u.SavedPlaces).WithOne(p => p.User)
             .HasForeignKey(p => p.UserId).OnDelete(DeleteBehavior.Restrict);
+        b.HasMany(u => u.DriverDocuments).WithOne(d => d.User)
+            .HasForeignKey(d => d.UserId).OnDelete(DeleteBehavior.Restrict);
     }
 }
 
@@ -72,5 +77,19 @@ public class SavedPlaceConfig : IEntityTypeConfiguration<SavedPlace>
         b.Property(x => x.Name).HasMaxLength(150);
         b.Property(x => x.Address).HasMaxLength(300);
         b.Property(x => x.Location).HasColumnType("geography");
+    }
+}
+
+public class DriverDocumentConfig : IEntityTypeConfiguration<DriverDocument>
+{
+    public void Configure(EntityTypeBuilder<DriverDocument> b)
+    {
+        b.Property(x => x.StorageKey).HasMaxLength(300).IsRequired();
+        b.Property(x => x.FileName).HasMaxLength(260).IsRequired();
+        b.Property(x => x.ContentType).HasMaxLength(100).IsRequired();
+
+        // Both readers of this table want one driver's live documents in a
+        // stable order: the driver's own screen, and the admin reviewing them.
+        b.HasIndex(x => new { x.UserId, x.IsDeleted, x.Type });
     }
 }

@@ -18,6 +18,17 @@ public class NotificationRow
     public bool IsRead { get; set; }
     public DateTime CreationDate { get; set; }
 
+    /// <summary>
+    /// Cleared — by the owner off their own inbox, or by an admin off this
+    /// table. Either way the row is still listed here; the console is the only
+    /// place a deleted notification is visible. The audit log
+    /// (<c>notification.delete</c> vs <c>admin.notifications.delete</c>) says
+    /// which of the two it was.
+    /// </summary>
+    public bool IsDeleted { get; set; }
+
+    public DateTime? DeletionDate { get; set; }
+
     public NotificationRow() { }
 
     public NotificationRow(UserNotification e)
@@ -32,6 +43,8 @@ public class NotificationRow
         DataJson = e.DataJson;
         IsRead = e.IsRead;
         CreationDate = e.CreationDate;
+        IsDeleted = e.IsDeleted;
+        DeletionDate = e.DeletionDate;
     }
 }
 
@@ -137,6 +150,9 @@ public class NotificationStats
     public int Total { get; set; }
     public int Unread { get; set; }
     public int Read { get; set; }
+
+    /// <summary>Rows cleared by their owner or by an admin; still counted in <see cref="Total"/>.</summary>
+    public int Deleted { get; set; }
 
     /// <summary>Rows created in the last 24 hours — "what did we just send?".</summary>
     public int Last24Hours { get; set; }

@@ -354,7 +354,8 @@ TextTheme _systemTextTheme(TextTheme base) => base;
 
 /// What each configured font resolves to. The Arabic entry is never the same
 /// face as the Latin one by accident — where a family covers both scripts
-/// (Rubik, Tajawal) it is deliberately listed twice.
+/// (Rubik, Tajawal, Almarai, Readex Pro, Alexandria, Amiri) it is deliberately
+/// listed twice.
 const Map<AppFont, _FontFaces> _fontFaces = {
   AppFont.jakarta: _FontFaces(
     latin: GoogleFonts.plusJakartaSans,
@@ -391,6 +392,42 @@ const Map<AppFont, _FontFaces> _fontFaces = {
     arabic: _systemFace,
     latinTheme: _systemTextTheme,
     arabicTheme: _systemTextTheme,
+  ),
+  AppFont.almarai: _FontFaces(
+    latin: GoogleFonts.almarai,
+    arabic: GoogleFonts.almarai,
+    latinTheme: GoogleFonts.almaraiTextTheme,
+    arabicTheme: GoogleFonts.almaraiTextTheme,
+  ),
+  AppFont.readexPro: _FontFaces(
+    latin: GoogleFonts.readexPro,
+    arabic: GoogleFonts.readexPro,
+    latinTheme: GoogleFonts.readexProTextTheme,
+    arabicTheme: GoogleFonts.readexProTextTheme,
+  ),
+  AppFont.alexandria: _FontFaces(
+    latin: GoogleFonts.alexandria,
+    arabic: GoogleFonts.alexandria,
+    latinTheme: GoogleFonts.alexandriaTextTheme,
+    arabicTheme: GoogleFonts.alexandriaTextTheme,
+  ),
+  AppFont.poppins: _FontFaces(
+    latin: GoogleFonts.poppins,
+    arabic: GoogleFonts.almarai,
+    latinTheme: GoogleFonts.poppinsTextTheme,
+    arabicTheme: GoogleFonts.almaraiTextTheme,
+  ),
+  AppFont.montserrat: _FontFaces(
+    latin: GoogleFonts.montserrat,
+    arabic: GoogleFonts.elMessiri,
+    latinTheme: GoogleFonts.montserratTextTheme,
+    arabicTheme: GoogleFonts.elMessiriTextTheme,
+  ),
+  AppFont.amiri: _FontFaces(
+    latin: GoogleFonts.amiri,
+    arabic: GoogleFonts.amiri,
+    latinTheme: GoogleFonts.amiriTextTheme,
+    arabicTheme: GoogleFonts.amiriTextTheme,
   ),
 };
 

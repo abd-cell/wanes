@@ -27,9 +27,28 @@ public static class DriverAvailabilityRules
     /// The trip still holds a slot in the driver's day — anything not finished
     /// and not called off.
     /// </summary>
-    public static bool HoldsSchedule(TripStatus status) =>
-        status is TripStatus.Posted or TripStatus.Full
-            or TripStatus.EnRoute or TripStatus.Arrived or TripStatus.Active;
+    public static bool HoldsSchedule(TripStatus status) => HoldingStatuses.Contains(status);
+
+    /// <summary>
+    /// <see cref="HoldsSchedule"/> as data, because a query cannot call it.
+    ///
+    /// The predicate form does not translate to SQL, so every caller used to
+    /// spell the list out again in its own <c>Where</c> — and they drifted:
+    /// three of them omitted <see cref="TripStatus.EnRoute"/>, which is the one
+    /// status where the driver has already set off. A driver on their way to a
+    /// pickup was therefore free to promise a second departure.
+    /// </summary>
+    public static readonly TripStatus[] HoldingStatuses =
+    [
+        TripStatus.Posted, TripStatus.Full,
+        TripStatus.EnRoute, TripStatus.Arrived, TripStatus.Active,
+    ];
+
+    /// <summary><see cref="IsEngaged(TripStatus)"/> as data, for the same reason.</summary>
+    public static readonly TripStatus[] EngagedStatuses =
+    [
+        TripStatus.EnRoute, TripStatus.Arrived, TripStatus.Active,
+    ];
 
     /// <summary>
     /// How close two of one driver's departures may be. Taken from the matching

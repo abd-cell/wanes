@@ -80,6 +80,53 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     await _load(silent: true);
   }
 
+  /// Asks before clearing one. Deleting is not undoable from the app — the row
+  /// survives only in the admin console — so the gesture alone is not enough.
+  Future<bool> _confirmDelete() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(context.tr('notif.deleteTitle')),
+        content: Text(context.tr('notif.deleteBody')),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(context.tr('common.cancel'))),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(context.tr('notif.delete'),
+                style: TextStyle(color: WanesTokens.of(ctx).alert)),
+          ),
+        ],
+      ),
+    );
+    return ok == true;
+  }
+
+  /// Optimistic, like [_markAllRead]: the row leaves the list at once and a
+  /// failed call is reconciled by re-loading the feed.
+  Future<void> _delete(AppNotification notification) async {
+    setState(() => _items = _items.where((n) => n.id != notification.id).toList());
+
+    // A cleared row stops being served *and* stops being counted, so the badge
+    // has to come down here too or it outruns the list until the next load.
+    if (!notification.isRead) {
+      final unread = PushService.instance.unreadCount;
+      if (unread.value > 0) unread.value -= 1;
+    }
+
+    final response = await _service.delete(notification.id);
+    if (!mounted || response.success) return;
+    WanesAlerts.failure(context, response, title: context.tr('notif.deleteFailed'));
+    await _load(silent: true);
+  }
+
+  /// Long-press is the pointer-friendly twin of the swipe — the app runs on the
+  /// web too, where there is nothing to swipe with.
+  Future<void> _confirmAndDelete(AppNotification notification) async {
+    if (await _confirmDelete() && mounted) await _delete(notification);
+  }
+
   /// A row is a link to whatever it is about, not just a read receipt — the
   /// same destination a tap on the tray notification opens.
   Future<void> _open(AppNotification notification) async {
@@ -120,7 +167,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     if (n.hasArabic(lang)) return n.titleFor(lang);
 
     final key = switch (n.kind) {
-      NotificationKind.rideRequestNearby => 'notifType.rideRequestNearby',
+      NotificationKind.riderTripNearby => 'notifType.riderTripNearby',
       NotificationKind.bookingConfirmed => 'notifType.bookingConfirmed',
       NotificationKind.tripCancelled => 'notifType.tripCancelled',
       NotificationKind.driverAccepted => 'notifType.driverAccepted',
@@ -133,6 +180,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       NotificationKind.driverRejected => 'notifType.driverRejected',
       NotificationKind.ratingReceived => 'notifType.ratingReceived',
       NotificationKind.feedbackReplied => 'notifType.feedbackReplied',
+      NotificationKind.tripConfirmed => 'notifType.tripConfirmed',
+      NotificationKind.tripNotEnoughRiders => 'notifType.tripNotEnoughRiders',
+      NotificationKind.confirmDecision => 'notifType.confirmDecision',
       // Admin-composed — there is no key for it, so show what was sent.
       NotificationKind.general => '',
     };
@@ -176,11 +226,27 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             tile: t.amber,
             card: t.amberTint
           ),
-        NotificationKind.rideRequestNearby => (
+        NotificationKind.riderTripNearby => (
             icon: Icons.my_location_rounded,
             fg: t.info,
             tile: t.info.withValues(alpha: .16),
             card: null
+          ),
+        // A seat that went from held to theirs: the same good news a booking
+        // is, so the same teal.
+        NotificationKind.tripConfirmed => (
+            icon: Icons.check_rounded,
+            fg: t.onTeal,
+            tile: t.teal,
+            card: t.tealTint
+          ),
+        // The two that ask for something rather than report it. Amber, like
+        // every other card in this app that is waiting on the reader.
+        NotificationKind.confirmDecision => (
+            icon: Icons.help_outline_rounded,
+            fg: t.amberInk,
+            tile: t.amberTint,
+            card: t.amberTint
           ),
         NotificationKind.tripCompleted =>
           (icon: Icons.star_outline_rounded, fg: t.amberInk, tile: t.surface2, card: null),
@@ -196,6 +262,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           ),
         NotificationKind.tripCancelled ||
         NotificationKind.bookingCancelled ||
+        NotificationKind.tripNotEnoughRiders ||
         NotificationKind.driverRejected => (
             icon: Icons.close_rounded,
             fg: const Color(0xFFE05F9A),
@@ -290,15 +357,36 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         for (var i = 0; i < items.length; i++)
           Padding(
             padding: EdgeInsets.only(top: i == 0 ? 0 : 10),
-            child: _card(t, items[i]),
+            child: Dismissible(
+              key: ValueKey(items[i].id),
+              // Trailing edge only, and direction-aware, so the gesture reads
+              // the same way round in Arabic as in English.
+              direction: DismissDirection.endToStart,
+              confirmDismiss: (_) => _confirmDelete(),
+              onDismissed: (_) => _delete(items[i]),
+              background: _swipeBackground(t),
+              child: _card(t, items[i]),
+            ),
           ),
       ];
+
+  /// What shows behind a row being swiped away.
+  Widget _swipeBackground(WanesTokens t) => Container(
+        alignment: AlignmentDirectional.centerEnd,
+        padding: const EdgeInsetsDirectional.only(end: 20),
+        decoration: BoxDecoration(
+          color: t.alert.withValues(alpha: .14),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Icon(Icons.delete_outline_rounded, size: 22, color: t.alert),
+      );
 
   Widget _card(WanesTokens t, AppNotification n) {
     final s = _style(t, n.kind);
     final unread = !n.isRead;
     return GestureDetector(
       onTap: () => _open(n),
+      onLongPress: () => _confirmAndDelete(n),
       behavior: HitTestBehavior.opaque,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),

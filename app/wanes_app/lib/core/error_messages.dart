@@ -20,9 +20,20 @@ import 'l10n.dart';
 /// a decision written as `== 501` is one nobody can check against the backend
 /// enum without going to look it up.
 class ServerErrorCode {
-  /// `ErrorCode.RequestNotOpen` — the hail has already been cancelled, taken or
-  /// expired.
-  static const requestNotOpen = 501;
+  /// `ErrorCode.RiderTripNotOpen` — the posting has already been left, claimed
+  /// or passed its departure.
+  static const riderTripNotOpen = 501;
+
+  /// `ErrorCode.DepartureTooSoon` — no driver could gather these riders and run
+  /// the leg by then. The form recomputes its floor and says so.
+  static const departureTooSoon = 502;
+
+  /// `ErrorCode.RiderProfileIncomplete` — the trip's conditions ask for a
+  /// profile detail this rider has not given. Fixable in thirty seconds, which
+  /// is why it is worth branching on: the app offers the field rather than
+  /// merely reporting a refusal.
+  static const riderProfileIncomplete = 406;
+
 }
 
 /// Client-only sentinel codes (never returned by the server).
@@ -41,6 +52,8 @@ const Map<int, String> _keys = {
   4: 'errors.unauthorized',
   5: 'errors.forbidden',
   6: 'errors.conflict',
+  7: 'errors.fileTooLarge',
+  8: 'errors.unsupportedFileType',
 
   // Auth / accounts
   100: 'errors.invalidCredentials',
@@ -56,6 +69,8 @@ const Map<int, String> _keys = {
   202: 'errors.vehicleNotFound',
   203: 'errors.driverOnActiveTrip',
   204: 'errors.driverTripTimeConflict',
+  205: 'errors.driverDocumentsIncomplete',
+  206: 'errors.driverDocumentNotFound',
 
   // Trips
   300: 'errors.tripUnavailable',
@@ -66,15 +81,37 @@ const Map<int, String> _keys = {
   305: 'errors.addressNotFound',
   306: 'errors.tripLocked',
 
+  307: 'errors.tripNotConfirmable',
+  308: 'errors.minSeatsExceedTotal',
+
   // Bookings
   400: 'errors.bookingNotFound',
   401: 'errors.tripFull',
   402: 'errors.ownTrip',
   403: 'errors.alreadyBooked',
+  404: 'errors.bookingStatusNotAllowed',
+  406: 'errors.riderProfileIncomplete',
+  407: 'errors.riderNotEligible',
+  408: 'errors.driverNotEligible',
+  409: 'errors.riderSeatTimeConflict',
+  410: 'errors.riderOnActiveTrip',
 
-  // Ride requests
-  500: 'errors.requestNotFound',
-  501: 'errors.requestClosed',
+  // Demand — ride requests. The numbers are unchanged from when these were
+  // "rider-posted trips": the meanings are identical, and renumbering them
+  // would silently re-label every string below.
+  500: 'errors.riderTripNotFound',
+  501: 'errors.riderTripClosed',
+  502: 'errors.departureTooSoon',
+  503: 'errors.riderTripSeatsExceeded',
+  504: 'errors.riderTripConditionsConflict',
+  505: 'errors.riderTripNotJoined',
+  506: 'errors.alreadyJoined',
+  507: 'errors.cannotServeOwnRequest',
+  508: 'errors.driverInterestNotFound',
+
+  // Schedules
+  550: 'errors.scheduleNotFound',
+  551: 'errors.scheduleHasNoOccurrences',
 
   // Ratings
   600: 'errors.rateAfterCompletion',

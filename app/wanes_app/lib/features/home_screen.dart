@@ -16,7 +16,6 @@ import '../widgets/when_picker.dart';
 import 'notifications_screen.dart';
 import 'saved_places_screen.dart';
 import 'results_screen.dart';
-import 'searching_screen.dart';
 
 
 /// Home / search — the rider's landing tab. Mirrors prototype screen 02:
@@ -31,6 +30,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final _search = SearchService();
+  final _profiles = ProfileService();
 
   /// Null until the rider searches one out — nothing is pre-filled.
   Place? _from;
@@ -52,11 +52,39 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Departure time. null = "Now" (leave in ~10 min).
   DateTime? _when;
 
+  /// The hours this rider is already spoken for.
+  ///
+  /// One rider rides in one car, so a seat they hold at six rules out taking
+  /// another at six — the rider-side twin of the driver's clash rule. Fetched
+  /// before the time picker can open so those slots arrive greyed out, instead
+  /// of the rider choosing one, searching, and meeting the refusal at the tap
+  /// that mattered. Empty until it loads and after any failure: an unanswered
+  /// availability call must not lock a rider out of searching.
+  RiderAvailability _availability = const RiderAvailability();
+
+  /// Who the rider will get in a car with, for this search.
+  ///
+  /// Asked here rather than kept on the account. It used to be a profile
+  /// setting applied to every search forever, which is the wrong shape for a
+  /// question whose answer changes with the journey — and a setting two screens
+  /// away is one nobody remembers is switched on when their results look thin.
+  GenderPolicy _driverPolicy = GenderPolicy.any;
+
   @override
   void initState() {
     super.initState();
     _loadRecents();
     _loadSaved();
+    _loadAvailability();
+  }
+
+  /// Silent on failure, by design. This only greys slots out; a rider whose
+  /// availability could not be read should still be able to search, and the
+  /// server still refuses a genuine clash.
+  Future<void> _loadAvailability() async {
+    final res = await _profiles.riderAvailability();
+    if (!mounted || !res.success || res.data == null) return;
+    setState(() => _availability = res.data!);
   }
 
   Future<void> _loadRecents() async {
@@ -98,7 +126,14 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _pickWhen() async {
-    final selection = await showWhenPicker(context, _when);
+    final selection = await showWhenPicker(
+      context,
+      _when,
+      committed: _availability.committedDepartures,
+      clashWindow: _availability.clashWindow,
+      isEngaged: _availability.isEngaged,
+      audience: WhenAudience.rider,
+    );
     if (selection == null || !mounted) return;
     final picked = selection.dateTime;
     // Anything at/just after "now" is treated as leaving now.
@@ -155,6 +190,7 @@ class _HomeScreenState extends State<HomeScreen> {
       seats: _seats,
       nearby: _nearby,
       sortBy: SortPreference.instance.value,
+      driverGenderPolicy: _driverPolicy,
     );
     if (!mounted) return;
     setState(() => _busy = false);
@@ -164,34 +200,29 @@ class _HomeScreenState extends State<HomeScreen> {
           title: context.tr('home.searchFailed'), onRetry: _runSearch);
       return;
     }
+    // One destination, whatever came back. Search no longer decides between
+    // "here are trips" and "we opened a hail for you" — it returns the bands it
+    // found plus what the rider could post themselves, and the results screen
+    // shows all of it.
     final result = res.data!;
-    if (result.mode == SearchMode.carpool) {
-      Navigator.push(context, MaterialPageRoute(
-        builder: (_) => ResultsScreen(
-          matches: result.matches,
-          from: from.name,
-          to: to.name,
-          seats: _seats,
-          fromLat: from.lat,
-          fromLng: from.lng,
-          toLat: to.lat,
-          toLng: to.lng,
-          rideRequestId: result.rideRequestId,
-        ),
-      ));
-    } else {
-      Navigator.push(context, MaterialPageRoute(
-        builder: (_) => SearchingScreen(
-          rideRequestId: result.rideRequestId,
-          driversNotified: result.driversNotified,
-          expiresAt: result.rideRequestExpiresAt,
-          originLat: from.lat,
-          originLng: from.lng,
-          destLat: to.lat,
-          destLng: to.lng,
-        ),
-      ));
-    }
+    await Navigator.push(context, MaterialPageRoute(
+      builder: (_) => ResultsScreen(
+        matches: result.matches,
+        postings: result.requests,
+        earliestDepartAt: result.earliestDepartAt,
+        from: from,
+        to: to,
+        seats: _seats,
+        when: _departAt,
+        nearby: _nearby,
+        driverGenderPolicy: _driverPolicy,
+      ),
+    ));
+    // The rider may have taken a seat while they were in there, which changes
+    // what the picker may offer next. The chosen time is deliberately left
+    // alone: moving it under them is the snap-back this picker exists to
+    // avoid, and it will show greyed the moment they open the sheet.
+    if (mounted) await _loadAvailability();
   }
 
 
@@ -247,6 +278,27 @@ class _HomeScreenState extends State<HomeScreen> {
             labels: [context.tr('home.rangeNearby'), context.tr('home.rangeWide')],
             index: _nearby ? 0 : 1,
             onSelect: (i) => setState(() => _nearby = i == 0),
+          ),
+          const SizedBox(height: 12),
+          // ── who may drive ──
+          MonoLabel(context.tr('home.driverFilter')),
+          const SizedBox(height: 8),
+          SegmentedToggle(
+            labels: [
+              context.tr('conditions.anyone'),
+              context.tr('conditions.womenOnly'),
+              context.tr('conditions.menOnly'),
+            ],
+            index: switch (_driverPolicy) {
+              GenderPolicy.any => 0,
+              GenderPolicy.femaleOnly => 1,
+              GenderPolicy.maleOnly => 2,
+            },
+            onSelect: (i) => setState(() => _driverPolicy = switch (i) {
+                  1 => GenderPolicy.femaleOnly,
+                  2 => GenderPolicy.maleOnly,
+                  _ => GenderPolicy.any,
+                }),
           ),
           const SizedBox(height: 14),
           PrimaryButton(

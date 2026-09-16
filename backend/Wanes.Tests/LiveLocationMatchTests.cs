@@ -1,5 +1,5 @@
-using Wanes.Areas.Domain.Bookings;
-using Wanes.Areas.Domain.Requests;
+﻿using Wanes.Areas.Domain.Bookings;
+using Wanes.Areas.Domain.RiderTrips;
 using Wanes.Areas.Domain.Trips;
 using Wanes.Areas.Domain.Users;
 using Wanes.Areas.Domain.Vehicles;
@@ -48,11 +48,7 @@ public class LiveLocationMatchTests
     private const double DestLat = 32.0100;
     private const double DestLng = 35.8700;
 
-    private static SearchService Search(FakeUnitOfWork uow) =>
-        new(uow, new FakeSecurityManager(RiderId), new FakeAuditService(),
-            new FakeNotificationService(), new FakeAppConfigurationService(),
-            uow.Repository<Trip>(), uow.Repository<User>(), uow.Repository<Vehicle>(),
-            uow.Repository<RideRequest>(), uow.Repository<Booking>());
+    private static SearchService Search(FakeUnitOfWork uow) => Make.Search(uow, RiderId);
 
     private static SearchInput Wanted() => new()
     {
@@ -84,8 +80,9 @@ public class LiveLocationMatchTests
         return uow;
     }
 
-    private static async Task<SearchMode> ModeFor(FakeUnitOfWork uow) =>
-        (await Search(uow).Search(Wanted())).Data!.Mode;
+    /// <summary>Whether the arranged trip came back as a match at all.</summary>
+    private static async Task<bool> MatchedIn(FakeUnitOfWork uow) =>
+        (await Search(uow).Search(Wanted())).Data!.Matches.Count > 0;
 
     // ── The freshness gate, as a rule ────────────────────────────────────────
 
@@ -140,7 +137,7 @@ public class LiveLocationMatchTests
         // scheduled trip, and it must not be the one that disappears.
         var uow = Scene(withPosition: false, reportedAt: null);
 
-        Assert.Equal(SearchMode.Carpool, await ModeFor(uow));
+        Assert.True(await MatchedIn(uow));
     }
 
     [Fact]
@@ -149,7 +146,7 @@ public class LiveLocationMatchTests
         var uow = Scene(withPosition: true,
             reportedAt: DateTime.UtcNow - MatchRules.LiveFixWindow - TimeSpan.FromMinutes(5));
 
-        Assert.Equal(SearchMode.Carpool, await ModeFor(uow));
+        Assert.True(await MatchedIn(uow));
     }
 
     [Fact]
@@ -157,7 +154,7 @@ public class LiveLocationMatchTests
     {
         var uow = Scene(withPosition: true, reportedAt: null);
 
-        Assert.Equal(SearchMode.Carpool, await ModeFor(uow));
+        Assert.True(await MatchedIn(uow));
     }
 
     [Fact]
@@ -165,6 +162,6 @@ public class LiveLocationMatchTests
     {
         var uow = Scene(withPosition: true, reportedAt: DateTime.UtcNow);
 
-        Assert.Equal(SearchMode.Carpool, await ModeFor(uow));
+        Assert.True(await MatchedIn(uow));
     }
 }

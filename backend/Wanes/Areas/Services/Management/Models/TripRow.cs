@@ -1,4 +1,4 @@
-using Wanes.Areas.Domain.Trips;
+﻿using Wanes.Areas.Domain.Trips;
 using Wanes.Shareds.Enums;
 
 namespace Wanes.Areas.Services.Management.Models;
@@ -7,9 +7,9 @@ namespace Wanes.Areas.Services.Management.Models;
 public class TripRow
 {
     public int Id { get; set; }
-    public int DriverId { get; set; }
+    public int? DriverId { get; set; }
     public string? DriverName { get; set; }
-    public int VehicleId { get; set; }
+    public int? VehicleId { get; set; }
     public string? VehicleLabel { get; set; }
     public string OriginAddress { get; set; } = string.Empty;
     public double OriginLat { get; set; }
@@ -49,8 +49,8 @@ public class TripRow
 /// <summary>Create/update payload for a trip.</summary>
 public class TripInput
 {
-    public int DriverId { get; set; }
-    public int VehicleId { get; set; }
+    public int? DriverId { get; set; }
+    public int? VehicleId { get; set; }
     public string OriginAddress { get; set; } = string.Empty;
     public double OriginLat { get; set; }
     public double OriginLng { get; set; }

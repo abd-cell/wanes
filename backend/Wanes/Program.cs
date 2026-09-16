@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -26,6 +26,7 @@ builder.Host.UseSerilog((context, config) => config
 builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("Jwt"));
 builder.Services.Configure<Wanes.Shareds.Models.Config.OtpSettings>(builder.Configuration.GetSection("Otp"));
 builder.Services.Configure<Wanes.Shareds.Models.Config.FcmSettings>(builder.Configuration.GetSection("Fcm"));
+builder.Services.Configure<Wanes.Shareds.Models.Config.StorageSettings>(builder.Configuration.GetSection("Storage"));
 var jwt = builder.Configuration.GetSection("Jwt").Get<JwtSettings>() ?? new JwtSettings();
 
 // ── Framework ──
@@ -63,7 +64,9 @@ builder.Services.RegisterTypes();
 // ── Background work ──
 // Convention-based DI covers service interfaces only, so the hosted services
 // that run off a timer are registered here.
-builder.Services.AddHostedService<Wanes.Areas.Services.Requests.RideRequestExpiryWorker>();
+builder.Services.AddHostedService<Wanes.Areas.Services.RideRequests.RideRequestSweepWorker>();
+builder.Services.AddHostedService<Wanes.Areas.Services.Trips.TripConfirmationWorker>();
+builder.Services.AddHostedService<Wanes.Areas.Services.Schedules.ScheduleMaterialiserWorker>();
 
 // ── Authentication (JWT; session validated against UserLogin) ──
 builder.Services

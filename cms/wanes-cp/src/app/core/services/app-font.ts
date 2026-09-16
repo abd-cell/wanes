@@ -68,6 +68,39 @@ const FONTS: Record<AppFont, FontChoice> = {
     google: [`Tajawal:wght@400;500;700`],
   },
   [AppFont.System]: { latin: '', arabic: '', google: [] },
+  [AppFont.Almarai]: {
+    latin: `'Almarai'`,
+    arabic: `'Almarai'`,
+    // Almarai ships 300/400/700/800 — asking for a 600 it does not have makes
+    // the whole css2 request a 400, and the page would then get no face at all.
+    google: [`Almarai:wght@400;700`],
+  },
+  [AppFont.ReadexPro]: {
+    latin: `'Readex Pro'`,
+    arabic: `'Readex Pro'`,
+    google: [`Readex+Pro:${WEIGHTS}`],
+  },
+  [AppFont.Alexandria]: {
+    latin: `'Alexandria'`,
+    arabic: `'Alexandria'`,
+    google: [`Alexandria:${WEIGHTS}`],
+  },
+  [AppFont.Poppins]: {
+    latin: `'Poppins'`,
+    arabic: `'Almarai'`,
+    google: [`Poppins:wght@400;600;700`, `Almarai:wght@400;700`],
+  },
+  [AppFont.Montserrat]: {
+    latin: `'Montserrat'`,
+    arabic: `'El Messiri'`,
+    google: [`Montserrat:${WEIGHTS}`, `El+Messiri:${WEIGHTS}`],
+  },
+  [AppFont.Amiri]: {
+    latin: `'Amiri'`,
+    arabic: `'Amiri'`,
+    // A serif, and a static family: 400 and 700 only.
+    google: [`Amiri:wght@400;700`],
+  },
 };
 
 /**

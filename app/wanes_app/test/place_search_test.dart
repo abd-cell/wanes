@@ -336,4 +336,220 @@ void main() {
       }
     });
   });
+
+  group('filter groups', () {
+    test('a geocoder kind folds into the group a rider would name', () {
+      expect(categoryOf('cafe'), PlaceCategory.food);
+      expect(categoryOf('fast_food'), PlaceCategory.food);
+      expect(categoryOf('hospital'), PlaceCategory.health);
+      expect(categoryOf('bus_station'), PlaceCategory.transport);
+      expect(categoryOf('village'), PlaceCategory.area);
+    });
+
+    test('case and padding are not part of the vocabulary', () {
+      expect(categoryOf(' Mosque '), PlaceCategory.worship);
+    });
+
+    /// A kind nobody mapped is still a spot on the map, so it lands with the
+    /// addresses rather than in a bucket the chip row would have to explain.
+    test('an unmapped or missing kind is a plain address', () {
+      expect(categoryOf('something_unmapped'), PlaceCategory.address);
+      expect(categoryOf(''), PlaceCategory.address);
+      expect(categoryOf(null), PlaceCategory.address);
+      expect(const Place('Somewhere', 31.9, 35.9).category, PlaceCategory.address);
+    });
+
+    test('every group has its own kinds — a kind cannot belong to two chips', () {
+      final seen = <String>{};
+      for (final category in PlaceCategory.values) {
+        for (final kind in category.kinds) {
+          expect(seen.add(kind), isTrue, reason: '$kind is claimed twice');
+        }
+      }
+    });
+
+    test('the offered chips are the groups present, in taxonomy order', () {
+      final places = [
+        const Place('Mall', 31.95, 35.92, kind: 'mall'),
+        const Place('Cafe', 31.95, 35.92, kind: 'cafe'),
+        const Place('Another cafe', 31.96, 35.93, kind: 'restaurant'),
+      ];
+      expect(categoriesIn(places), [PlaceCategory.food, PlaceCategory.shopping]);
+      expect(categoriesIn(const []), isEmpty);
+    });
+  });
+
+  group('place filter', () {
+    const near = Place('Rainbow Street', 31.9515, 35.9239, kind: 'road');
+    const far = Place('Irbid Centre', 32.5556, 35.8500, kind: 'road');
+    const cafe = Place('Rumi Cafe', 31.9530, 35.9250, kind: 'cafe');
+
+    test('nothing selected keeps every row', () {
+      const filter = PlaceFilter.none;
+      expect(filter.isActive, isFalse);
+      expect(filter.apply(const [near, far, cafe], lat: 31.95, lng: 35.92),
+          hasLength(3));
+    });
+
+    test('a category keeps only its own group', () {
+      const filter = PlaceFilter(category: PlaceCategory.food);
+      expect(filter.apply(const [near, far, cafe]), [cafe]);
+    });
+
+    test('nearby drops what is outside the radius', () {
+      const filter = PlaceFilter(nearbyOnly: true);
+      final kept = filter.apply(const [near, far], lat: 31.9515, lng: 35.9239);
+      expect(kept, [near]);
+      // Sanity: the row that was dropped really is beyond the radius.
+      expect(far.metresTo(31.9515, 35.9239),
+          greaterThan(PlaceFilter.nearbyRadiusMetres));
+    });
+
+    /// With no fix there is nothing to measure from, and hiding every row
+    /// would be a worse answer than showing them all.
+    test('nearby is inert while the position is unknown', () {
+      const filter = PlaceFilter(nearbyOnly: true);
+      expect(filter.apply(const [near, far]), hasLength(2));
+    });
+
+    test('both dimensions apply together', () {
+      const filter =
+          PlaceFilter(category: PlaceCategory.food, nearbyOnly: true);
+      expect(filter.allows(cafe, lat: 31.9515, lng: 35.9239), isTrue);
+      expect(filter.allows(near, lat: 31.9515, lng: 35.9239), isFalse);
+      expect(filter.allows(cafe, lat: 32.5556, lng: 35.85), isFalse);
+    });
+
+    test('the All chip clears the category and keeps the distance toggle', () {
+      const filter =
+          PlaceFilter(category: PlaceCategory.food, nearbyOnly: true);
+      final cleared = filter.withoutCategory();
+      expect(cleared.category, isNull);
+      expect(cleared.nearbyOnly, isTrue);
+      expect(cleared, const PlaceFilter(nearbyOnly: true));
+    });
+  });
+
+  group('the picker filter row', () {
+    testWidgets('nothing to filter, no chips', (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'recent_places': Place.encodeList([
+          const Place('Abdali Mall', 31.9686, 35.9106,
+              address: 'Al Abdali, Amman', kind: 'mall'),
+        ]),
+      });
+
+      await tester.pumpWidget(_host((_) {}));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), 'abdali');
+      await tester.pump();
+
+      // One group, no fix — a chip row here would only be decoration.
+      expect(find.text('All'), findsNothing);
+      expect(find.text('Nearby'), findsNothing);
+    });
+
+    testWidgets('a category chip narrows the list to its own group',
+        (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'recent_places': Place.encodeList([
+          const Place('Amman Mall', 31.9686, 35.9106,
+              address: 'Amman', kind: 'mall'),
+          const Place('Amman Cafe', 31.9500, 35.9200,
+              address: 'Amman', kind: 'cafe'),
+        ]),
+      });
+
+      await tester.pumpWidget(_host((_) {}));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), 'amman');
+      await tester.pump();
+
+      // Both groups are on screen, so both chips are on offer.
+      expect(find.text('Food & drink'), findsOneWidget);
+      expect(find.text('Shopping'), findsOneWidget);
+      expect(find.text('Amman Mall'), findsOneWidget);
+      expect(find.text('Amman Cafe'), findsOneWidget);
+
+      await tester.tap(find.text('Shopping'));
+      await tester.pump();
+
+      expect(find.text('Amman Mall'), findsOneWidget);
+      expect(find.text('Amman Cafe'), findsNothing);
+
+      // And "All" puts back what the chip took away.
+      await tester.tap(find.text('All'));
+      await tester.pump();
+      expect(find.text('Amman Cafe'), findsOneWidget);
+    });
+
+    testWidgets('the nearby chip appears once a fix is known and drops the far row',
+        (tester) async {
+      DeviceLocation.debugOverride =
+          () async => const LocationFix.ok(31.9515, 35.9239);
+      // The picker reuses a fix taken earlier in the session rather than
+      // prompting, so warm it the way a previous screen would have.
+      await DeviceLocation.instance.current();
+
+      SharedPreferences.setMockInitialValues({
+        'recent_places': Place.encodeList([
+          const Place('Rainbow Street', 31.9515, 35.9239, address: 'Jordan'),
+          const Place('Irbid Centre', 32.5556, 35.8500, address: 'Jordan'),
+        ]),
+      });
+
+      await tester.pumpWidget(_host((_) {}));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), 'jordan');
+      await tester.pump();
+
+      expect(find.text('Rainbow Street'), findsOneWidget);
+      expect(find.text('Irbid Centre'), findsOneWidget);
+
+      await tester.tap(find.text('Nearby'));
+      await tester.pump();
+
+      expect(find.text('Rainbow Street'), findsOneWidget);
+      expect(find.text('Irbid Centre'), findsNothing);
+    });
+
+    testWidgets('clearing the query clears the filter with it', (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'recent_places': Place.encodeList([
+          const Place('Amman Mall', 31.9686, 35.9106,
+              address: 'Amman', kind: 'mall'),
+          const Place('Amman Cafe', 31.9500, 35.9200,
+              address: 'Amman', kind: 'cafe'),
+        ]),
+      });
+
+      await tester.pumpWidget(_host((_) {}));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), 'amman');
+      await tester.pump();
+      await tester.tap(find.text('Shopping'));
+      await tester.pump();
+
+      await tester.enterText(find.byType(TextField), '');
+      await tester.pump();
+      await tester.enterText(find.byType(TextField), 'amman');
+      await tester.pump();
+
+      // Back to All: a stale chip must not silently hide half the results.
+      expect(find.text('Amman Cafe'), findsOneWidget);
+      expect(find.text('Amman Mall'), findsOneWidget);
+    });
+  });
 }

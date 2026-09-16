@@ -45,3 +45,6 @@
 
 # Per-user Visual Studio publish state
 *.pubxml.user
+
+# uploaded driver documents (local file storage)
+App_Data/

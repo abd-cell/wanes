@@ -110,8 +110,8 @@ public class AdminTripService : IAdminTripService
         // Editing seats without this can leave a sold-out trip sitting "Posted"
         // (or a trip with room stuck on "Full"). The lifecycle statuses the
         // driver drives -- Arrived/Active/Completed/Cancelled -- are left alone.
-        if (entity.Status is TripStatus.Posted or TripStatus.Full)
-            entity.Status = entity.SeatsLeft <= 0 ? TripStatus.Full : TripStatus.Posted;
+        if (TripStatusRules.IsOpenForSeats(entity.Status))
+            entity.Status = TripStatus.Posted;
     }
 
     private static TripRow BuildRow(Trip trip) => new TripRow(trip)

@@ -28,10 +28,10 @@ public static class NotificationTexts
     /// </summary>
     private static readonly Dictionary<NotificationTemplate, Entry> Templates = new()
     {
-        [NotificationTemplate.RideRequestNearbyDriver] = new(
-            NotificationType.RideRequestNearby,
-            "New ride nearby", "{origin} -> {destination}",
-            "رحلة جديدة قريبة", "من {origin} إلى {destination}"),
+        [NotificationTemplate.RiderTripNearbyDriver] = new(
+            NotificationType.RiderTripNearby,
+            "A rider needs a driver", "{origin} -> {destination}",
+            "راكب يبحث عن سائق", "من {origin} إلى {destination}"),
 
         [NotificationTemplate.BookingConfirmedRider] = new(
             NotificationType.BookingConfirmed,
@@ -80,10 +80,55 @@ public static class NotificationTexts
             "A ride just opened up", "{name} is driving {origin} -> {destination}.",
             "توفّرت رحلة مناسبة", "{name} يقود من {origin} إلى {destination}."),
 
-        [NotificationTemplate.DriverAcceptedRider] = new(
+        // Says the seat is theirs, not that a decision is owed: a claim confirms
+        // the seat outright, exactly as booking a driver's own trip does. The
+        // price is in the payload rather than the line — the figure belongs on
+        // the seat card, where the currency is formatted and Leave is one tap
+        // away.
+        [NotificationTemplate.RiderTripClaimedRider] = new(
             NotificationType.DriverAccepted,
-            "A driver accepted your ride", "{name} is on the way.",
-            "قبل سائق رحلتك", "{name} في الطريق إليك."),
+            "A driver took your trip", "{name} is driving it — your seat is confirmed.",
+            "سائق أخذ رحلتك", "{name} سيقودها — تم تأكيد مقعدك."),
+
+        [NotificationTemplate.TripConfirmedRider] = new(
+            NotificationType.TripConfirmed,
+            "Your seat is confirmed", "{origin} -> {destination} has the riders it needed.",
+            "تم تأكيد مقعدك", "اكتمل عدد الركاب للرحلة من {origin} إلى {destination}."),
+
+        [NotificationTemplate.TripLowSeatsCancelledRider] = new(
+            NotificationType.TripNotEnoughRiders,
+            "Trip called off", "{origin} -> {destination} did not get enough riders.",
+            "أُلغيت الرحلة", "لم يكتمل عدد الركاب للرحلة من {origin} إلى {destination}."),
+
+        [NotificationTemplate.TripConfirmDecisionDriver] = new(
+            NotificationType.ConfirmDecision,
+            "Run with {seats} seat(s)?", "{origin} -> {destination} is short of {min}. Run it, or call it off.",
+            "هل تنطلق بـ {seats} مقعد؟", "الرحلة من {origin} إلى {destination} أقل من {min}. انطلق بها أو ألغِها."),
+
+
+        [NotificationTemplate.RideRequestJoinedRider] = new(
+            NotificationType.RideRequest,
+            "Another rider joined", "{origin} -> {destination} now has more passengers looking for a driver.",
+            "انضم راكب آخر", "طلب {origin} إلى {destination} صار فيه ركاب أكثر بانتظار سائق."),
+
+        [NotificationTemplate.RideRequestInterestRider] = new(
+            NotificationType.RideRequest,
+            "A driver is interested", "{name} offered to drive {origin} -> {destination}.",
+            "سائق مهتم", "{name} عرض أن يقود من {origin} إلى {destination}."),
+
+        [NotificationTemplate.RideRequestMatchedRider] = new(
+            // DriverAccepted, not RideRequest: this is precisely "a driver
+            // accepted", and it is the event the rider's waiting screen hands
+            // over on. Giving it the generic type would leave that screen
+            // watching for something that no longer arrives.
+            NotificationType.DriverAccepted,
+            "A driver took your request", "{name} is driving it — your seat is confirmed.",
+            "سائق أخذ طلبك", "{name} سيقودها — تم تأكيد مقعدك."),
+
+        [NotificationTemplate.RideRequestNotSelectedDriver] = new(
+            NotificationType.RideRequest,
+            "Another driver was chosen", "{origin} -> {destination} went to someone else this time.",
+            "تم اختيار سائق آخر", "طلب {origin} إلى {destination} ذهب لسائق آخر هذه المرة."),
 
         [NotificationTemplate.DriverVerified] = new(
             NotificationType.DriverVerified,
@@ -98,6 +143,13 @@ public static class NotificationTexts
             "Your driver application was not approved. Contact support if you think this is a mistake.",
             "تم رفض طلب السائق",
             "لم يتم اعتماد طلبك كسائق. تواصل مع الدعم إذا كنت تعتقد أن هناك خطأ."),
+
+        [NotificationTemplate.DriverRejectedWithReason] = new(
+            NotificationType.DriverRejected,
+            "Driver application declined",
+            "{reason}",
+            "تم رفض طلب السائق",
+            "{reason}"),
 
         // The reply itself is not in the push. It is one person's answer to one
         // person's complaint, written in free text the desk never expected a

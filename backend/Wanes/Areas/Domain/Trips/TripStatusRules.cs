@@ -56,6 +56,23 @@ public static class TripStatusRules
         // Falling back to Posted here would put a departed trip back in search.
         if (current is TripStatus.Arrived or TripStatus.Active or TripStatus.EnRoute) return current;
 
-        return seatsLeft <= 0 ? TripStatus.Full : TripStatus.Posted;
+        // Not Full. Capacity left the lifecycle in v2 (see Trip.IsFull): a trip
+        // with no seats left is still Posted, and seatsLeft is the only thing
+        // that says so. The parameter stays for the callers' sake and because
+        // legacy rows still carry Full.
+        _ = seatsLeft;
+        return TripStatus.Posted;
     }
+
+    /// <summary>
+    /// The trip has not set off: seats can still be taken and given back, and
+    /// every "can this still change" question upstream means this one.
+    ///
+    /// <see cref="TripStatus.Full"/> is included for rows written before
+    /// capacity left the lifecycle. Nothing writes it any more — the migration
+    /// rewrote what it could — but a status check that forgets it would strand
+    /// any that survive.
+    /// </summary>
+    public static bool IsOpenForSeats(TripStatus status) =>
+        status is TripStatus.Posted or TripStatus.Full;
 }

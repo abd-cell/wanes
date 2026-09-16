@@ -9,15 +9,40 @@ import { GlobalService } from '../../core/services/global.service';
 import { TranslationService } from '../../core/services/translation.service';
 import { TranslatePipe } from '../../core/pipes/translate.pipe';
 
+/** A whole-minute bound, mirrored from the server so the form shows what it would store. */
+const minutes = (min: number, max: number) => ({
+  min,
+  max,
+  clamp: (value: number) => Math.min(max, Math.max(min, Math.round(value || 0))),
+});
+
 /**
- * What the backend will accept for the hail window (MatchRules.Min/MaxHailTtlMinutes).
- * Mirrored here so the form shows the clamped figure the server would store
- * rather than whatever was typed.
+ * The windows the server will accept, mirrored here so the form shows the
+ * clamped figure it would actually store rather than whatever was typed.
+ *
+ * `TripConfirmationRules` and `RiderTripRules` on the server are the
+ * authority; these are the same numbers, not a second opinion.
  */
-const HAIL_TTL_BOUNDS = {
+const CONFIRM_CUTOFF_BOUNDS = minutes(5, 720);
+const CONFIRM_LEAD_BOUNDS = minutes(1, 240);
+
+/** The seeded passenger threshold, bounded by what an ordinary car can seat. */
+const MIN_PASSENGERS_BOUNDS = {
   min: 1,
-  max: 240,
-  clamp: (value: number) => Math.min(240, Math.max(1, Math.round(value || 0))),
+  max: 8,
+  clamp: (value: number) => Math.min(8, Math.max(1, Math.round(value || 0))),
+};
+
+/** The offer window. Zero is the meaningful default, not a missing value. */
+const SELECTION_WINDOW_BOUNDS = {
+  min: 0,
+  max: 120,
+  clamp: (value: number) => Math.min(120, Math.max(0, Math.round(value || 0))),
+};
+const SPEED_BOUNDS = {
+  min: 5,
+  max: 120,
+  clamp: (value: number) => Math.min(120, Math.max(5, Math.round(value || 0))),
 };
 
 /**
@@ -28,8 +53,9 @@ const HAIL_TTL_BOUNDS = {
  * it would price a long ride below a short one — and the ceiling is there so a
  * slipped decimal cannot list a trip at a fortune.
  */
-/** The distance the fare preview quotes for — an ordinary city trip. */
+/** The distance the fare and speed previews quote for — an ordinary city trip. */
 const FARE_PREVIEW_KM = 10;
+const SPEED_PREVIEW_KM = 10;
 
 const FARE_RATE_BOUNDS = {
   min: 0,
@@ -50,6 +76,13 @@ const FONTS: { value: AppFont; labelKey: string; faceKey: string }[] = [
   { value: AppFont.Rubik, labelKey: 'cfg_font_rubik', faceKey: 'cfg_font_rubik_faces' },
   { value: AppFont.Noto, labelKey: 'cfg_font_noto', faceKey: 'cfg_font_noto_faces' },
   { value: AppFont.Tajawal, labelKey: 'cfg_font_tajawal', faceKey: 'cfg_font_tajawal_faces' },
+  { value: AppFont.Almarai, labelKey: 'cfg_font_almarai', faceKey: 'cfg_font_almarai_faces' },
+  { value: AppFont.ReadexPro, labelKey: 'cfg_font_readex', faceKey: 'cfg_font_readex_faces' },
+  { value: AppFont.Alexandria, labelKey: 'cfg_font_alexandria', faceKey: 'cfg_font_alexandria_faces' },
+  { value: AppFont.Poppins, labelKey: 'cfg_font_poppins', faceKey: 'cfg_font_poppins_faces' },
+  { value: AppFont.Montserrat, labelKey: 'cfg_font_montserrat', faceKey: 'cfg_font_montserrat_faces' },
+  { value: AppFont.Amiri, labelKey: 'cfg_font_amiri', faceKey: 'cfg_font_amiri_faces' },
+  // Last on purpose: it is the opt-out of the choice above, not another face.
   { value: AppFont.System, labelKey: 'cfg_font_system', faceKey: 'cfg_font_system_faces' },
 ];
 
@@ -121,16 +154,47 @@ export class SettingsComponent implements OnInit {
    * having to divide. Built here rather than in the template because the
    * translate pipe takes no parameters.
    */
-  readonly hailTtlPreview = computed(() => {
-    const minutes = HAIL_TTL_BOUNDS.clamp(Number(this.model().hailRequestTtlMinutes) || 0);
-    const hours = Math.floor(minutes / 60);
-    const rest = minutes % 60;
+  /**
+   * The two confirm windows read as one sentence, because that is how they act:
+   * the driver is asked at one moment and answered for at the next, and an
+   * admin setting them apart needs to see the gap.
+   */
+  readonly confirmPreview = computed(() => {
+    const cutoff = CONFIRM_CUTOFF_BOUNDS.clamp(Number(this.model().confirmCutoffMinutes) || 0);
+    const lead = CONFIRM_LEAD_BOUNDS.clamp(Number(this.model().confirmDecisionLeadMinutes) || 0);
+    return this.translation
+      .translate('cfg_confirm_preview')
+      .replace('{ask}', this.spell(cutoff + lead))
+      .replace('{cutoff}', this.spell(cutoff));
+  });
+
+  /**
+   * How long the lead-time rule makes a rider wait for four seats — the figure
+   * that actually bites, since the earliest departure is one leg-time per seat.
+   */
+  readonly speedPreview = computed(() => {
+    const kmh = SPEED_BOUNDS.clamp(Number(this.model().averageSpeedKmh) || 0);
+    const legMinutes = Math.round((SPEED_PREVIEW_KM / kmh) * 60);
+    return this.translation
+      .translate('cfg_speed_preview')
+      .replace('{leg}', this.spell(legMinutes))
+      .replace('{four}', this.spell(Math.min(legMinutes * 4, 360)));
+  });
+
+  /**
+   * Minutes in words, so an admin typing 90 sees "1 h 30 min" rather than
+   * having to divide. Here rather than in the template because the translate
+   * pipe takes no parameters.
+   */
+  private spell(total: number): string {
+    const hours = Math.floor(total / 60);
+    const rest = total % 60;
     const parts = [
       hours ? `${hours} ${this.translation.translate('cfg_unit_hours')}` : '',
       rest ? `${rest} ${this.translation.translate('cfg_unit_minutes')}` : '',
     ].filter(Boolean);
-    return `${this.translation.translate('cfg_hail_ttl_preview')} ${parts.join(' ')}`;
-  });
+    return parts.length ? parts.join(' ') : `0 ${this.translation.translate('cfg_unit_minutes')}`;
+  }
 
   /**
    * What a typical ride would list at, so an admin setting rates sees a price
@@ -236,7 +300,14 @@ export class SettingsComponent implements OnInit {
         currencyDecimals: Number(m.currencyDecimals),
         primaryColor: m.primaryColor.trim(),
         fontFamily: Number(m.fontFamily),
-        hailRequestTtlMinutes: HAIL_TTL_BOUNDS.clamp(Number(m.hailRequestTtlMinutes)),
+        confirmCutoffMinutes: CONFIRM_CUTOFF_BOUNDS.clamp(Number(m.confirmCutoffMinutes)),
+        confirmDecisionLeadMinutes:
+          CONFIRM_LEAD_BOUNDS.clamp(Number(m.confirmDecisionLeadMinutes)),
+        minimumPassengersDefault:
+          MIN_PASSENGERS_BOUNDS.clamp(Number(m.minimumPassengersDefault)),
+        driverSelectionWindowMinutes:
+          SELECTION_WINDOW_BOUNDS.clamp(Number(m.driverSelectionWindowMinutes)),
+        averageSpeedKmh: SPEED_BOUNDS.clamp(Number(m.averageSpeedKmh)),
         fareBaseAmount: FARE_RATE_BOUNDS.clamp(Number(m.fareBaseAmount)),
         farePerKm: FARE_RATE_BOUNDS.clamp(Number(m.farePerKm)),
         supportPhone: (m.supportPhone ?? '').trim(),

@@ -1,5 +1,5 @@
-using Wanes.Areas.Domain.Bookings;
-using Wanes.Areas.Domain.Requests;
+﻿using Wanes.Areas.Domain.Bookings;
+using Wanes.Areas.Domain.RiderTrips;
 using Wanes.Areas.Domain.Trips;
 using Wanes.Areas.Domain.Users;
 using Wanes.Areas.Domain.Vehicles;
@@ -42,18 +42,9 @@ public class DiscoverabilityTests
     private const double DestLat = 32.0100;
     private const double DestLng = 35.8700;
 
-    private static SearchService Search(FakeUnitOfWork uow) =>
-        new(uow, new FakeSecurityManager(RiderId), new FakeAuditService(),
-            new FakeNotificationService(), new FakeAppConfigurationService(),
-            uow.Repository<Trip>(), uow.Repository<User>(), uow.Repository<Vehicle>(),
-            uow.Repository<RideRequest>(), uow.Repository<Booking>());
+    private static SearchService Search(FakeUnitOfWork uow) => Make.Search(uow, RiderId);
 
-    private static TripService Trips(FakeUnitOfWork uow) =>
-        new(uow, new FakeSecurityManager(DriverId), new FakeAuditService(),
-            new FakeNotificationService(),
-            new DriverAvailabilityService(uow.Repository<Trip>()),
-            uow.Repository<Trip>(), uow.Repository<TripStatusHistory>(), uow.Repository<Vehicle>(),
-            uow.Repository<User>(), uow.Repository<Booking>(), uow.Repository<RideRequest>());
+    private static TripService Trips(FakeUnitOfWork uow) => Make.Trips(uow, DriverId);
 
     private static SearchInput Wanted(DateTime when) => new()
     {
@@ -101,8 +92,7 @@ public class DiscoverabilityTests
 
         var res = await Search(uow).Search(Wanted(now));
 
-        Assert.Equal(SearchMode.Carpool, res.Data!.Mode);
-        Assert.Equal(10, Assert.Single(res.Data.Matches).Id);
+        Assert.Equal(10, Assert.Single(res.Data!.Matches).Trip.Id);
     }
 
     [Fact]
@@ -114,12 +104,11 @@ public class DiscoverabilityTests
 
         var res = await Search(uow).Search(Wanted(now));
 
-        Assert.Equal(SearchMode.Carpool, res.Data!.Mode);
-        Assert.Single(res.Data.Matches);
+        Assert.Single(res.Data!.Matches);
     }
 
     [Fact]
-    public async Task The_hail_only_opens_when_there_is_genuinely_nothing()
+    public async Task Search_comes_back_empty_only_when_there_is_genuinely_nothing()
     {
         // The consequence of ranking rather than filtering, and the point of it:
         // a request is a last resort, not what a rider gets for asking about an
@@ -127,7 +116,7 @@ public class DiscoverabilityTests
         var uow = Scene();
         var res = await Search(uow).Search(Wanted(DateTime.UtcNow));
 
-        Assert.Equal(SearchMode.Hail, res.Data!.Mode);
+        Assert.Empty(res.Data!.Matches);
     }
 
     [Fact]
@@ -143,7 +132,7 @@ public class DiscoverabilityTests
 
         var res = await Search(uow).Search(Wanted(now));
 
-        Assert.Equal([11, 12, 10], res.Data!.Matches.Select(m => m.Id).ToList());
+        Assert.Equal([11, 12, 10], res.Data!.Matches.Select(m => m.Trip.Id).ToList());
     }
 
     [Fact]
@@ -158,7 +147,7 @@ public class DiscoverabilityTests
 
         var res = await Search(uow).Search(Wanted(now));
 
-        Assert.Equal(SearchMode.Hail, res.Data!.Mode);
+        Assert.Empty(res.Data!.Matches);
     }
 
     [Fact]
@@ -170,7 +159,7 @@ public class DiscoverabilityTests
 
         var res = await Search(uow).Search(Wanted(now));
 
-        Assert.Equal(SearchMode.Hail, res.Data!.Mode);
+        Assert.Empty(res.Data!.Matches);
     }
 
     [Fact]
@@ -184,7 +173,7 @@ public class DiscoverabilityTests
         input.Seats = 3;
         var res = await Search(uow).Search(input);
 
-        Assert.Equal(SearchMode.Hail, res.Data!.Mode);
+        Assert.Empty(res.Data!.Matches);
     }
 
     // ── Setting off is what closes a trip to search ──────────────────────────
@@ -197,14 +186,14 @@ public class DiscoverabilityTests
         AddTrip(uow, 10, now.AddMinutes(20));
 
         var before = await Search(uow).Search(Wanted(now));
-        Assert.Equal(SearchMode.Carpool, before.Data!.Mode);
+        Assert.NotEmpty(before.Data!.Matches);
 
         var depart = await Trips(uow).Depart(10);
         Assert.True(depart.Success);
         Assert.Equal(TripStatus.EnRoute, uow.Store<Trip>().Single().Status);
 
         var after = await Search(uow).Search(Wanted(now));
-        Assert.Equal(SearchMode.Hail, after.Data!.Mode);
+        Assert.Empty(after.Data!.Matches);
     }
 
     [Fact]
@@ -226,7 +215,7 @@ public class DiscoverabilityTests
     }
 
     [Fact]
-    public async Task Setting_off_takes_the_driver_off_the_hail_board()
+    public async Task Setting_off_takes_the_driver_off_the_board()
     {
         var uow = Scene();
         var driver = uow.Store<User>().First(u => u.Id == DriverId);

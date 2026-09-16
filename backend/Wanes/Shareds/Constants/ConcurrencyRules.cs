@@ -1,13 +1,13 @@
-namespace Wanes.Shareds.Constants;
+﻿namespace Wanes.Shareds.Constants;
 
 /// <summary>
 /// How the platform's two genuine races are settled.
 ///
 /// Both are last-seat problems: two riders taking the final seat on a trip, and
-/// two drivers accepting the same hail. Neither is safe as a read-check-write
+/// two drivers claiming the same rider-posted trip. Neither is safe as a read-check-write
 /// inside a transaction — SQL Server reads at READ COMMITTED, so both readers
 /// see the same row and neither blocks the other. The rows therefore carry a
-/// row version (<c>Trip.RowVersion</c>, <c>RideRequest.RowVersion</c>), which
+/// row version (<c>Trip.RowVersion</c>, <c>RiderTrip.RowVersion</c>), which
 /// makes every UPDATE conditional on the value that was read: the loser changes
 /// no rows and is told, rather than silently overwriting the winner.
 /// </summary>

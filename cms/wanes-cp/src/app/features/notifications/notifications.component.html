@@ -36,6 +36,11 @@
         <span class="stat-value">{{ s.recipients.toLocaleString() }}</span>
         <span class="stat-note">{{ 'notif_stat_recipients_note' | translate }}</span>
       </div>
+      <div class="stat">
+        <span class="stat-label">{{ 'notif_stat_deleted' | translate }}</span>
+        <span class="stat-value">{{ s.deleted.toLocaleString() }}</span>
+        <span class="stat-note">{{ 'notif_stat_deleted_note' | translate }}</span>
+      </div>
     </div>
   }
 
@@ -237,6 +242,12 @@
       <option value="true">{{ 'filter_read' | translate }}</option>
     </select>
 
+    <select class="field" [ngModel]="filterDeleted()" (ngModelChange)="setDeleted($event)">
+      <option value="">{{ 'filter_all_visibility' | translate }}</option>
+      <option value="false">{{ 'filter_live' | translate }}</option>
+      <option value="true">{{ 'filter_deleted' | translate }}</option>
+    </select>
+
     <div class="user-filter">
       <app-lookup-picker type="users" [value]="filterUserId()"
                          placeholderKey="filter_by_user" (valueChange)="setUser($event)" />
@@ -285,7 +296,7 @@
         </thead>
         <tbody>
           @for (row of rows(); track row.id) {
-            <tr [class.unread]="!row.isRead">
+            <tr [class.unread]="!row.isRead" [class.cleared]="row.isDeleted">
               <td class="tick">
                 <input type="checkbox" [checked]="isSelected(row.id)" (change)="toggleSelect(row.id)"
                        [attr.aria-label]="'bulk_select_row' | translate" />
@@ -299,12 +310,19 @@
                 <span class="row-title" [title]="row.title">{{ row.title }}</span>
                 <span class="row-body" [title]="row.body">{{ row.body }}</span>
               </td>
-              <td>
+              <td class="state-cell">
                 <button type="button" class="badge" [class.badge-verified]="row.isRead"
                         [class.badge-pending]="!row.isRead" (click)="toggleRead(row)"
                         [title]="'notif_toggle_read' | translate">
                   {{ (row.isRead ? 'bool_true' : 'filter_unread') | translate }}
                 </button>
+                @if (row.isDeleted) {
+                  <span class="badge badge-cleared"
+                        [title]="('notif_deleted_title' | translate)
+                                   .replace('{date}', (row.deletionDate | date: 'yyyy-MM-dd HH:mm') || '')">
+                    {{ 'notif_deleted_badge' | translate }}
+                  </span>
+                }
               </td>
               <td>{{ row.creationDate | date: 'yyyy-MM-dd HH:mm' }}</td>
               <td>
@@ -312,9 +330,11 @@
                   <button class="btn btn-ghost btn-sm" (click)="openEdit(row)">
                     {{ 'action_edit' | translate }}
                   </button>
-                  <button class="btn btn-danger btn-sm" (click)="remove(row)">
-                    {{ 'action_delete' | translate }}
-                  </button>
+                  @if (!row.isDeleted) {
+                    <button class="btn btn-danger btn-sm" (click)="remove(row)">
+                      {{ 'action_delete' | translate }}
+                    </button>
+                  }
                 </div>
               </td>
             </tr>

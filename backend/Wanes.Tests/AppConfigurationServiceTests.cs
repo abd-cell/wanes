@@ -1,4 +1,4 @@
-using Wanes.Areas.Services.Configuration;
+﻿using Wanes.Areas.Services.Configuration;
 using Wanes.Areas.Services.Configuration.Models;
 using Wanes.Shareds.Enums;
 using Wanes.Tests.TestDoubles;
@@ -29,7 +29,7 @@ public class AppConfigurationServiceTests
         CurrencyDecimals = 2,
         PrimaryColor = "#abc",
         FontFamily = font,
-        HailRequestTtlMinutes = 25,
+        ConfirmCutoffMinutes = 45,
     };
 
     [Fact]

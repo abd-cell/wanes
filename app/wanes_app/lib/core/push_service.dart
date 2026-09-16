@@ -66,11 +66,11 @@ class PushService {
   final _received = StreamController<AppNotification>.broadcast();
   Stream<AppNotification> get received => _received.stream;
 
-  /// Fires when a hail stops being answerable — the rider cancelled it, another
-  /// driver took it, or its window ran out. A driver screen holding that card
-  /// drops it instead of offering an Accept that can only fail.
-  final _requestClosed = StreamController<RideRequestClosed>.broadcast();
-  Stream<RideRequestClosed> get requestClosed => _requestClosed.stream;
+  /// Fires when a rider-posted trip stops being answerable — its last rider
+  /// left, another driver claimed it, or its departure came. A driver screen
+  /// holding that card drops it instead of offering a Claim that can only fail.
+  final _riderTripClosed = StreamController<RiderTripClosed>.broadcast();
+  Stream<RiderTripClosed> get riderTripClosed => _riderTripClosed.stream;
 
   /// Fires when the user taps a notification, carrying its payload so the app
   /// can route to the trip or booking it refers to.
@@ -227,12 +227,15 @@ class PushService {
 
   void _onControlEvent(String name, Map<String, dynamic> event) {
     switch (name) {
-      case 'rideRequestClosed':
-        final id = (event['requestId'] as num?)?.toInt();
+      case 'riderTripClosed':
+        // The frame kept its name across v2 — a client that missed the
+        // rename would silently stop clearing dead cards — but the id it
+        // carries is a ride request's now.
+        final id = (event['rideRequestId'] as num?)?.toInt();
         if (id != null) {
-          _requestClosed.add(RideRequestClosed(
-            requestId: id,
-            reason: RideRequestClosedReason.fromWire(event['reason'] as String?),
+          _riderTripClosed.add(RiderTripClosed(
+            riderTripId: id,
+            reason: RiderTripClosedReason.fromWire(event['reason'] as String?),
           ));
         }
       default:

@@ -115,6 +115,37 @@ void main() {
       expect(WanesTheme.display().fontFamily, isNull);
     });
 
+    test('every option resolves to its own pairing, not the shipped fallback', () {
+      // The table in theme.dart is keyed by enum value, and a missing key falls
+      // back to Jakarta silently — so an option added to the enum without a
+      // pairing would look configured and paint the old face. Naming the
+      // expected family per value is what catches that.
+      const expected = <AppFont, (String latin, String arabic)>{
+        AppFont.jakarta: ('PlusJakartaSans', 'Cairo'),
+        AppFont.inter: ('Inter', 'IBMPlexSansArabic'),
+        AppFont.rubik: ('Rubik', 'Rubik'),
+        AppFont.noto: ('NotoSans', 'NotoSansArabic'),
+        AppFont.tajawal: ('Tajawal', 'Tajawal'),
+        AppFont.almarai: ('Almarai', 'Almarai'),
+        AppFont.readexPro: ('ReadexPro', 'ReadexPro'),
+        AppFont.alexandria: ('Alexandria', 'Alexandria'),
+        AppFont.poppins: ('Poppins', 'Almarai'),
+        AppFont.montserrat: ('Montserrat', 'ElMessiri'),
+        AppFont.amiri: ('Amiri', 'Amiri'),
+      };
+
+      for (final font in AppFont.values.where((f) => f != AppFont.system)) {
+        final faces = expected[font];
+        expect(faces, isNotNull, reason: '$font has no expected pairing here');
+
+        AppConfigController.config.value = AppConfig(font: font);
+        WanesTheme.arabic = false;
+        expect(families(WanesTheme.display()), contains(faces!.$1), reason: 'latin face for $font');
+        WanesTheme.arabic = true;
+        expect(families(WanesTheme.display()), contains(faces.$2), reason: 'arabic face for $font');
+      }
+    });
+
     test('the mono/data face is fixed — a font choice must not move figures', () {
       WanesTheme.arabic = false;
       for (final font in AppFont.values) {

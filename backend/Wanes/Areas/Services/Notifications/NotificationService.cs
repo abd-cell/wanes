@@ -1,10 +1,12 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.EntityFrameworkCore;
 using Wanes.Areas.Domain.Notifications;
-using Wanes.Areas.Domain.Requests;
+using Wanes.Areas.Domain.Bookings;
+using Wanes.Areas.Domain.RideRequests;
 using Wanes.Areas.Domain.Trips;
 using Wanes.Areas.Domain.Users;
+using Wanes.Areas.Services.Audit;
 using Wanes.Areas.Services.Notifications.Models;
 using Wanes.Areas.Services.Users.Availability;
 using Wanes.DataAccess.Repositories;
@@ -25,13 +27,14 @@ public class NotificationService : INotificationService
     private const int FeedSize = 50;
 
     /// <summary>
-    /// Frame name for the hail-closed broadcast. Control frames carry an
+    /// Frame name for the posting-closed broadcast. Control frames carry an
     /// <c>event</c> key that notification frames never have, which is how a
     /// client tells the two apart on one stream — see <see cref="Stream"/>.
     /// </summary>
-    private const string RideRequestClosedEvent = "rideRequestClosed";
+    private const string RiderTripClosedEvent = "riderTripClosed";
 
     private readonly IUnitOfWork unitOfWork;
+    private readonly IAuditService auditService;
     private readonly ISecurityManager securityManager;
     private readonly IFcmSender fcmSender;
     private readonly SseConnectionManager sseConnectionManager;
@@ -39,11 +42,15 @@ public class NotificationService : INotificationService
     private readonly IRepository<UserNotification> notificationRepository;
     private readonly IRepository<UserLogin> userLoginRepository;
     private readonly IRepository<User> userRepository;
-    private readonly IRepository<RideRequest> rideRequestRepository;
+    private readonly IRepository<Trip> tripRepository;
+    private readonly IRepository<Booking> bookingRepository;
+    private readonly IRepository<RideRequest> requestRepository;
+    private readonly IRepository<RideRequestParticipant> participantRepository;
     private readonly IDriverAvailabilityService driverAvailabilityService;
 
     public NotificationService(
         IUnitOfWork unitOfWork,
+        IAuditService auditService,
         ISecurityManager securityManager,
         IFcmSender fcmSender,
         SseConnectionManager sseConnectionManager,
@@ -51,10 +58,14 @@ public class NotificationService : INotificationService
         IRepository<UserNotification> notificationRepository,
         IRepository<UserLogin> userLoginRepository,
         IRepository<User> userRepository,
-        IRepository<RideRequest> rideRequestRepository,
+        IRepository<Trip> tripRepository,
+        IRepository<Booking> bookingRepository,
+        IRepository<RideRequest> requestRepository,
+        IRepository<RideRequestParticipant> participantRepository,
         IDriverAvailabilityService driverAvailabilityService)
     {
         this.unitOfWork = unitOfWork;
+        this.auditService = auditService;
         this.securityManager = securityManager;
         this.fcmSender = fcmSender;
         this.sseConnectionManager = sseConnectionManager;
@@ -62,7 +73,10 @@ public class NotificationService : INotificationService
         this.notificationRepository = notificationRepository;
         this.userLoginRepository = userLoginRepository;
         this.userRepository = userRepository;
-        this.rideRequestRepository = rideRequestRepository;
+        this.tripRepository = tripRepository;
+        this.bookingRepository = bookingRepository;
+        this.requestRepository = requestRepository;
+        this.participantRepository = participantRepository;
         this.driverAvailabilityService = driverAvailabilityService;
     }
 
@@ -395,61 +409,91 @@ public class NotificationService : INotificationService
 
     public async Task<int> NotifyNearbyDrivers(RideRequest request)
     {
+        // Only drivers these riders would actually accept: they may have asked
+        // for a woman at the wheel, and pushing it to everybody would both waste
+        // the notification and invite an offer the API then refuses.
+        var required = request.DriverGenderPolicy;
+
+        // Nobody drives a request they are on. Read off the participants rather
+        // than an author column, so everybody on it is excluded and not only
+        // whoever wrote it.
+        var aboard = await participantRepository
+            .Where(p => p.RideRequestId == request.Id
+                        && p.Status == RideRequestParticipantStatus.Active)
+            .Select(p => p.RiderId)
+            .ToListAsync();
+
         var candidates = await userRepository
             .Where(u => u.IsDriver
                         && u.DriverStatus == DriverStatus.Verified
                         && u.IsOnline
                         && u.LastLocation != null
-                        && u.Id != request.RiderId
+                        && !aboard.Contains(u.Id)
+                        && (required == GenderPolicy.Any
+                            || (required == GenderPolicy.MaleOnly && u.Gender == Gender.Male)
+                            || (required == GenderPolicy.FemaleOnly && u.Gender == Gender.Female))
                         && u.LastLocation!.IsWithinDistance(request.Origin, request.RadiusMeters))
             .Select(u => u.Id)
             .ToListAsync();
 
         // A driver already driving — or already promised to a departure this
-        // close to the one being asked for — cannot serve this hail. The moment
-        // to ask about is the rider's wanted departure, not now: a hail for six
-        // this evening should still reach a driver whose only other trip is at
-        // three. Filtering here rather than only on accept keeps a busy driver's
-        // phone quiet instead of buzzing them about a ride the API would refuse.
-        var departAt = MatchRules.HailDepartureFor(request.WantedDepartAt, DateTime.UtcNow);
+        // close to the one being asked for — cannot serve this request. The
+        // moment to ask about is the riders' wanted departure, not now: a
+        // request for six this evening should still reach a driver whose only
+        // other trip is at three. Filtering here rather than only at selection
+        // keeps a busy driver's phone quiet instead of buzzing them about a ride
+        // the API would refuse.
+        var departAt = MatchRules.DepartureFor(request.DepartAt, DateTime.UtcNow);
         var busy = await driverAvailabilityService.BusyDrivers(candidates, departAt);
         var driverIds = candidates.Where(id => !busy.Contains(id)).ToList();
 
-        await NotifyMany(driverIds, NotificationTemplate.RideRequestNearbyDriver,
+        await NotifyMany(driverIds, NotificationTemplate.RiderTripNearbyDriver,
             args: new { origin = request.OriginAddress, destination = request.DestinationAddress },
-            data: new { requestId = request.Id, seats = request.Seats, departAt });
+            data: new { rideRequestId = request.Id, seats = request.SeatsRequested, departAt });
 
         return driverIds.Count;
     }
 
     /// <summary>
-    /// Open hails whose two ends both sit inside the radius that rider asked for,
-    /// departing inside the same window search uses.
+    /// Open requests whose two ends both sit inside the radius those riders
+    /// asked for, wanting a departure inside the same window search uses — and
+    /// whose conditions this driver satisfies.
     ///
-    /// Matched on the hail's own wanted departure, which is the departure the
-    /// rider searched for. While a hail was assumed to mean "now" this compared
-    /// RequestedAt instead, so a rider hailing for this evening was never told
-    /// about the evening trip a driver had just posted — the only hails the
-    /// reverse match could ever reach were the ones opened in the last half hour.
+    /// The condition check is the half that is easy to forget: telling a
+    /// female-only pool about a male driver's trip is an invitation the app
+    /// would then have to refuse at the tap.
     /// </summary>
     public async Task NotifyWaitingRiders(Trip trip, User driver)
     {
         var now = DateTime.UtcNow;
         var from = trip.DepartAt - MatchRules.TimeWindow;
         var to = trip.DepartAt + MatchRules.TimeWindow;
+        var driverPolicy = RiderEligibilityRules.PolicyFor(driver.Gender);
 
-        var riderIds = await rideRequestRepository
+        var waiting = await requestRepository
             .Where(r => r.Status == RideRequestStatus.Open
-                        && r.RiderId != trip.DriverId
-                        && (r.ExpiresAt == null || r.ExpiresAt > now)
-                        && r.WantedDepartAt >= from && r.WantedDepartAt <= to
-                        && r.Seats <= trip.SeatsLeft
+                        && r.DepartAt > now
+                        && r.DepartAt >= from && r.DepartAt <= to
+                        && r.SeatsRequested <= trip.SeatsLeft
+                        && (r.DriverGenderPolicy == GenderPolicy.Any
+                            || r.DriverGenderPolicy == driverPolicy)
                         && r.Origin.Distance(trip.Origin) <= r.RadiusMeters
                         && r.Destination.Distance(trip.Destination) <= r.RadiusMeters)
-            .Select(r => r.RiderId)
+            .Select(r => r.Id)
+            .ToListAsync();
+        if (waiting.Count == 0) return;
+
+        // Everybody on those requests, not just whoever wrote them: a pool is
+        // several riders, and only telling the author would leave the rest
+        // waiting for a trip that is sitting there. The driver is excluded in
+        // case they are themselves on one of them.
+        var riderIds = await participantRepository
+            .Where(p => waiting.Contains(p.RideRequestId)
+                        && p.Status == RideRequestParticipantStatus.Active
+                        && p.RiderId != driver.Id)
+            .Select(p => p.RiderId)
             .Distinct()
             .ToListAsync();
-
         if (riderIds.Count == 0) return;
 
         await NotifyMany(riderIds, NotificationTemplate.TripMatchedRider,
@@ -463,25 +507,24 @@ public class NotificationService : INotificationService
             new { tripId = trip.Id });
     }
 
-    public async Task NotifyRideRequestClosed(int requestId, RideRequestStatus reason)
+    public async Task NotifyRideRequestClosed(int rideRequestId, RiderTripClosedReason reason)
     {
         // Best-effort like every other delivery path: a client that misses this
-        // still drops the card when its own countdown runs out, and picks up the
-        // truth on the next refresh. Losing the frame must never fail the cancel
-        // or the accept that produced it.
+        // still drops the card on the next refresh. Losing the frame must never
+        // fail the leave or the claim that produced it.
         try
         {
             var payload = JsonSerializer.Serialize(new
             {
-                @event = RideRequestClosedEvent,
-                requestId,
+                @event = RiderTripClosedEvent,
+                rideRequestId = rideRequestId,
                 reason = reason.ToString(),
             });
             await sseConnectionManager.BroadcastAsync(payload);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Broadcasting the close of ride request {RequestId} failed.", requestId);
+            logger.LogError(ex, "Broadcasting the close of request {RequestId} failed.", rideRequestId);
         }
     }
 
@@ -489,6 +532,9 @@ public class NotificationService : INotificationService
     {
         var userId = securityManager.RequireUserId();
 
+        // Rows the user cleared are excluded by the repository's default filter,
+        // list and badge alike — so the count can never sit above an inbox that
+        // no longer holds the unread row it is counting.
         var notifications = await notificationRepository
             .Where(n => n.UserId == userId)
             .OrderByDescending(n => n.Id).Take(FeedSize).ToListAsync();
@@ -529,6 +575,24 @@ public class NotificationService : INotificationService
             notificationRepository.Update(notification);
         }
         await unitOfWork.SaveAsync();
+        return new BaseResponse();
+    }
+
+    public async Task<BaseResponse> Delete(int id)
+    {
+        var userId = securityManager.RequireUserId();
+        // Already-cleared rows are invisible here, so a repeat delete answers
+        // NotFound rather than re-stamping the deletion date.
+        var notification = notificationRepository.FirstOrDefault(x => x.Id == id && x.UserId == userId);
+        if (notification == null) return new BaseResponse(ErrorCode.NotFound);
+
+        notificationRepository.SoftDelete(notification);
+        await unitOfWork.SaveAsync();
+
+        // Audited because the row survives the delete: the console still shows
+        // it, and this is what tells whoever is looking that the owner cleared
+        // it rather than an admin.
+        await auditService.LogAsync(AuditActions.NotificationDelete, nameof(UserNotification), id);
         return new BaseResponse();
     }
 

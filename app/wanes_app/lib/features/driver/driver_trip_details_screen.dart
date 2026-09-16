@@ -36,6 +36,10 @@ class _DriverTripDetailsScreenState extends State<DriverTripDetailsScreen> {
   bool _loading = true;
   bool _changed = false;
 
+  /// True while a run-or-cancel answer is in flight, so neither button can be
+  /// double-tapped into two decisions.
+  bool _deciding = false;
+
   @override
   void initState() {
     super.initState();
@@ -129,6 +133,15 @@ class _DriverTripDetailsScreenState extends State<DriverTripDetailsScreen> {
                 child: ListView(
                   padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
                   children: [
+                    // A trip short of the seats its driver asked for is a
+                    // question, not a status: run it as it is, or call it off.
+                    // At the top because the answer is time-bounded — the
+                    // sweeper decides for them at the cutoff, and it decides to
+                    // cancel.
+                    if (_trip.isGathering) ...[
+                      _decisionCard(t),
+                      const SizedBox(height: 12),
+                    ],
                     _headerCard(t),
                     const SizedBox(height: 12),
                     _routeCard(t),
@@ -173,6 +186,98 @@ class _DriverTripDetailsScreenState extends State<DriverTripDetailsScreen> {
         ),
       ),
     );
+  }
+
+  /// "3 of 4 seats taken — run it, or call it off."
+  ///
+  /// Both answers are offered plainly, and neither is styled as the safe one.
+  /// The driver set the threshold; whether tonight is worth driving on three
+  /// seats is theirs to decide, and the platform's only job is to make sure the
+  /// riders hear the answer in time.
+  Widget _decisionCard(WanesTokens t) {
+    final missing = _trip.seatsToConfirm;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: t.amberTint,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: t.amber),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Row(children: [
+          Icon(Icons.groups_2_outlined, size: 17, color: t.amberInk),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(context.tr('driver.decideTitle'),
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5, color: t.amberInk)),
+          ),
+          if (missing > 0)
+            Text(context.trPlural('driver.seatsShort', missing),
+                style: WanesTheme.mono(
+                    size: 11, weight: FontWeight.w600, color: t.amberInk, spacing: 0)),
+        ]),
+        const SizedBox(height: 7),
+        Text(
+          context.tr('driver.decideBody', {
+            'held': _trip.seatsHeld,
+            'min': _trip.minSeatsToConfirm,
+          }),
+          style: TextStyle(fontSize: 12.5, height: 1.45, color: t.ink),
+        ),
+        const SizedBox(height: 12),
+        Row(children: [
+          Expanded(
+            child: PrimaryButton(
+              label: context.tr('driver.runAnyway', {'held': _trip.seatsHeld}),
+              busy: _deciding,
+              arrow: false,
+              onPressed: _deciding ? null : _confirmNow,
+            ),
+          ),
+          const SizedBox(width: 10),
+          TextButton(
+            onPressed: _deciding ? null : _callOff,
+            child: Text(context.tr('driver.callOff'),
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: t.alert)),
+          ),
+        ]),
+      ]),
+    );
+  }
+
+  /// Runs the trip with the seats it has. Commits every held seat and drops the
+  /// condition, so nothing asks again.
+  Future<void> _confirmNow() => _decide(run: true);
+
+  /// Calls it off for want of riders. The riders are told why — in the words of
+  /// the empty seats, not of a driver who changed their mind about them.
+  Future<void> _callOff() => _decide(run: false);
+
+  Future<void> _decide({required bool run}) async {
+    if (_deciding) return;
+    setState(() => _deciding = true);
+
+    final res = run
+        ? await _trips.confirm(_trip.id)
+        : await _trips.cancelForLowSeats(_trip.id);
+    if (!mounted) return;
+    setState(() => _deciding = false);
+
+    if (!res.success) {
+      WanesAlerts.failure(context, res, title: context.tr('driver.decideFailed'));
+      return;
+    }
+
+    _changed = true;
+    if (run) {
+      WanesAlerts.success(context, context.tr('driver.confirmed'),
+          message: context.tr('driver.confirmedBody'));
+      await _load();
+    } else {
+      WanesAlerts.info(context, context.tr('driver.calledOff'),
+          message: context.tr('driver.calledOffBody'));
+      if (mounted) Navigator.pop(context, true);
+    }
   }
 
   /// Status, departure and what the trip is worth.

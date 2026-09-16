@@ -111,6 +111,17 @@
 
 .data-table td.user-cell { max-width: 175px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* A row the owner (or an admin) cleared is still listed — this table is the
+   only place it survives — so it is dimmed rather than hidden, and carries its
+   own badge beside the read state. */
+.data-table tbody tr.cleared td { opacity: .58; }
+.data-table tbody tr.cleared .row-title { text-decoration: line-through; }
+.badge-cleared {
+  background: color-mix(in srgb, var(--app-ink-soft) 16%, transparent);
+  color: var(--app-ink-soft);
+}
+.state-cell .badge + .badge { margin-inline-start: 6px; }
+
 /* The read badge doubles as the toggle, so it needs to look pressable. */
 button.badge { border: 0; cursor: pointer; font: inherit; font-size: 12px; font-weight: 600; }
 button.badge:hover { filter: brightness(1.08); }

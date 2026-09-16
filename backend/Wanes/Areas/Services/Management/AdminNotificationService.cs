@@ -37,9 +37,13 @@ public class AdminNotificationService : IAdminNotificationService
         this.userRepository = userRepository;
     }
 
-    public async Task<BaseResponse<PageOutput<NotificationRow>>> List(PageInput page, NotificationType? type, int? userId, bool? isRead)
+    public async Task<BaseResponse<PageOutput<NotificationRow>>> List(PageInput page, NotificationType? type,
+        int? userId, bool? isRead, bool? isDeleted)
     {
-        var query = notificationRepository.Query();
+        // includeDeleted, because the console is the only place a cleared
+        // notification is visible: the repository hides them from every other
+        // caller, which is exactly what a user deleting one is asking for.
+        var query = notificationRepository.Query(includeDeleted: true);
 
         if (!string.IsNullOrWhiteSpace(page.Search))
         {
@@ -49,6 +53,7 @@ public class AdminNotificationService : IAdminNotificationService
         if (type != null) query = query.Where(n => n.Type == type);
         if (userId != null) query = query.Where(n => n.UserId == userId);
         if (isRead != null) query = query.Where(n => n.IsRead == isRead);
+        if (isDeleted != null) query = query.Where(n => n.IsDeleted == isDeleted);
 
         var total = await query.CountAsync();
         var items = await query.OrderByDescending(n => n.Id).Paginate(page).ToListAsync();
@@ -60,7 +65,7 @@ public class AdminNotificationService : IAdminNotificationService
 
     public async Task<BaseResponse<NotificationRow>> Get(int id)
     {
-        var notification = await notificationRepository.GetByIdAsync(id);
+        var notification = await notificationRepository.GetByIdAsync(id, includeDeleted: true);
         if (notification == null) return new BaseResponse<NotificationRow>(default, ErrorCode.NotFound);
         return new BaseResponse<NotificationRow>((await BuildRows([notification])).First());
     }
@@ -160,7 +165,8 @@ public class AdminNotificationService : IAdminNotificationService
             return new BaseResponse<BulkNotificationResult>(default, ErrorCode.ValidationError,
                 "Unknown bulk action.");
 
-        var items = await notificationRepository.Where(n => ids.Contains(n.Id)).ToListAsync();
+        var items = await notificationRepository.Query(includeDeleted: true)
+            .Where(n => ids.Contains(n.Id)).ToListAsync();
 
         foreach (var item in items)
         {
@@ -196,7 +202,7 @@ public class AdminNotificationService : IAdminNotificationService
 
     public async Task<BaseResponse<NotificationStats>> Stats()
     {
-        var query = notificationRepository.Query();
+        var query = notificationRepository.Query(includeDeleted: true);
         var since = DateTime.UtcNow.AddHours(-24);
 
         var total = await query.CountAsync();
@@ -213,6 +219,7 @@ public class AdminNotificationService : IAdminNotificationService
             Total = total,
             Unread = unread,
             Read = total - unread,
+            Deleted = await query.CountAsync(n => n.IsDeleted),
             Last24Hours = await query.CountAsync(n => n.CreationDate >= since),
             Recipients = await query.Select(n => n.UserId).Distinct().CountAsync(),
             ByType = byType,
@@ -221,7 +228,7 @@ public class AdminNotificationService : IAdminNotificationService
 
     public async Task<BaseResponse<NotificationRow>> Update(int id, NotificationInput input)
     {
-        var notification = await notificationRepository.GetByIdAsync(id);
+        var notification = await notificationRepository.GetByIdAsync(id, includeDeleted: true);
         if (notification == null) return new BaseResponse<NotificationRow>(default, ErrorCode.NotFound);
 
         Apply(notification, input);
@@ -233,7 +240,7 @@ public class AdminNotificationService : IAdminNotificationService
 
     public async Task<BaseResponse> Delete(int id)
     {
-        var notification = await notificationRepository.GetByIdAsync(id);
+        var notification = await notificationRepository.GetByIdAsync(id, includeDeleted: true);
         if (notification == null) return new BaseResponse(ErrorCode.NotFound);
 
         notificationRepository.SoftDelete(notification);

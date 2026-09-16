@@ -1,5 +1,6 @@
-﻿using Wanes.Areas.Domain.Trips;
-using Wanes.Shareds.Constants;
+using Wanes.Areas.Domain.RiderTrips;
+using Wanes.Areas.Domain.RideRequests;
+using Wanes.Areas.Domain.Trips;
 using Wanes.Shareds.Enums;
 using Wanes.Shareds.Models.Base;
 
@@ -44,27 +45,57 @@ public class AppConfiguration : AuditableEntity
     /// </summary>
     public AppFont FontFamily { get; set; } = AppFont.Jakarta;
 
-    // ── Matching ──
+    // ── Matching and lifecycle windows ──
 
     /// <summary>
-    /// How many minutes an unanswered hail stays open for drivers to pick up.
-    ///
-    /// The admin owns this because it is a market decision, not a technical one:
-    /// a dense city wants a short window so a stale request stops occupying
-    /// drivers, and a thin one wants a long window so a request survives until
-    /// someone comes online. Clamped to
-    /// <see cref="Wanes.Shareds.Constants.MatchRules.MinHailTtlMinutes"/>..<see
-    /// cref="Wanes.Shareds.Constants.MatchRules.MaxHailTtlMinutes"/> on save.
+    /// How long before departure a driver must have answered the run-or-cancel
+    /// question on a trip short of its seat threshold. Riders stood down have to
+    /// learn in time to find another ride, and how much time that takes is local.
     /// </summary>
-    public int HailRequestTtlMinutes { get; set; } = MatchRules.DefaultHailTtlMinutes;
+    public int ConfirmCutoffMinutes { get; set; } = TripConfirmationRules.DefaultCutoffMinutes;
+
+    /// <summary>How long before that cutoff the driver is asked.</summary>
+    public int ConfirmDecisionLeadMinutes { get; set; } = TripConfirmationRules.DefaultDecisionLeadMinutes;
+
+    /// <summary>
+    /// How many passengers a new trip asks for before it confirms, when the
+    /// driver expresses no preference.
+    ///
+    /// Admin-set because "enough passengers to be worth driving" is a
+    /// marketplace fact — a city, a fuel price, a typical leg — and a driver
+    /// filling in a form is the wrong person to be deciding it from scratch.
+    /// It only ever **seeds** the trip's own <c>MinSeatsToConfirm</c>: changing
+    /// it re-decides nothing that already exists.
+    /// </summary>
+    public int MinimumPassengersDefault { get; set; } = TripConfirmationRules.DefaultMinimumPassengers;
+
+    /// <summary>
+    /// How long a ride request collects driver offers before one is selected.
+    ///
+    /// **Zero — the shipped value — means the first interested driver is
+    /// selected immediately**, which is first-come-first-served and exactly what
+    /// the old claim did. Raising it turns the same data into competing offers
+    /// ranked deterministically, with no domain change: that is the whole reason
+    /// it is a setting rather than a rule in code.
+    /// </summary>
+    public int DriverSelectionWindowMinutes { get; set; } = DriverSelectionRules.ImmediateSelection;
+
+    /// <summary>
+    /// The average speed the duration estimate assumes, in km/h.
+    ///
+    /// Drives the earliest departure a rider may post for — one leg-time per
+    /// seat, because a driver has to gather everybody — and the arrival estimate
+    /// the rider is shown. Admin-set because what counts as normal progress is a
+    /// city question, not a constant: Amman in the afternoon is not a motorway.
+    /// </summary>
+    public double AverageSpeedKmh { get; set; } = RiderTripRules.DefaultAverageSpeedKmh;
 
     // ── Fare display ──
     //
     // There are no payments: these only decide what a trip is *listed* at. They
-    // exist because the two ways a trip is created do not both come with a
-    // price. A driver posting a trip quotes one; a driver accepting a hail
-    // never did, they only agreed to go — so that trip's per-seat figure is
-    // derived from these rates instead of left blank. See Trips.FareRules.
+    // exist because a driver claiming a rider's posting never quoted a rate,
+    // they only agreed to go — so the price sheet opens on a figure derived
+    // from these rates rather than on a blank. See Trips.FareRules.
 
     /// <summary>Flag-fall for a derived per-seat price, in the platform currency.</summary>
     public decimal FareBaseAmount { get; set; } = FareRules.DefaultBaseAmount;

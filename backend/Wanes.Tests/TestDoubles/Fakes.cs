@@ -1,4 +1,5 @@
-using Wanes.Areas.Domain.Requests;
+using Wanes.Areas.Domain.RideRequests;
+using Wanes.Areas.Domain.RiderTrips;
 using Wanes.Areas.Domain.Trips;
 using Wanes.Areas.Domain.Users;
 using Wanes.Areas.Services.Audit;
@@ -80,13 +81,20 @@ public class FakeNotificationService : INotificationService
         return Task.FromResult(ids.Count);
     }
 
-    public Task<int> NotifyNearbyDrivers(RideRequest request) =>
-        Task.FromResult(NearbyDriverCount);
+    public Task<int> NotifyNearbyDrivers(RideRequest request)
+    {
+        Sent.Add($"nearby:{request.Id}");
+        return Task.FromResult(NearbyDriverCount);
+    }
 
     /// <summary>
     /// Records that the reverse match was asked for, and for which trip. Which
     /// riders it would actually reach is the real service's business — see
     /// <c>ReverseMatchTests</c> — so the fake only pins whether the caller asked.
+    /// </summary>
+    /// <remarks>
+    /// Still takes a Trip: this one is about a trip that exists, offering its
+    /// spare seats to riders who are still waiting on demand of their own.
     /// </summary>
     public Task NotifyWaitingRiders(Trip trip, User driver)
     {
@@ -94,9 +102,9 @@ public class FakeNotificationService : INotificationService
         return Task.CompletedTask;
     }
 
-    public Task NotifyRideRequestClosed(int requestId, RideRequestStatus reason)
+    public Task NotifyRideRequestClosed(int rideRequestId, RiderTripClosedReason reason)
     {
-        Sent.Add($"request-{requestId}:{reason}");
+        Sent.Add($"request-{rideRequestId}:{reason}");
         return Task.CompletedTask;
     }
 
@@ -105,35 +113,73 @@ public class FakeNotificationService : INotificationService
 
     public Task<BaseResponse> MarkRead(int id) => Task.FromResult(new BaseResponse());
     public Task<BaseResponse> MarkAllRead() => Task.FromResult(new BaseResponse());
+    public Task<BaseResponse> Delete(int id) => Task.FromResult(new BaseResponse());
     public Task<BaseResponse> RegisterDevice(RegisterDeviceInput input) => Task.FromResult(new BaseResponse());
     public Task<BaseResponse> ClearDevice() => Task.FromResult(new BaseResponse());
 }
 
-/// <summary>The shipped defaults, with the hail TTL a test can move.</summary>
+/// <summary>
+/// The shipped defaults, with every window a test might want to move.
+///
+/// Deliberately not a mock: these values are read on nearly every path, and a
+/// test that had to arrange four of them before it could book a seat would be
+/// testing the arrangement.
+/// </summary>
 public class FakeAppConfigurationService : IAppConfigurationService
 {
-    public int HailRequestTtlMinutes { get; set; } = MatchRules.DefaultHailTtlMinutes;
+    public int ConfirmCutoffMinutes { get; set; } = TripConfirmationRules.DefaultCutoffMinutes;
 
-    // The rates a hail-accepted trip is priced from. Default to the shipped
-    // ones so a test that does not care about price gets the real arithmetic.
+    public int ConfirmDecisionLeadMinutes { get; set; } =
+        TripConfirmationRules.DefaultDecisionLeadMinutes;
+
+    /// <summary>
+    /// The marketplace's seed for a trip whose driver named no threshold —
+    /// production's own default, not 1. A suite that quietly seeded "no
+    /// condition" would never exercise the rule that ships.
+    /// </summary>
+    public int MinimumPassengersDefault { get; set; } =
+        TripConfirmationRules.DefaultMinimumPassengers;
+
+    /// <summary>
+    /// Zero: first interest wins, which is what ships. A test about competing
+    /// offers sets it and gets the other marketplace, with no other change.
+    /// </summary>
+    public int DriverSelectionWindowMinutes { get; set; } =
+        DriverSelectionRules.ImmediateSelection;
+
+    public double AverageSpeedKmh { get; set; } = RiderTripRules.DefaultAverageSpeedKmh;
+
+    // The rates a claimed trip is priced from when the driver named no figure.
+    // Default to the shipped ones so a test that does not care about price gets
+    // the real arithmetic.
     public decimal FareBaseAmount { get; set; } = FareRules.DefaultBaseAmount;
     public decimal FarePerKm { get; set; } = FareRules.DefaultPerKm;
 
     public Task<BaseResponse<AppConfigurationOutput>> Get() =>
-        Task.FromResult(new BaseResponse<AppConfigurationOutput>(new AppConfigurationOutput
-        {
-            HailRequestTtlMinutes = HailRequestTtlMinutes,
-            FareBaseAmount = FareBaseAmount,
-            FarePerKm = FarePerKm,
-        }));
+        Task.FromResult(new BaseResponse<AppConfigurationOutput>(Output()));
 
     public Task<BaseResponse<AppConfigurationOutput>> Update(AppConfigurationInput input) =>
         Task.FromResult(new BaseResponse<AppConfigurationOutput>(new AppConfigurationOutput
         {
-            HailRequestTtlMinutes = input.HailRequestTtlMinutes,
+            ConfirmCutoffMinutes = input.ConfirmCutoffMinutes,
+            ConfirmDecisionLeadMinutes = input.ConfirmDecisionLeadMinutes,
+            MinimumPassengersDefault = input.MinimumPassengersDefault,
+            DriverSelectionWindowMinutes = input.DriverSelectionWindowMinutes,
+            AverageSpeedKmh = input.AverageSpeedKmh,
             FareBaseAmount = input.FareBaseAmount,
             FarePerKm = input.FarePerKm,
         }));
+
+    private AppConfigurationOutput Output() => new()
+    {
+        ConfirmCutoffMinutes = ConfirmCutoffMinutes,
+        ConfirmDecisionLeadMinutes = ConfirmDecisionLeadMinutes,
+        MinimumPassengersDefault = MinimumPassengersDefault,
+        DriverSelectionWindowMinutes = DriverSelectionWindowMinutes,
+        AverageSpeedKmh = AverageSpeedKmh,
+        FareBaseAmount = FareBaseAmount,
+        FarePerKm = FarePerKm,
+    };
 }
 
 public class FakeSmsSender : ISmsSender
@@ -171,4 +217,34 @@ public class FakeFcmSender : IFcmSender
     public Task<FcmSendResult> SendAsync(IEnumerable<string> deviceTokens, string title, string body,
         IDictionary<string, string>? data = null) =>
         Task.FromResult(new FcmSendResult());
+}
+
+/// <summary>
+/// File storage in a dictionary. Keys are handed out the same shape the real
+/// one uses, so a test can assert a document was written under the right folder
+/// without touching a disk.
+/// </summary>
+public class FakeFileStorage : Wanes.Shareds.Files.IFileStorage
+{
+    public Dictionary<string, byte[]> Files { get; } = [];
+    public List<string> Deleted { get; } = [];
+
+    public async Task<string> SaveAsync(string folder, string extension, Stream content, CancellationToken ct = default)
+    {
+        using var buffer = new MemoryStream();
+        await content.CopyToAsync(buffer, ct);
+        var key = $"{folder}/{Guid.NewGuid():N}{extension}";
+        Files[key] = buffer.ToArray();
+        return key;
+    }
+
+    public Stream? OpenRead(string key) =>
+        Files.TryGetValue(key, out var bytes) ? new MemoryStream(bytes) : null;
+
+    public Task DeleteAsync(string key)
+    {
+        Deleted.Add(key);
+        Files.Remove(key);
+        return Task.CompletedTask;
+    }
 }

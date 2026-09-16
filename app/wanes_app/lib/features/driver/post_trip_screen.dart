@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' hide TextDirection;
+
+import '../../core/app_config.dart';
 import '../../core/fare.dart';
 import '../../core/l10n.dart';
 import '../../core/places.dart';
@@ -10,6 +12,8 @@ import '../../widgets/place_picker.dart';
 import '../../widgets/wanes_alerts.dart';
 import '../../widgets/wanes_ui.dart';
 import '../../widgets/when_picker.dart';
+import '../../widgets/conditions_card.dart';
+import '../schedule_form_screen.dart';
 import 'vehicles_screen.dart';
 import '../../widgets/wanes_motion.dart';
 
@@ -31,6 +35,12 @@ class PostTripScreen extends StatefulWidget {
 class _PostTripScreenState extends State<PostTripScreen> {
   final _vehicleService = VehicleService();
   final _trips = TripService();
+  final _profiles = ProfileService();
+
+  /// The departures this driver has already promised, so the picker can grey
+  /// them out. Empty until it loads — a picker that opens before the answer
+  /// arrives is better than one that will not open.
+  DriverAvailability _availability = const DriverAvailability();
 
   List<Vehicle> _vehicles = [];
   Vehicle? _vehicle;
@@ -40,7 +50,16 @@ class _PostTripScreenState extends State<PostTripScreen> {
   int _seats = 3;
   late DateTime _departAt = _defaultDeparture();
   double _price = 5.0;
-  bool _repeatWeekdays = false;
+
+  /// Seats that must be taken before anybody is confirmed. 1 is no condition,
+  /// which is the default: most trips run whoever turns up.
+  /// Seeded from the marketplace default, not from 1 — a driver who never
+  /// opens this control has not decided that one passenger is worth the run.
+  /// Overwritten by the trip's own number when editing.
+  int _minSeats = AppConfigController.value.minimumPassengersDefault;
+  GenderPolicy _genderPolicy = GenderPolicy.any;
+  int? _minAge;
+  int? _maxAge;
   bool _loading = true;
   bool _busy = false;
 
@@ -72,8 +91,20 @@ class _PostTripScreenState extends State<PostTripScreen> {
       _seats = trip.seatsTotal > 0 ? trip.seatsTotal : _seats;
       _departAt = trip.departAt.toLocal();
       _price = (trip.pricePerSeat ?? _price).clamp(1, 50).toDouble();
+      _minSeats = trip.minSeatsToConfirm.clamp(1, _seats);
+      _genderPolicy = trip.genderPolicy;
+      _minAge = trip.minAge;
+      _maxAge = trip.maxAge;
     }
     _loadVehicles();
+    _loadAvailability();
+  }
+
+  Future<void> _loadAvailability() async {
+    // The trip being edited must not block its own slot.
+    final res = await _profiles.driverAvailability(ignoreTripId: _editing?.id);
+    if (!mounted || !res.success || res.data == null) return;
+    setState(() => _availability = res.data!);
   }
 
   Future<void> _loadVehicles() async {
@@ -103,7 +134,13 @@ class _PostTripScreenState extends State<PostTripScreen> {
   }
 
   Future<void> _pickDeparture() async {
-    final sel = await showWhenPicker(context, _departAt);
+    final sel = await showWhenPicker(
+      context,
+      _departAt,
+      committed: _availability.committedDepartures,
+      clashWindow: _availability.clashWindow,
+      isEngaged: _availability.isEngaged,
+    );
     if (sel == null || !mounted) return;
     setState(() => _departAt = sel.dateTime ?? DateTime.now());
   }
@@ -132,6 +169,10 @@ class _PostTripScreenState extends State<PostTripScreen> {
             departAt: _departAt,
             seatsTotal: _seats,
             pricePerSeat: _price,
+            minSeatsToConfirm: _minSeats,
+            genderPolicy: _genderPolicy,
+            minAge: _minAge,
+            maxAge: _maxAge,
           )
         : await _trips.update(
             trip.id,
@@ -141,6 +182,10 @@ class _PostTripScreenState extends State<PostTripScreen> {
             departAt: _departAt,
             seatsTotal: _seats,
             pricePerSeat: _price,
+            minSeatsToConfirm: _minSeats,
+            genderPolicy: _genderPolicy,
+            minAge: _minAge,
+            maxAge: _maxAge,
           );
     if (!mounted) return;
     setState(() => _busy = false);
@@ -156,6 +201,26 @@ class _PostTripScreenState extends State<PostTripScreen> {
     if (res.success) Navigator.pop(context, true);
   }
 
+
+  /// Turns what is on this form into a repeating trip. The route, the hour, the
+  /// seats and the price come across, so "make this weekly" is one screen and
+  /// not a second bout of typing.
+  Future<void> _openSchedule() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ScheduleFormScreen(
+          asDriver: true,
+          from: _from,
+          to: _to,
+          seats: _seats,
+          pricePerSeat: _price,
+          vehicleId: _vehicle?.id,
+          timeOfDay: TimeOfDayValue(_departAt.hour, _departAt.minute),
+        ),
+      ),
+    );
+  }
 
   /// "Tomorrow · 08:15" — the design's departure summary.
   String get _departLabel {
@@ -205,6 +270,19 @@ class _PostTripScreenState extends State<PostTripScreen> {
                           ),
                           const SizedBox(height: 12),
                           _priceCard(t),
+                          const SizedBox(height: 12),
+                          _minSeatsCard(t),
+                          const SizedBox(height: 16),
+                          ConditionsCard(
+                            coRiderPolicy: _genderPolicy,
+                            onCoRiderPolicy: (p) => setState(() => _genderPolicy = p),
+                            minAge: _minAge,
+                            maxAge: _maxAge,
+                            onAges: (min, max) => setState(() {
+                              _minAge = min;
+                              _maxAge = max;
+                            }),
+                          ),
                           if (_editing == null) ...[
                             const SizedBox(height: 12),
                             _repeatRow(t),
@@ -385,6 +463,27 @@ class _PostTripScreenState extends State<PostTripScreen> {
       style: WanesTheme.mono(size: 30, weight: FontWeight.w800, color: t.ink, spacing: 0));
 
   /// PRICE PER SEAT — big mono figure, suggestion chip, tap the amount to edit.
+  /// "Confirm at N seats" — the driver's own condition on whether the trip is
+  /// worth making.
+  ///
+  /// Capped at the seats on offer: a threshold the trip cannot reach would
+  /// cancel itself at the cutoff however many riders turned up, and the server
+  /// refuses it outright.
+  Widget _minSeatsCard(WanesTokens t) => GroupedCard(children: [
+        GroupedRow(
+          icon: Icons.groups_2_outlined,
+          title: context.tr('trip.minSeats'),
+          subtitle: _minSeats <= 1
+              ? context.tr('trip.noThreshold')
+              : context.tr('trip.minSeatsHint'),
+          trailing: SeatStepper(
+            value: _minSeats,
+            max: _seats,
+            onChanged: (v) => setState(() => _minSeats = v),
+          ),
+        ),
+      ]);
+
   Widget _priceCard(WanesTokens t) {
     final suggestion = _suggestedPrice;
     return WanesCard(
@@ -433,19 +532,12 @@ class _PostTripScreenState extends State<PostTripScreen> {
                 style: TextStyle(fontSize: 12, color: t.ink2)),
           ]),
         ),
-        WanesPillSwitch(
-          value: _repeatWeekdays,
-          width: 48,
-          height: 28,
-          onKnob: t.surface,
-          onTrack: t.teal,
-          onChanged: (v) {
-            setState(() => _repeatWeekdays = v);
-            if (v) {
-              WanesAlerts.info(context, context.tr('driver.recurringComingSoon'),
-                  message: context.tr('driver.recurringComingSoonBody'));
-            }
-          },
+        // Not a switch any more: a repeat is a schedule of its own, with days
+        // and a window, and this trip is the obvious thing to seed it from.
+        TextButton(
+          onPressed: _openSchedule,
+          child: Text(context.tr('schedule.add'),
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5, color: t.tealInk)),
         ),
       ]),
     );

@@ -5,5 +5,5 @@ export const environment = {
   // backend/Wanes/Properties/launchSettings.json); :5001 is skipped because its
   // self-signed dev cert makes the browser reject the XHR. Keep in sync with
   // Environment.apiBaseUrl in the Flutter app.
-  apiBaseUrl: 'http://192.168.10.150:5000/api/v1/',
+  apiBaseUrl: 'http://192.168.1.43:5000/api/v1/',
 };

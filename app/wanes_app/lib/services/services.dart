@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import '../core/api_client.dart';
 import '../core/app_config.dart';
 import '../core/app_response.dart';
@@ -173,6 +175,7 @@ class SearchService {
     int seats = 1,
     bool nearby = true,
     TripSort sortBy = TripSort.best,
+    GenderPolicy driverGenderPolicy = GenderPolicy.any,
   }) {
     return _api.post<SearchResult>(
       'Search',
@@ -186,6 +189,10 @@ class SearchService {
         // to travel with the request — re-sorting the reply can only shuffle
         // whichever twenty it chose.
         'sortBy': sortBy.wire,
+        // Who the rider will get in a car with, for this journey. It used to be
+        // an account setting; it belongs to the search because the airport run
+        // at dawn and the commute home are not the same question.
+        'driverGenderPolicy': driverGenderPolicy.value,
       },
       parse: (d) => SearchResult.fromJson(d as Map<String, dynamic>),
     );
@@ -211,9 +218,14 @@ class BookingService {
             .toList(),
       );
 
-  /// Gives the seat back. The server refuses a booking that is already
-  /// cancelled or completed, and returns the seats to the trip.
+  /// Gives the seat back — leaving.
+  ///
+  /// The rider's one way off a trip, whatever put them on it: a seat they
+  /// booked, or a seat a driver created by claiming the trip they posted at a
+  /// price they would rather not pay. The server refuses a booking that is
+  /// already cancelled or completed, and returns the seats to the trip.
   Future<AppResponse> cancel(int id) => _api.post('Bookings/$id/cancel');
+
 }
 
 /// Two-way ratings (after a booking completes).
@@ -232,16 +244,67 @@ class RatingService {
 class ProfileService {
   final _api = ApiClient.instance;
 
-  Future<AppResponse> applyAsDriver({
-    required String licenseNumber,
-    String licensePhotoUrl = '',
-    String idDocumentUrl = '',
+  /// The departures this driver is already promised to, and how close another
+  /// one may not be. Asked for before a departure is chosen, so the picker can
+  /// grey out what the API would refuse.
+  ///
+  /// [ignoreTripId] is the trip being edited — without it, moving a trip's time
+  /// would find the trip's own departure blocking the slot next to it.
+  Future<AppResponse<DriverAvailability>> driverAvailability({int? ignoreTripId}) =>
+      _api.get<DriverAvailability>(
+        'me/driver/availability',
+        query: ignoreTripId == null ? null : {'ignoreTripId': ignoreTripId},
+        parse: (d) => DriverAvailability.fromJson(d as Map<String, dynamic>),
+      );
+
+  /// The departures this rider already holds a seat at, and how close another
+  /// one may not be. The rider-side twin of [driverAvailability], asked for the
+  /// same reason: search greys out the times a booking would be refused at
+  /// instead of letting the rider pick one, search, and read the refusal.
+  Future<AppResponse<RiderAvailability>> riderAvailability({int? ignoreTripId}) =>
+      _api.get<RiderAvailability>(
+        'me/rider/availability',
+        query: ignoreTripId == null ? null : {'ignoreTripId': ignoreTripId},
+        parse: (d) => RiderAvailability.fromJson(d as Map<String, dynamic>),
+      );
+
+  /// Where the driver's application stands, with its documents. One call, so
+  /// the screen never has to stitch a status together from two.
+  Future<AppResponse<DriverVerification>> driverVerification() =>
+      _api.get<DriverVerification>(
+        'me/driver/verification',
+        parse: (d) => DriverVerification.fromJson(d as Map<String, dynamic>),
+      );
+
+  /// Uploads (or replaces) one document. The server keeps one live copy per
+  /// type, so re-sending a retaken photo is the same call.
+  Future<AppResponse<DriverDocument>> uploadDriverDocument({
+    required DriverDocumentType type,
+    required Uint8List bytes,
+    required String filename,
+    required String contentType,
   }) =>
-      _api.post('me/driver/apply', body: {
-        'licenseNumber': licenseNumber,
-        'licensePhotoUrl': licensePhotoUrl,
-        'idDocumentUrl': idDocumentUrl,
-      });
+      _api.postFile<DriverDocument>(
+        'me/driver/documents',
+        field: 'file',
+        bytes: bytes,
+        filename: filename,
+        contentType: contentType,
+        fields: {'type': '${type.value}'},
+        parse: (d) => DriverDocument.fromJson(d as Map<String, dynamic>),
+      );
+
+  Future<AppResponse> deleteDriverDocument(int id) =>
+      _api.delete('me/driver/documents/$id');
+
+  /// The bytes of one of the driver's own documents, for the thumbnail.
+  Future<AppResponse<Uint8List>> driverDocumentBytes(int id) =>
+      _api.getBytes('me/driver/documents/$id/content');
+
+  /// Submits the application for manual review. Refused by the server until
+  /// every required document is on file.
+  Future<AppResponse> applyAsDriver({required String licenseNumber}) =>
+      _api.post('me/driver/apply', body: {'licenseNumber': licenseNumber});
 }
 
 /// Driver vehicles.
@@ -282,6 +345,11 @@ class TripService {
     required DateTime departAt,
     required int seatsTotal,
     double? pricePerSeat,
+    int minSeatsToConfirm = 1,
+    GenderPolicy genderPolicy = GenderPolicy.any,
+    GenderPolicy coRiderGenderPolicy = GenderPolicy.any,
+    int? minAge,
+    int? maxAge,
   }) =>
       _api.post('Trips', body: {
         'vehicleId': vehicleId,
@@ -290,6 +358,10 @@ class TripService {
         'departAt': departAt.toUtc().toIso8601String(),
         'seatsTotal': seatsTotal,
         'pricePerSeat': pricePerSeat,
+        'minSeatsToConfirm': minSeatsToConfirm,
+        'genderPolicy': genderPolicy.value,
+        'minAge': minAge,
+        'maxAge': maxAge,
       });
 
   /// Edits a posted trip. The server rejects it once the trip has a booking.
@@ -305,6 +377,10 @@ class TripService {
     required DateTime departAt,
     required int seatsTotal,
     double? pricePerSeat,
+    int minSeatsToConfirm = 1,
+    GenderPolicy genderPolicy = GenderPolicy.any,
+    int? minAge,
+    int? maxAge,
   }) =>
       _api.put<Trip>('Trips/$id',
           body: {
@@ -314,6 +390,10 @@ class TripService {
             'departAt': departAt.toUtc().toIso8601String(),
             'seatsTotal': seatsTotal,
             'pricePerSeat': pricePerSeat,
+            'minSeatsToConfirm': minSeatsToConfirm,
+            'genderPolicy': genderPolicy.value,
+            'minAge': minAge,
+            'maxAge': maxAge,
           },
           parse: (d) => Trip.fromJson(d as Map<String, dynamic>));
 
@@ -373,6 +453,20 @@ class TripService {
   Future<AppResponse<Trip>> start(int id) => _transition(id, 'start');
   Future<AppResponse<Trip>> complete(int id) => _transition(id, 'complete');
 
+  /// Runs a trip that never reached the seats the driver asked for. Every held
+  /// seat is committed and the condition is dropped.
+  Future<AppResponse<Trip>> confirm(int id) => _api.post<Trip>(
+        'Trips/$id/confirm',
+        parse: (d) => Trip.fromJson(d as Map<String, dynamic>),
+      );
+
+  /// Calls a trip off for want of riders. Distinct from an ordinary cancel: the
+  /// riders are told why, in the words of the empty seats.
+  Future<AppResponse<Trip>> cancelForLowSeats(int id) => _api.post<Trip>(
+        'Trips/$id/cancel-low-seats',
+        parse: (d) => Trip.fromJson(d as Map<String, dynamic>),
+      );
+
   Future<AppResponse<Trip>> _transition(int id, String verb) => _api.post<Trip>(
         'Trips/$id/$verb',
         parse: (d) => Trip.fromJson(d as Map<String, dynamic>),
@@ -389,30 +483,250 @@ class PresenceService {
   Future<AppResponse> goOffline() => _api.post('me/location/offline');
 }
 
-/// Ride requests (hail) — driver side.
-class RideRequestService {
+/// Rider-posted trips: the demand board.
+///
+/// Both sides live here because it is one resource. A rider posts, joins and
+/// leaves; a driver browses and claims. Splitting it by audience would put
+/// `nearby` and `claim` somewhere that does not own the row they act on.
+class RiderTripService {
   final _api = ApiClient.instance;
 
-  Future<AppResponse<List<RideRequestRow>>> nearby(
-    double lat, double lng, {int radiusMeters = 5000}) =>
-      _api.get<List<RideRequestRow>>(
-        'requests/nearby',
-        query: {'lat': lat, 'lng': lng, 'radiusMeters': radiusMeters},
+  /// Posts a trip. The caller holds its first seats.
+  ///
+  /// No price: that is the shape of the exchange — the rider states the need, a
+  /// driver names the figure, and the rider answers it.
+  Future<AppResponse<RiderTrip>> create({
+    required double originLat,
+    required double originLng,
+    required String originAddress,
+    required double destLat,
+    required double destLng,
+    required String destAddress,
+    required DateTime departAt,
+    int seats = 1,
+    bool nearby = true,
+    GenderPolicy driverGenderPolicy = GenderPolicy.any,
+    GenderPolicy coRiderGenderPolicy = GenderPolicy.any,
+    int? minAge,
+    int? maxAge,
+  }) =>
+      _api.post<RiderTrip>(
+        'ride-requests',
+        body: {
+          'origin': {'lat': originLat, 'lng': originLng, 'address': originAddress},
+          'destination': {'lat': destLat, 'lng': destLng, 'address': destAddress},
+          'departAt': departAt.toUtc().toIso8601String(),
+          'seats': seats,
+          'nearby': nearby,
+          'driverGenderPolicy': driverGenderPolicy.value,
+          'coRiderGenderPolicy': coRiderGenderPolicy.value,
+          'minAge': minAge,
+          'maxAge': maxAge,
+        },
+        parse: (d) => RiderTrip.fromJson(d as Map<String, dynamic>),
+      );
+
+  /// Every posting the caller holds a seat on — the ones they wrote and the
+  /// ones they joined, which are the same thing to them.
+  Future<AppResponse<List<RiderTrip>>> mine() => _api.get<List<RiderTrip>>(
+        'ride-requests/mine',
         parse: (d) => (d as List)
-            .map((e) => RideRequestRow.fromJson(e as Map<String, dynamic>))
+            .map((e) => RiderTrip.fromJson(e as Map<String, dynamic>))
             .toList(),
       );
 
-  /// Takes a hail at [pricePerSeat] — what the driver is charging for a seat on
-  /// the trip this creates. A hail carries no price of its own, so this is the
-  /// only place it can be set.
-  Future<AppResponse> accept(int id, {required double pricePerSeat}) =>
-      _api.post('requests/$id/accept', body: {'pricePerSeat': pricePerSeat});
+  Future<AppResponse<RiderTrip>> get(int id) => _api.get<RiderTrip>(
+        'ride-requests/$id',
+        parse: (d) => RiderTrip.fromJson(d as Map<String, dynamic>),
+      );
 
-  /// Withdraws the rider's own open hail. The server closes it on every driver
-  /// who was offered it, so leaving the search screen without calling this
-  /// leaves a card up that can still be accepted.
-  Future<AppResponse> cancel(int id) => _api.post('requests/$id/cancel');
+  /// Takes seats on somebody else's posting, with the joiner's own conditions.
+  Future<AppResponse<RiderTrip>> join(
+    int id, {
+    int seats = 1,
+    GenderPolicy driverGenderPolicy = GenderPolicy.any,
+    GenderPolicy coRiderGenderPolicy = GenderPolicy.any,
+    int? minAge,
+    int? maxAge,
+  }) =>
+      _api.post<RiderTrip>(
+        'ride-requests/$id/join',
+        body: {
+          'seats': seats,
+          'driverGenderPolicy': driverGenderPolicy.value,
+          'coRiderGenderPolicy': coRiderGenderPolicy.value,
+          'minAge': minAge,
+          'maxAge': maxAge,
+        },
+        parse: (d) => RiderTrip.fromJson(d as Map<String, dynamic>),
+      );
+
+  /// Gives the caller's seats back. The posting closes with the last of them,
+  /// and the server clears it off every driver's screen — so leaving a screen
+  /// without calling this leaves a card up that can still be claimed.
+  Future<AppResponse> leave(int id) => _api.post('ride-requests/$id/leave');
+
+  /// The driver's search: trips wanting the journey they are about to drive.
+  ///
+  /// A different question from [nearby], which answers "who needs a lift around
+  /// me, right now" off the driver's live position. This one takes a route and a
+  /// time and comes back in the same two bands the rider's search uses — trips
+  /// going the driver's way, and trips lying along it.
+  Future<AppResponse<DemandSearchResult>> findRiders({
+    required double originLat,
+    required double originLng,
+    required String originAddress,
+    required double destLat,
+    required double destLng,
+    required String destAddress,
+    required DateTime when,
+    bool nearbyOnly = true,
+    int seats = 0,
+    int minSeats = 0,
+    TripSort sortBy = TripSort.best,
+    GenderPolicy riderGenderPolicy = GenderPolicy.any,
+  }) =>
+      _api.post<DemandSearchResult>(
+        'ride-requests/search',
+        body: {
+          'origin': {'lat': originLat, 'lng': originLng, 'address': originAddress},
+          'destination': {'lat': destLat, 'lng': destLng, 'address': destAddress},
+          'when': when.toUtc().toIso8601String(),
+          // 0 means "read it off my car" — the usual case.
+          'seats': seats,
+          'nearby': nearbyOnly,
+          'minSeats': minSeats,
+          'sortBy': sortBy.wire,
+          'riderGenderPolicy': riderGenderPolicy.value,
+        },
+        parse: (d) => DemandSearchResult.fromJson(d as Map<String, dynamic>),
+      );
+
+  /// The driver's board: postings near them they could actually take.
+  Future<AppResponse<List<RiderTrip>>> nearby(
+    double lat,
+    double lng, {
+    int radiusMeters = 5000,
+  }) =>
+      _api.get<List<RiderTrip>>(
+        'ride-requests/nearby',
+        query: {'lat': lat, 'lng': lng, 'radiusMeters': radiusMeters},
+        parse: (d) => (d as List)
+            .map((e) => RiderTrip.fromJson(e as Map<String, dynamic>))
+            .toList(),
+      );
+
+  /// Offers to serve a request at [pricePerSeat] — what the driver is charging
+  /// for a seat on the trip this becomes. A request carries no price of its
+  /// own, so this is the only place it can be set.
+  ///
+  /// Where the marketplace selects immediately — the shipped setting — the
+  /// answer already carries the ride: `matchedTripId` is the trip, and it is
+  /// what the driver's screens follow from here. Where offers accumulate, the
+  /// answer is the request with this driver's offer recorded on it, and the
+  /// decision arrives later as a notification.
+  Future<AppResponse<RiderTrip>> offer(
+    int id, {
+    required double pricePerSeat,
+    int? vehicleId,
+    String? message,
+  }) =>
+      _api.post<RiderTrip>(
+        'ride-requests/$id/interest',
+        body: {
+          'pricePerSeat': pricePerSeat,
+          'vehicleId': vehicleId,
+          'message': message,
+        },
+        parse: (d) => RiderTrip.fromJson(d as Map<String, dynamic>),
+      );
+
+  /// Takes the offer back, while nobody has been selected.
+  Future<AppResponse> withdraw(int id) => _api.delete('ride-requests/$id/interest');
+}
+
+/// Recurring postings, from either side (`api/v1/schedules`).
+///
+/// The server turns a schedule into ordinary trips and postings over a rolling
+/// fortnight; nothing here matches anything. `nextDepartures` on the row is the
+/// only honest preview of what one means.
+class ScheduleService {
+  final _api = ApiClient.instance;
+
+  Future<AppResponse<List<TripSchedule>>> mine() => _api.get<List<TripSchedule>>(
+        'schedules/mine',
+        parse: (d) => (d as List)
+            .map((e) => TripSchedule.fromJson(e as Map<String, dynamic>))
+            .toList(),
+      );
+
+  Future<AppResponse<TripSchedule>> save({
+    int? id,
+    required bool asDriver,
+    required double originLat,
+    required double originLng,
+    required String originAddress,
+    required double destLat,
+    required double destLng,
+    required String destAddress,
+    required Recurrence recurrence,
+    required TimeOfDayValue timeOfDay,
+    required DateTime startDate,
+    WeekDaySet daysOfWeek = WeekDaySet.none,
+    int? dayOfMonth,
+    String? timeZoneId,
+    DateTime? endDate,
+    int seats = 1,
+    double? pricePerSeat,
+    int? vehicleId,
+    int minSeatsToConfirm = 1,
+    GenderPolicy genderPolicy = GenderPolicy.any,
+    /// Rider-owned schedules only: who else may be aboard. Ignored server-side
+    /// on a driver's schedule, which states one condition, not two.
+    GenderPolicy coRiderGenderPolicy = GenderPolicy.any,
+    int? minAge,
+    int? maxAge,
+    bool isPaused = false,
+  }) {
+    final body = {
+      'ownerRole': asDriver ? 2 : 1,
+      'origin': {'lat': originLat, 'lng': originLng, 'address': originAddress},
+      'destination': {'lat': destLat, 'lng': destLng, 'address': destAddress},
+      'recurrence': recurrence.value,
+      'daysOfWeek': daysOfWeek.mask,
+      'dayOfMonth': dayOfMonth,
+      'timeOfDay': timeOfDay.wire,
+      'timeZoneId': timeZoneId,
+      'startDate': _dateOnly(startDate),
+      'endDate': endDate == null ? null : _dateOnly(endDate),
+      'seats': seats,
+      'pricePerSeat': pricePerSeat,
+      'vehicleId': vehicleId,
+      'minSeatsToConfirm': minSeatsToConfirm,
+      'genderPolicy': genderPolicy.value,
+      'coRiderGenderPolicy': coRiderGenderPolicy.value,
+      'minAge': minAge,
+      'maxAge': maxAge,
+      'isPaused': isPaused,
+    };
+
+    TripSchedule parse(Object? d) => TripSchedule.fromJson(d as Map<String, dynamic>);
+
+    return id == null
+        ? _api.post<TripSchedule>('schedules', body: body, parse: parse)
+        : _api.put<TripSchedule>('schedules/$id', body: body, parse: parse);
+  }
+
+  /// Removes the schedule and calls off the occurrences nobody is on. A booked
+  /// one still runs — it stopped being part of a series the moment somebody
+  /// took a seat.
+  Future<AppResponse> remove(int id) => _api.delete('schedules/$id');
+
+  /// A date with no time, which is what the server's `DateOnly` parses.
+  static String _dateOnly(DateTime date) =>
+      '${date.year.toString().padLeft(4, '0')}-'
+      '${date.month.toString().padLeft(2, '0')}-'
+      '${date.day.toString().padLeft(2, '0')}';
 }
 
 /// The rider's saved places — Home, Work and named favourites
@@ -464,6 +778,10 @@ class NotificationsService {
   Future<AppResponse> markRead(int id) => _api.post('Notifications/$id/read');
 
   Future<AppResponse> markAllRead() => _api.post('Notifications/read-all');
+
+  /// Clears one notification off the inbox. Soft delete server-side: the row
+  /// survives for the admin console, it just stops being served here.
+  Future<AppResponse> delete(int id) => _api.delete('Notifications/$id');
 
   /// Upsert of this device's FCM token. Safe to call on every launch — the API
   /// treats it as an upsert and detaches the token from any stale session.

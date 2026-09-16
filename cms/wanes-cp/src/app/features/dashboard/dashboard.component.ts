@@ -147,8 +147,8 @@ export class DashboardComponent implements OnInit {
       { labelKey: 'tot_seats_taken', value: exact(o.seatsTaken) },
       { labelKey: 'tot_bookings', value: exact(o.bookings) },
       { labelKey: 'tot_avg_seats', value: exact(o.avgSeatsPerBooking) },
-      { labelKey: 'tot_requests', value: exact(o.requests) },
-      { labelKey: 'tot_open_requests', value: exact(o.openRequests) },
+      { labelKey: 'tot_rider_trips', value: exact(o.riderTrips) },
+      { labelKey: 'tot_open_rider_trips', value: exact(o.openRiderTrips) },
       { labelKey: 'tot_ratings', value: exact(o.ratings) },
       { labelKey: 'tot_low_ratings', value: exact(o.lowRatings) },
       { labelKey: 'tot_notifications', value: exact(o.notifications) },
@@ -173,7 +173,7 @@ export class DashboardComponent implements OnInit {
       { name: this.t('series_users'), slot: 0, values: values(s.newUsers) },
       { name: this.t('series_trips'), slot: 1, values: values(s.newTrips) },
       { name: this.t('series_bookings'), slot: 2, values: values(s.newBookings) },
-      { name: this.t('series_requests'), slot: 3, values: values(s.newRequests) },
+      { name: this.t('series_rider_trips'), slot: 3, values: values(s.newRiderTrips) },
     ];
   });
 
@@ -263,7 +263,12 @@ export class DashboardComponent implements OnInit {
     return [
       this.donut('trips', 'chart_trips_status', b.tripsByStatus, 'tripstatus', this.t('res_trips')),
       this.donut('bookings', 'chart_bookings_status', b.bookingsByStatus, 'bookingstatus', this.t('res_bookings')),
-      this.donut('requests', 'chart_requests_status', b.requestsByStatus, 'requeststatus', this.t('res_requests')),
+      // Trips riders posted, by where they ended up. Their statuses are trip
+      // statuses now — the two tables are one — so this reads the same label set
+      // as the chart above it.
+      // Demand by its own lifecycle. It used to borrow tripstatus, which had
+      // no word for "open" or "expired" and showed both as Cancelled.
+      this.donut('rider-trips', 'chart_rider_trips_status', b.riderTripsByStatus, 'requeststatus', this.t('res_rider_trips')),
     ];
   });
 

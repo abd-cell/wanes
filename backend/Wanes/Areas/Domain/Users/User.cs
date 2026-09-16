@@ -31,8 +31,19 @@ public class User : AuditableEntity
     // driver onboarding / trust
     public DriverStatus DriverStatus { get; set; } = DriverStatus.None;
     public string? LicenseNumber { get; set; }
-    public string? LicensePhotoUrl { get; set; }
-    public string? IdDocumentUrl { get; set; }
+
+    /// <summary>When the driver last submitted their paperwork for review.</summary>
+    public DateTime? DriverAppliedAt { get; set; }
+
+    /// <summary>
+    /// Why the admin decided the way they did, in their own words. Shown to the
+    /// driver on a rejection — without it "declined" is an instruction to guess,
+    /// and the same blurry licence comes back a day later.
+    /// </summary>
+    public string? DriverReviewNote { get; set; }
+
+    public DateTime? DriverReviewedAt { get; set; }
+    public int? DriverReviewedBy { get; set; }
 
     // reputation
     public double RatingAvg { get; set; }
@@ -45,6 +56,15 @@ public class User : AuditableEntity
     public AppTheme Theme { get; set; } = AppTheme.System;
     public bool NotifPush { get; set; } = true;
     public bool NotifSms { get; set; } = true;
+
+    // No ride-with preferences live here, on purpose.
+    //
+    // Who a rider will travel with used to be account state, edited on a
+    // profile screen and applied to every search forever. It is a decision
+    // about one journey rather than a standing fact about a person, so it moved
+    // to where the journey is described: a search carries who may drive, and a
+    // posting carries who may share the car. Nothing about it outlives those,
+    // which is why there is nothing left to store.
 
     // safety
     public string? EmergencyContactName { get; set; }
@@ -62,4 +82,5 @@ public class User : AuditableEntity
     // navigation
     public ICollection<Vehicles.Vehicle> Vehicles { get; set; } = [];
     public ICollection<SavedPlace> SavedPlaces { get; set; } = [];
+    public ICollection<DriverDocument> DriverDocuments { get; set; } = [];
 }

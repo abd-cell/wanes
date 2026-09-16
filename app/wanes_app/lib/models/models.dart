@@ -2,7 +2,6 @@
 
 import 'dart:convert';
 
-import '../core/app_config.dart';
 import '../core/l10n.dart';
 import '../core/places.dart';
 
@@ -106,7 +105,13 @@ enum AppFont {
   rubik(3),
   noto(4),
   tajawal(5),
-  system(6);
+  system(6),
+  almarai(7),
+  readexPro(8),
+  alexandria(9),
+  poppins(10),
+  montserrat(11),
+  amiri(12);
 
   const AppFont(this.value);
   final int value;
@@ -132,7 +137,10 @@ class AppConfig {
     this.currencyDecimals = 3,
     this.primaryColor = 0xFF0FAE9E,
     this.font = AppFont.jakarta,
-    this.hailTtlMinutes = 10,
+    this.confirmCutoffMinutes = 60,
+    this.confirmDecisionLeadMinutes = 15,
+    this.minimumPassengersDefault = 3,
+    this.averageSpeedKmh = 35,
     this.fareBaseAmount = 2.50,
     this.farePerKm = 1.20,
     this.supportPhone = '',
@@ -154,17 +162,48 @@ class AppConfig {
   /// script; the mono/data face is fixed and not part of this choice.
   final AppFont font;
 
-  /// How long an unanswered hail stays open, in minutes (the admin sets it).
-  ///
-  /// Only ever a *default* deadline: a request the server already opened
-  /// carries its own `expiresAt`, and that is what the countdowns run on. This
-  /// is what a screen uses when it has no row to read — the rider's own search,
-  /// which starts before the request comes back — and what sizes the driver's
-  /// countdown ring, which needs a full-window figure to measure against.
-  final int hailTtlMinutes;
+  /// How long before departure a driver has to have answered the run-or-cancel
+  /// question on a trip short of its seat threshold, and how long before that
+  /// they are asked. Both are here because both draw clocks: the driver's card
+  /// counts down to the decision, and a gathering trip's card tells the rider
+  /// when they will know whether it runs.
+  final int confirmCutoffMinutes;
+  final int confirmDecisionLeadMinutes;
 
-  /// [hailTtlMinutes] as a duration.
-  Duration get hailTtl => Duration(minutes: hailTtlMinutes);
+  Duration get confirmCutoff => Duration(minutes: confirmCutoffMinutes);
+
+  /// The average speed behind every duration estimate, in km/h.
+  ///
+  /// The app needs it as well as the server: the earliest departure a rider may
+  /// post for is one leg-time per seat, and being told "not before 08:40" while
+  /// you are still choosing a time is help — being refused after you tap Post
+  /// is a rebuke.
+  /// How many passengers a new trip asks for before it confirms, unless the
+  /// driver says otherwise.
+  ///
+  /// From the server because it is a marketplace decision, and on the posting
+  /// form because the field has to *open* on it — a driver who never touches
+  /// the control should still post under the platform's rule, and the app has
+  /// no way to guess the number.
+  final int minimumPassengersDefault;
+
+  final double averageSpeedKmh;
+
+  /// How long a [km]-long leg should take at [averageSpeedKmh].
+  Duration estimatedLeg(double km) => Duration(
+      minutes: (km.isFinite && km > 0 ? (km / averageSpeedKmh) * 60 : 0).round());
+
+  /// The earliest departure a posting for [seats] seats over [km] may name —
+  /// the mirror of the server's `RiderTripRules.EarliestDeparture`, floored and
+  /// capped exactly as it is so the two cannot disagree at the tap.
+  DateTime earliestDeparture(double km, int seats, {DateTime? from}) {
+    final now = from ?? DateTime.now();
+    final raw = estimatedLeg(km) * (seats < 1 ? 1 : seats);
+    const floor = Duration(minutes: 15);
+    const ceiling = Duration(hours: 6);
+    final lead = raw < floor ? floor : (raw > ceiling ? ceiling : raw);
+    return now.add(lead);
+  }
 
   /// Flag-fall and per-kilometre rate behind an estimated fare.
   ///
@@ -213,9 +252,19 @@ class AppConfig {
         // Clamped to the same 1..240 the server enforces: a zero from an older
         // API — or a row that predates the column — would otherwise give every
         // countdown a window that has already run out.
-        hailTtlMinutes:
-            ((json['hailRequestTtlMinutes'] as num?)?.toInt() ?? fallback.hailTtlMinutes)
-                .clamp(1, 240),
+        confirmCutoffMinutes:
+            ((json['confirmCutoffMinutes'] as num?)?.toInt() ?? fallback.confirmCutoffMinutes)
+                .clamp(5, 720),
+        confirmDecisionLeadMinutes: ((json['confirmDecisionLeadMinutes'] as num?)?.toInt() ??
+                fallback.confirmDecisionLeadMinutes)
+            .clamp(1, 240),
+        minimumPassengersDefault:
+            ((json['minimumPassengersDefault'] as num?)?.toInt() ??
+                    fallback.minimumPassengersDefault)
+                .clamp(1, 8),
+        averageSpeedKmh:
+            ((json['averageSpeedKmh'] as num?)?.toDouble() ?? fallback.averageSpeedKmh)
+                .clamp(5.0, 120.0),
         // Zero is a legitimate rate (a flat flag-fall, or a fare that is all
         // distance), so only a missing value falls back to the shipped one.
         fareBaseAmount:
@@ -235,7 +284,9 @@ class AppConfig {
         'currencyDecimals': currencyDecimals,
         'primaryColor': hexColor,
         'fontFamily': font.value,
-        'hailRequestTtlMinutes': hailTtlMinutes,
+        'confirmCutoffMinutes': confirmCutoffMinutes,
+        'confirmDecisionLeadMinutes': confirmDecisionLeadMinutes,
+        'averageSpeedKmh': averageSpeedKmh,
         'fareBaseAmount': fareBaseAmount,
         'farePerKm': farePerKm,
         'supportPhone': supportPhone,
@@ -296,6 +347,11 @@ class Profile {
   final bool isRider;
   final bool isDriver;
   final AppTheme theme;
+
+  // No ride-with preferences on the profile. Who a rider travels with is a
+  // decision about one journey, so it is stated on the search that finds the
+  // trip and on the posting they write — not once, in a settings screen, for
+  // every journey they will ever take.
 
   String get name =>
       displayName?.isNotEmpty == true ? displayName! : '$firstName $lastName'.trim();
@@ -382,9 +438,17 @@ class Trip {
     this.destinationLat = 0,
     this.destinationLng = 0,
     this.seatsTotal = 0,
-    this.status = 1,
+    this.status = 8,
     this.pricePerSeat,
     this.startedAt,
+    this.minSeatsToConfirm = 1,
+    this.seatsHeld = 0,
+    this.isGathering = false,
+    this.isConfirmed = false,
+    this.isFull = false,
+    this.genderPolicy = GenderPolicy.any,
+    this.minAge,
+    this.maxAge,
   });
 
   final int id;
@@ -407,7 +471,10 @@ class Trip {
   final DateTime departAt;
   final int seatsLeft;
   final int seatsTotal;
-  // 1 Posted · 2 Full · 3 Active · 4 Completed · 5 Cancelled · 6 Arrived
+  // The LIFECYCLE only: 1 Posted · 3 Active · 4 Completed · 5 Cancelled ·
+  // 6 Arrived · 7 EnRoute. Whether the car is full and whether the trip is
+  // confirmed are separate questions with their own fields — 2 Full is a
+  // pre-v2 value the server no longer sends and only old rows can carry.
   final int status;
   final double? pricePerSeat;
 
@@ -415,6 +482,43 @@ class Trip {
   /// null until the trip is under way — the live map advances the car against
   /// this rather than against an assumed departure.
   final DateTime? startedAt;
+
+  /// Seats that must be held before anybody is confirmed; 1 means no condition.
+  final int minSeatsToConfirm;
+
+  /// Seats already held, committed or not.
+  final int seatsHeld;
+
+  /// The trip is short of the seats its driver asked for, so it may yet not
+  /// run. Shown on the card rather than hidden: a rider booking one should know
+  /// that is possible.
+  final bool isGathering;
+
+  /// Its passengers are committed. Not the negation of [isGathering]: a trip
+  /// with no threshold is neither until somebody takes a seat.
+  final bool isConfirmed;
+
+  /// No seats left. Sent by the server rather than inferred from [seatsLeft] so
+  /// the app and the console agree on one rule — this used to be a status, and
+  /// anything still comparing against that value is quietly wrong.
+  final bool isFull;
+
+  /// Who may take a seat, and any age bounds on them.
+  final GenderPolicy genderPolicy;
+  final int? minAge;
+  final int? maxAge;
+
+  /// Whether the driver asked anything of their riders — what the card shows a
+  /// conditions row for.
+  bool get hasConditions =>
+      genderPolicy != GenderPolicy.any || minAge != null || maxAge != null;
+
+  /// How many more seats this trip needs before it is on, or 0 when it is
+  /// already there.
+  int get seatsToConfirm {
+    final missing = minSeatsToConfirm - seatsHeld;
+    return missing > 0 ? missing : 0;
+  }
 
   static const _statusKeys = {
     1: 'tripStatus.posted',
@@ -426,8 +530,15 @@ class Trip {
     7: 'tripStatus.enRoute',
   };
 
-  /// l10n key for [status] — resolve with `context.tr(trip.statusKey)`.
-  String get statusKey => _statusKeys[status] ?? 'tripStatus.posted';
+  /// l10n key for what to show as this trip's state — resolve with
+  /// `context.tr(trip.statusKey)`.
+  ///
+  /// Capacity is folded back in here, and only here. It stopped being a status
+  /// server-side (the lifecycle and the seats are separate questions now), but a
+  /// rider looking at a card still wants one word for it, and "Posted" on a
+  /// trip with no seats left is not that word.
+  String get statusKey =>
+      isFull && status == 1 ? 'tripStatus.full' : (_statusKeys[status] ?? 'tripStatus.posted');
   String get statusLabel => AppLocalizations.current.t(statusKey);
 
   /// A posted trip nobody has booked yet — the driver may still edit it.
@@ -460,6 +571,14 @@ class Trip {
         seatsLeft: j['seatsLeft'] as int? ?? 0,
         seatsTotal: j['seatsTotal'] as int? ?? 0,
         status: j['status'] as int? ?? 1,
+        minSeatsToConfirm: j['minSeatsToConfirm'] as int? ?? 1,
+        seatsHeld: j['seatsHeld'] as int? ?? 0,
+        isGathering: j['isGathering'] as bool? ?? false,
+        isConfirmed: j['isConfirmed'] as bool? ?? false,
+        isFull: j['isFull'] as bool? ?? ((j['seatsLeft'] as int? ?? 1) <= 0),
+        genderPolicy: GenderPolicy.fromValue(j['genderPolicy'] as int?),
+        minAge: (j['minAge'] as num?)?.toInt(),
+        maxAge: (j['maxAge'] as num?)?.toInt(),
         pricePerSeat: (j['pricePerSeat'] as num?)?.toDouble(),
         startedAt: parseServerDate(j['startedAt'] as String?),
       );
@@ -494,117 +613,450 @@ class Vehicle {
       );
 }
 
-/// Why a hail stopped being answerable. Mirrors the backend's
-/// `RideRequestStatus`, but only the three terminal states a driver's screen
-/// can be told about — a hail never closes back into Open.
-enum RideRequestClosedReason {
-  /// The rider withdrew it.
+/// Who a ride is open to, as a condition one side sets on the other
+/// (`Wanes.Shareds.Enums.GenderPolicy`).
+///
+/// The same three values express both directions — a driver's condition on
+/// their riders, and a rider's on their driver and co-riders — so one picker
+/// and one set of labels serve both screens.
+enum GenderPolicy {
+  any(0, 'conditions.anyone'),
+  maleOnly(1, 'conditions.menOnly'),
+  femaleOnly(2, 'conditions.womenOnly');
+
+  const GenderPolicy(this.value, this.labelKey);
+
+  final int value;
+  final String labelKey;
+
+  String get label => AppLocalizations.current.t(labelKey);
+
+  static GenderPolicy fromValue(int? v) =>
+      GenderPolicy.values.firstWhere((g) => g.value == v, orElse: () => GenderPolicy.any);
+}
+
+/// Why a rider-posted trip stopped being answerable. Mirrors the backend's
+/// `RiderTripClosedReason` — the three ways a card can stop being answerable. It
+/// is deliberately not the trip's status: "nobody took it" and "they withdrew
+/// it" both land on Cancelled, and a driver who was looking at the card deserves
+/// to be told which.
+enum RiderTripClosedReason {
+  /// The last rider on it left.
   cancelled,
 
   /// Another driver got there first.
-  matched,
+  claimed,
 
-  /// The window ran out with nobody accepting.
+  /// Its departure came and went with nobody claiming it.
   expired,
 
   /// A close from a newer server whose reason this build does not know. The
   /// card still goes; only the wording falls back to the neutral one.
   unknown;
 
-  static RideRequestClosedReason fromWire(String? raw) => switch (raw) {
-        'Cancelled' => RideRequestClosedReason.cancelled,
-        'Matched' => RideRequestClosedReason.matched,
-        'Expired' => RideRequestClosedReason.expired,
-        _ => RideRequestClosedReason.unknown,
+  static RiderTripClosedReason fromWire(String? raw) => switch (raw) {
+        'Cancelled' => RiderTripClosedReason.cancelled,
+        'Claimed' => RiderTripClosedReason.claimed,
+        'Expired' => RiderTripClosedReason.expired,
+        _ => RiderTripClosedReason.unknown,
       };
 
   /// The l10n key for the one-line notice shown when a card disappears.
   String get messageKey => switch (this) {
-        RideRequestClosedReason.cancelled => 'driver.requestWithdrawn',
-        RideRequestClosedReason.matched => 'driver.requestTaken',
-        RideRequestClosedReason.expired => 'driver.requestExpired',
-        RideRequestClosedReason.unknown => 'driver.requestClosed',
+        RiderTripClosedReason.cancelled => 'driver.requestWithdrawn',
+        RiderTripClosedReason.claimed => 'driver.requestTaken',
+        RiderTripClosedReason.expired => 'driver.requestExpired',
+        RiderTripClosedReason.unknown => 'driver.requestClosed',
       };
 }
 
-/// The server saying "this hail is over" — see `SseConnectionManager.BroadcastAsync`.
-class RideRequestClosed {
-  const RideRequestClosed({required this.requestId, required this.reason});
+/// The server saying "this posting is over" — see `SseConnectionManager.BroadcastAsync`.
+class RiderTripClosed {
+  const RiderTripClosed({required this.riderTripId, required this.reason});
 
-  final int requestId;
-  final RideRequestClosedReason reason;
+  final int riderTripId;
+  final RiderTripClosedReason reason;
 }
 
-class RideRequestRow {
-  RideRequestRow({
+/// A trip a rider posted: demand, not supply.
+///
+/// One shape for both sides, because they need the same facts — the riders on
+/// it read their own seats off [mySeats], and a driver deciding whether to take
+/// it reads [suggestedPricePerSeat] and [distanceKm].
+class RiderTrip {
+  RiderTrip({
     required this.id,
     required this.originAddress,
     required this.destinationAddress,
-    required this.seats,
-    required this.requestedAt,
-    DateTime? wantedDepartAt,
+    required this.departAt,
     this.riderId = 0,
+    this.riderName = '',
+    this.seatsWanted = 1,
+    this.riderCount = 1,
+    this.mySeats = 0,
     this.originLat = 0,
     this.originLng = 0,
     this.destinationLat = 0,
     this.destinationLng = 0,
-    DateTime? expiresAt,
-  })  : wantedDepartAt = wantedDepartAt ?? requestedAt,
-        expiresAt = expiresAt ?? requestedAt.add(AppConfigController.value.hailTtl);
+    this.driverGenderPolicy = GenderPolicy.any,
+    this.coRiderGenderPolicy = GenderPolicy.any,
+    this.minAge,
+    this.maxAge,
+    this.status = 1,
+    this.matchedTripId,
+    this.interestCount = 0,
+    this.iHaveOffered = false,
+    this.distanceKm = 0,
+    this.suggestedPricePerSeat = 0,
+  });
 
   final int id;
+  final int riderId;
+  final String riderName;
   final String originAddress;
   final String destinationAddress;
-  final int seats;
-  final DateTime requestedAt;
 
-  /// The departure the rider searched for — what a driver taking this hail is
-  /// agreeing to, and what the resulting trip leaves at.
-  ///
-  /// Not the same as [requestedAt]: a rider who searched for six this evening
-  /// and matched nothing is hailing for six, not for the moment they tapped.
-  /// Falls back to [requestedAt] for a response that carried none, which is what
-  /// a hail meant before it could be scheduled.
-  final DateTime wantedDepartAt;
-  final int riderId;
+  /// The departure its riders want — what a driver taking this is agreeing to,
+  /// and what the trip they create leaves at.
+  final DateTime departAt;
+
+  /// Seats wanted in total, across every rider holding one.
+  final int seatsWanted;
+
+  /// How many riders are on it. More than one means a pool.
+  final int riderCount;
+
+  /// The caller's own seats, or 0 when they hold none — which is how a rider's
+  /// own list tells "mine" from a posting they are merely looking at.
+  final int mySeats;
+
   final double originLat;
   final double originLng;
   final double destinationLat;
   final double destinationLng;
 
-  /// When the hail stops being answerable, as the server stamped it. Only the
-  /// server knows the real deadline — the window is admin-set and can change
-  /// while a request is already open — so a response that carried none falls
-  /// back to the configured window rather than leaving the card up forever.
-  final DateTime expiresAt;
+  /// Who may claim it, and who may join it.
+  final GenderPolicy driverGenderPolicy;
+  final GenderPolicy coRiderGenderPolicy;
+  final int? minAge;
+  final int? maxAge;
 
-  /// The full window this hail was opened for, which is what the driver's
-  /// countdown ring measures against.
+  /// The request's own lifecycle — 1 open, 2 matched, 3 cancelled, 4 expired.
   ///
-  /// Derived from the two timestamps rather than read from the configuration:
-  /// the admin can change the window while requests are already open, and a
-  /// ring drawn against the *new* setting would show the wrong fraction of an
-  /// old request. Falls back to the configured window for a response that
-  /// carried no deadline.
-  Duration get ttl {
-    final window = expiresAt.difference(requestedAt);
-    return window > Duration.zero ? window : AppConfigController.value.hailTtl;
+  /// Not a [Trip.status]. Demand has states a trip has no word for: "nobody has
+  /// answered this yet" and "its departure passed unanswered" are not places a
+  /// trip can be, which is why sharing the enum quietly mislabelled both.
+  final int status;
+
+  /// The trip this became, once a driver was selected — null while it is still
+  /// demand.
+  ///
+  /// **Follow this, never [id], once [isMatched].** A request and the ride it
+  /// produces are two rows, and this is the only thread between them: a card, a
+  /// notification or a screen that was open when the driver was chosen finds
+  /// the ride here.
+  final int? matchedTripId;
+
+  /// How many drivers have said they are willing. On a rider's card it is the
+  /// one thing that visibly moves while they wait.
+  final int interestCount;
+
+  /// This driver has a live offer on it.
+  final bool iHaveOffered;
+
+  /// Straight-line length of the leg, and what the platform's rates make a seat
+  /// on it worth. The second is a *suggestion*: the driver's own figure is what
+  /// the trip lists at, and this only decides what the price sheet opens on.
+  final double distanceKm;
+  final double suggestedPricePerSeat;
+
+  /// Still on the board, waiting for a driver.
+  bool get isOpen => status == 1;
+
+  /// A driver was selected and the ride exists — at [matchedTripId], not [id].
+  bool get isMatched => status == 2;
+
+  /// Closed without a driver: the riders withdrew, or its departure passed.
+  bool get isClosed => status == 3 || status == 4;
+
+  /// Somebody else joined a posting this rider is on.
+  bool get isPool => riderCount > 1;
+
+  /// Whether the riders asked for anything of their driver or of each other —
+  /// what the card shows a conditions row for.
+  bool get hasConditions =>
+      driverGenderPolicy != GenderPolicy.any ||
+      coRiderGenderPolicy != GenderPolicy.any ||
+      minAge != null ||
+      maxAge != null;
+
+  /// How long until it leaves, which is also how long a driver has to take it:
+  /// a posting runs until its own departure and not on a countdown of its own.
+  Duration get timeLeft {
+    final left = departAt.toLocal().difference(DateTime.now());
+    return left > Duration.zero ? left : Duration.zero;
   }
 
-  factory RideRequestRow.fromJson(Map<String, dynamic> j) => RideRequestRow(
+  static const _statusKeys = {
+    1: 'riderTripStatus.open',
+    2: 'riderTripStatus.claimed',
+    3: 'riderTripStatus.cancelled',
+    4: 'riderTripStatus.expired',
+  };
+
+  String get statusKey => _statusKeys[status] ?? 'riderTripStatus.open';
+  String get statusLabel => AppLocalizations.current.t(statusKey);
+
+  factory RiderTrip.fromJson(Map<String, dynamic> j) => RiderTrip(
         id: j['id'] as int,
+        riderId: j['riderId'] as int? ?? 0,
+        riderName: j['riderName'] as String? ?? '',
         originAddress: j['originAddress'] as String? ?? '',
         destinationAddress: j['destinationAddress'] as String? ?? '',
-        seats: j['seats'] as int? ?? 1,
-        requestedAt: parseServerDate(j['requestedAt'] as String?) ?? DateTime.now(),
-        wantedDepartAt: parseServerDate(j['wantedDepartAt'] as String?),
-        riderId: j['riderId'] as int? ?? 0,
+        departAt: parseServerDate(j['departAt'] as String?) ?? DateTime.now(),
+        seatsWanted: j['seatsWanted'] as int? ?? 1,
+        riderCount: j['riderCount'] as int? ?? 1,
+        mySeats: j['mySeats'] as int? ?? 0,
+        matchedTripId: j['matchedTripId'] as int?,
+        interestCount: j['interestCount'] as int? ?? 0,
+        iHaveOffered: j['iHaveOffered'] as bool? ?? false,
         originLat: (j['originLat'] as num?)?.toDouble() ?? 0,
         originLng: (j['originLng'] as num?)?.toDouble() ?? 0,
         destinationLat: (j['destinationLat'] as num?)?.toDouble() ?? 0,
         destinationLng: (j['destinationLng'] as num?)?.toDouble() ?? 0,
-        expiresAt: parseServerDate(j['expiresAt'] as String?),
+        driverGenderPolicy: GenderPolicy.fromValue(j['driverGenderPolicy'] as int?),
+        coRiderGenderPolicy: GenderPolicy.fromValue(j['coRiderGenderPolicy'] as int?),
+        minAge: (j['minAge'] as num?)?.toInt(),
+        maxAge: (j['maxAge'] as num?)?.toInt(),
+        status: j['status'] as int? ?? 1,
+        distanceKm: (j['distanceKm'] as num?)?.toDouble() ?? 0,
+        suggestedPricePerSeat: (j['suggestedPricePerSeat'] as num?)?.toDouble() ?? 0,
       );
+}
+
+/// One trip wanting a driver, and what taking it would cost them — the driver's
+/// side of [SearchMatch].
+///
+/// The rider's match measures a *walk*; this measures a *diversion*. Same two
+/// bands, same corridor maths on the server, opposite side of the car.
+class DemandMatch {
+  const DemandMatch({
+    required this.tier,
+    required this.trip,
+    this.pickupDetourKm = 0,
+    this.dropoffDetourKm = 0,
+    this.totalDetourKm = 0,
+    this.minutesFromWhen = 0,
+  });
+
+  final SearchTier tier;
+
+  /// The trip itself — a trip with no driver on it yet.
+  final RiderTrip trip;
+
+  /// How far off the driver's own route each end sits, in kilometres.
+  final double pickupDetourKm;
+  final double dropoffDetourKm;
+
+  /// Both ends together: what the driver is really choosing on.
+  final double totalDetourKm;
+
+  /// How far the pool's wanted departure is from the driver's, in minutes.
+  /// Negative means the riders want to leave earlier than the driver said.
+  final int minutesFromWhen;
+
+  bool get isOnTheWay => tier == SearchTier.onTheWay;
+
+  /// A diversion small enough not to be worth a line on the card.
+  bool get isDoorToDoor => totalDetourKm < 0.5;
+
+  factory DemandMatch.fromJson(Map<String, dynamic> j) => DemandMatch(
+        tier: SearchTier.fromValue(j['tier'] as int?),
+        trip: RiderTrip.fromJson((j['trip'] as Map<String, dynamic>?) ?? const {'id': 0}),
+        pickupDetourKm: (j['pickupDetourKm'] as num?)?.toDouble() ?? 0,
+        dropoffDetourKm: (j['dropoffDetourKm'] as num?)?.toDouble() ?? 0,
+        totalDetourKm: (j['totalDetourKm'] as num?)?.toDouble() ?? 0,
+        minutesFromWhen: (j['minutesFromWhen'] as num?)?.toInt() ?? 0,
+      );
+}
+
+/// What a driver's search comes back with.
+class DemandSearchResult {
+  const DemandSearchResult({this.matches = const [], this.seatsOffered = 0});
+
+  final List<DemandMatch> matches;
+
+  /// Seats the driver has to offer — read off their car unless they said
+  /// otherwise, so the list can say when the car is full.
+  final int seatsOffered;
+
+  bool get isEmpty => matches.isEmpty;
+
+  factory DemandSearchResult.fromJson(Map<String, dynamic> j) => DemandSearchResult(
+        matches: ((j['matches'] as List?) ?? const [])
+            .map((e) => DemandMatch.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        seatsOffered: (j['seatsOffered'] as num?)?.toInt() ?? 0,
+      );
+}
+
+/// How often a schedule produces a trip (`Wanes.Shareds.Enums.Recurrence`).
+enum Recurrence {
+  daily(1, 'schedule.daily'),
+  weekly(2, 'schedule.weekly'),
+  monthly(3, 'schedule.monthly');
+
+  const Recurrence(this.value, this.labelKey);
+
+  final int value;
+  final String labelKey;
+
+  String get label => AppLocalizations.current.t(labelKey);
+
+  static Recurrence fromValue(int? v) =>
+      Recurrence.values.firstWhere((r) => r.value == v, orElse: () => Recurrence.weekly);
+}
+
+/// The days a weekly schedule runs on, as the server's bit flags. The bit order
+/// follows `DateTime.sunday..saturday` shifted to zero, so the conversion is a
+/// shift and not a lookup.
+class WeekDaySet {
+  const WeekDaySet(this.mask);
+
+  final int mask;
+
+  static const none = WeekDaySet(0);
+
+  /// Dart's `DateTime.weekday` is 1 = Monday … 7 = Sunday; the server's flags
+  /// start at Sunday. This is the one place that difference is handled.
+  static int bitFor(int dartWeekday) => 1 << (dartWeekday % 7);
+
+  bool has(int dartWeekday) => mask & bitFor(dartWeekday) != 0;
+
+  WeekDaySet toggle(int dartWeekday) => WeekDaySet(mask ^ bitFor(dartWeekday));
+
+  bool get isEmpty => mask == 0;
+}
+
+/// A recurring posting, from either side.
+///
+/// It matches nothing itself: the server turns it into ordinary trips and
+/// postings over a rolling fortnight, which is why [nextDepartures] — computed,
+/// never stored — is the only honest way to show what one means.
+class TripSchedule {
+  TripSchedule({
+    required this.id,
+    required this.originAddress,
+    required this.destinationAddress,
+    required this.recurrence,
+    required this.timeOfDay,
+    required this.startDate,
+    this.ownerRole = 1,
+    this.daysOfWeek = WeekDaySet.none,
+    this.dayOfMonth,
+    this.timeZoneId,
+    this.endDate,
+    this.seats = 1,
+    this.pricePerSeat,
+    this.vehicleId,
+    this.minSeatsToConfirm = 1,
+    this.genderPolicy = GenderPolicy.any,
+    this.coRiderGenderPolicy = GenderPolicy.any,
+    this.minAge,
+    this.maxAge,
+    this.isPaused = false,
+    this.nextDepartures = const [],
+  });
+
+  final int id;
+
+  /// 1 Rider · 2 Driver — which side wrote it, and so what it generates.
+  final int ownerRole;
+  final String originAddress;
+  final String destinationAddress;
+  final Recurrence recurrence;
+  final WeekDaySet daysOfWeek;
+  final int? dayOfMonth;
+
+  /// The wall-clock departure, in [timeZoneId]. Local time on purpose: "the
+  /// seven o'clock" stays the seven o'clock across a clock change.
+  final TimeOfDayValue timeOfDay;
+  final String? timeZoneId;
+  final DateTime startDate;
+  final DateTime? endDate;
+  final int seats;
+  final double? pricePerSeat;
+  final int? vehicleId;
+  final int minSeatsToConfirm;
+  /// A driver's condition on their passengers, or a rider's on who may drive
+  /// them — whichever side owns the schedule.
+  final GenderPolicy genderPolicy;
+
+  /// Rider-owned schedules only: who else may be aboard. A rider's posting
+  /// carries two conditions where a driver's trip carries one.
+  final GenderPolicy coRiderGenderPolicy;
+
+  final int? minAge;
+  final int? maxAge;
+
+  /// Generation is stopped; what already exists still runs.
+  final bool isPaused;
+
+  /// The next few departures it will produce.
+  final List<DateTime> nextDepartures;
+
+  bool get isDriverSchedule => ownerRole == 2;
+
+  factory TripSchedule.fromJson(Map<String, dynamic> j) => TripSchedule(
+        id: j['id'] as int,
+        ownerRole: j['ownerRole'] as int? ?? 1,
+        originAddress: j['originAddress'] as String? ?? '',
+        destinationAddress: j['destinationAddress'] as String? ?? '',
+        recurrence: Recurrence.fromValue(j['recurrence'] as int?),
+        daysOfWeek: WeekDaySet((j['daysOfWeek'] as num?)?.toInt() ?? 0),
+        dayOfMonth: (j['dayOfMonth'] as num?)?.toInt(),
+        timeOfDay: TimeOfDayValue.parse(j['timeOfDay'] as String?),
+        timeZoneId: j['timeZoneId'] as String?,
+        startDate: parseDateOnly(j['startDate'] as String?) ?? DateTime.now(),
+        endDate: parseDateOnly(j['endDate'] as String?),
+        seats: j['seats'] as int? ?? 1,
+        pricePerSeat: (j['pricePerSeat'] as num?)?.toDouble(),
+        vehicleId: (j['vehicleId'] as num?)?.toInt(),
+        minSeatsToConfirm: j['minSeatsToConfirm'] as int? ?? 1,
+        genderPolicy: GenderPolicy.fromValue(j['genderPolicy'] as int?),
+        minAge: (j['minAge'] as num?)?.toInt(),
+        maxAge: (j['maxAge'] as num?)?.toInt(),
+        isPaused: j['isPaused'] as bool? ?? false,
+        nextDepartures: (j['nextDepartures'] as List<dynamic>? ?? [])
+            .map((e) => parseServerDate(e as String?)?.toLocal())
+            .whereType<DateTime>()
+            .toList(),
+      );
+}
+
+/// An `HH:mm:ss` wall-clock time, kept apart from Flutter's own `TimeOfDay` so
+/// the model layer stays free of widget imports.
+class TimeOfDayValue {
+  const TimeOfDayValue(this.hour, this.minute);
+
+  final int hour;
+  final int minute;
+
+  static TimeOfDayValue parse(String? raw) {
+    final parts = (raw ?? '').split(':');
+    if (parts.length < 2) return const TimeOfDayValue(8, 0);
+    return TimeOfDayValue(
+      int.tryParse(parts[0])?.clamp(0, 23) ?? 8,
+      int.tryParse(parts[1])?.clamp(0, 59) ?? 0,
+    );
+  }
+
+  /// The `HH:mm:ss` the server parses back into a `TimeOnly`.
+  String get wire =>
+      '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}:00';
+
+  @override
+  String toString() => '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
 }
 
 class Booking {
@@ -619,6 +1071,9 @@ class Booking {
     this.departAt,
     this.tripStatus = 1,
     this.driverPhone,
+    this.pricePerSeat,
+    this.minSeatsToConfirm = 1,
+    this.seatsHeld = 0,
   });
 
   final int id;
@@ -638,9 +1093,26 @@ class Booking {
   /// the rider whether they still hold the seat.
   final int tripStatus;
 
-  /// The driver's number, for the call button. The server sends it only while
-  /// the booking is live, so a finished trip leaves this null.
+  /// The driver's number, for the call button. The server sends it only on a
+  /// seat that is both live and committed, so a finished trip — or one still
+  /// waiting on the trip's own seat threshold — leaves this null.
   final String? driverPhone;
+
+  /// What the seat costs, per seat. Display-only: there are no payments.
+  ///
+  /// On a seat that came from a claimed posting this is the figure the driver
+  /// named. The rider never agreed to it in advance — they answer it by staying
+  /// or by leaving, which costs them nothing.
+  final double? pricePerSeat;
+
+  /// The trip's seat threshold and what it holds, so a held seat can say
+  /// "confirms at 3 of 4" without a second call.
+  final int minSeatsToConfirm;
+  final int seatsHeld;
+
+  /// The seat is held but nobody is committed: the trip has not reached the
+  /// seats its driver asked for. The only kind of pending seat there is.
+  bool get isPending => status == 1;
 
   static const _statusKeys = {
     1: 'bookingStatus.pending',
@@ -706,6 +1178,9 @@ class Booking {
         destinationAddress: j['destinationAddress'] as String? ?? '',
         departAt: parseServerDate(j['departAt'] as String?),
         tripStatus: j['tripStatus'] as int? ?? 1,
+        pricePerSeat: (j['pricePerSeat'] as num?)?.toDouble(),
+        minSeatsToConfirm: j['minSeatsToConfirm'] as int? ?? 1,
+        seatsHeld: j['seatsHeld'] as int? ?? 0,
         driverPhone: (j['driverPhone'] as String?)?.trim(),
       );
 }
@@ -802,7 +1277,70 @@ class TripBooking {
       );
 }
 
-enum SearchMode { carpool, hail }
+/// Which band a match came back in (`Wanes.Areas.Services.Search.SearchTier`).
+///
+/// A band, not a score: a trip that merely passes the rider's way is as
+/// bookable as one going door to door, it just asks the driver to stop
+/// somewhere they had not planned. The home list renders these as sections in
+/// this order, which the server's ranking already guarantees.
+enum SearchTier {
+  direct(1, 'search.tierDirect'),
+  onTheWay(2, 'search.tierOnTheWay');
+
+  const SearchTier(this.value, this.labelKey);
+
+  final int value;
+  final String labelKey;
+
+  String get label => AppLocalizations.current.t(labelKey);
+
+  static SearchTier fromValue(int? v) =>
+      SearchTier.values.firstWhere((t) => t.value == v, orElse: () => SearchTier.direct);
+}
+
+/// One matched trip, and what matching it costs the rider.
+class SearchMatch {
+  SearchMatch({
+    required this.tier,
+    required this.trip,
+    this.pickupWalkKm = 0,
+    this.dropoffWalkKm = 0,
+    this.pickupLat,
+    this.pickupLng,
+    this.dropoffLat,
+    this.dropoffLng,
+  });
+
+  final SearchTier tier;
+  final Trip trip;
+
+  /// How far the rider walks at each end. On a corridor match these are
+  /// measured to the points on the route the driver will actually pass — which
+  /// is the whole difference between the two bands, and the number the rider is
+  /// really choosing on.
+  final double pickupWalkKm;
+  final double dropoffWalkKm;
+
+  /// Where on the route the driver would stop, on a corridor match. Null on a
+  /// direct one, where the trip's own ends already say it.
+  final double? pickupLat;
+  final double? pickupLng;
+  final double? dropoffLat;
+  final double? dropoffLng;
+
+  bool get isOnTheWay => tier == SearchTier.onTheWay;
+
+  factory SearchMatch.fromJson(Map<String, dynamic> j) => SearchMatch(
+        tier: SearchTier.fromValue(j['tier'] as int?),
+        trip: Trip.fromJson(j['trip'] as Map<String, dynamic>? ?? const {}),
+        pickupWalkKm: (j['pickupWalkKm'] as num?)?.toDouble() ?? 0,
+        dropoffWalkKm: (j['dropoffWalkKm'] as num?)?.toDouble() ?? 0,
+        pickupLat: (j['pickupLat'] as num?)?.toDouble(),
+        pickupLng: (j['pickupLng'] as num?)?.toDouble(),
+        dropoffLat: (j['dropoffLat'] as num?)?.toDouble(),
+        dropoffLng: (j['dropoffLng'] as num?)?.toDouble(),
+      );
+}
 
 /// How the rider wants carpool matches ordered
 /// (`Wanes.Areas.Services.Search.SearchSort`).
@@ -828,40 +1366,46 @@ enum TripSort {
       TripSort.values.firstWhere((s) => s.wire == value, orElse: () => TripSort.best);
 }
 
+/// Everything a search can offer, in one response.
+///
+/// Not a mode. Search used to answer either "here are trips" or "we opened a
+/// hail for you", and the second was a consolation prize dressed as a result.
+/// Now every search comes back with the same four things: trips going the
+/// rider's way, trips passing it, postings they could join, and — always — the
+/// earliest they could post one themselves.
 class SearchResult {
   SearchResult({
-    required this.mode,
+    required this.earliestDepartAt,
     this.matches = const [],
-    this.rideRequestId,
-    this.driversNotified = 0,
-    this.rideRequestExpiresAt,
+    this.requests = const [],
   });
 
-  final SearchMode mode;
-  final List<Trip> matches;
-  final int? rideRequestId;
+  final List<SearchMatch> matches;
 
-  /// How many nearby drivers the hail actually pinged.
-  final int driversNotified;
+  /// Open ride requests on the same route the rider could join instead of creating a
+  /// near-identical one.
+  final List<RiderTrip> requests;
 
-  /// When the opened hail stops being answerable, as the server stamped it.
-  /// Null outside hail mode, and on a server that predates the field — the
-  /// search screen then counts down the configured window instead.
-  final DateTime? rideRequestExpiresAt;
+  /// The earliest departure this rider could post for, given the seats and
+  /// distance they just searched. Sent on every search, not only an empty one:
+  /// the form needs it while they are still choosing a time.
+  final DateTime earliestDepartAt;
 
-  factory SearchResult.fromJson(Map<String, dynamic> j) {
-    final modeNum = j['mode'] as int? ?? 1;
-    final list = (j['matches'] as List<dynamic>? ?? [])
-        .map((e) => Trip.fromJson(e as Map<String, dynamic>))
-        .toList();
-    return SearchResult(
-      mode: modeNum == 2 ? SearchMode.hail : SearchMode.carpool,
-      matches: list,
-      rideRequestId: j['rideRequestId'] as int?,
-      driversNotified: j['driversNotified'] as int? ?? 0,
-      rideRequestExpiresAt: parseServerDate(j['rideRequestExpiresAt'] as String?),
-    );
-  }
+  bool get isEmpty => matches.isEmpty && requests.isEmpty;
+
+  /// The trips only, for the screens that do not care which band they came from.
+  List<Trip> get trips => matches.map((m) => m.trip).toList();
+
+  factory SearchResult.fromJson(Map<String, dynamic> j) => SearchResult(
+        matches: (j['matches'] as List<dynamic>? ?? [])
+            .map((e) => SearchMatch.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        requests: (j['requests'] as List<dynamic>? ?? [])
+            .map((e) => RiderTrip.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        earliestDepartAt: parseServerDate(j['earliestDepartAt'] as String?) ??
+            DateTime.now().add(const Duration(minutes: 15)),
+      );
 }
 
 /// How a saved place is labelled (`Wanes.Shareds.Enums.SavedPlaceLabel`).
@@ -928,7 +1472,7 @@ class SavedPlace {
 /// Each carries the icon/accent the inbox draws it with, so a new backend type
 /// only needs one line here.
 enum NotificationKind {
-  rideRequestNearby('RideRequestNearby'),
+  riderTripNearby('RiderTripNearby'),
   bookingConfirmed('BookingConfirmed'),
   tripCancelled('TripCancelled'),
   driverAccepted('DriverAccepted'),
@@ -945,6 +1489,18 @@ enum NotificationKind {
   /// The support desk answered a complaint or suggestion
   /// (`NotificationType.FeedbackReplied`).
   feedbackReplied('FeedbackReplied'),
+
+  /// A trip reached the seats its driver asked for, so every held seat on it is
+  /// now committed (`NotificationType.TripConfirmed`).
+  tripConfirmed('TripConfirmed'),
+
+  /// A trip was called off for want of riders (`NotificationType.TripNotEnoughRiders`).
+  tripNotEnoughRiders('TripNotEnoughRiders'),
+
+  /// The driver has to say whether a trip short of its threshold still runs
+  /// (`NotificationType.ConfirmDecision`).
+  confirmDecision('ConfirmDecision'),
+
   general('General');
 
   const NotificationKind(this.wire);
@@ -1248,5 +1804,182 @@ class FeedbackEntry {
         reply: j['reply'] as String?,
         repliedAt: parseServerDate(j['repliedAt'] as String?),
         createdAt: parseServerDate(j['creationDate'] as String?),
+      );
+}
+
+/// The kinds of paperwork the platform asks a driver for.
+///
+/// Mirrors `Shareds/Enums/DriverDocumentType.cs`. [required] marks the ones an
+/// application cannot be submitted without — the server decides that too and
+/// says so in `missingTypes`; this is only so the screen can label the slots
+/// before anything has been uploaded.
+enum DriverDocumentType {
+  licenseFront(1, 'driver.docLicenseFront', required: true),
+  licenseBack(2, 'driver.docLicenseBack', required: true),
+  idDocument(3, 'driver.docId', required: true),
+  vehicleRegistration(4, 'driver.docRegistration'),
+  insurance(5, 'driver.docInsurance');
+
+  const DriverDocumentType(this.value, this.labelKey, {this.required = false});
+
+  final int value;
+  final String labelKey;
+  final bool required;
+
+  String get label => AppLocalizations.current.t(labelKey);
+
+  static DriverDocumentType fromValue(int? v) => DriverDocumentType.values
+      .firstWhere((t) => t.value == v, orElse: () => DriverDocumentType.idDocument);
+}
+
+/// One uploaded document. Carries no URL — the bytes come from an authorized
+/// endpoint keyed on [id].
+class DriverDocument {
+  const DriverDocument({
+    required this.id,
+    required this.type,
+    this.fileName = '',
+    this.contentType = '',
+    this.sizeBytes = 0,
+    this.uploadedAt,
+    this.isPdf = false,
+  });
+
+  final int id;
+  final DriverDocumentType type;
+  final String fileName;
+  final String contentType;
+  final int sizeBytes;
+  final DateTime? uploadedAt;
+  final bool isPdf;
+
+  factory DriverDocument.fromJson(Map<String, dynamic> j) => DriverDocument(
+        id: j['id'] as int? ?? 0,
+        type: DriverDocumentType.fromValue(j['type'] as int?),
+        fileName: j['fileName'] as String? ?? '',
+        contentType: j['contentType'] as String? ?? '',
+        sizeBytes: (j['sizeBytes'] as num?)?.toInt() ?? 0,
+        uploadedAt: parseServerDate(j['uploadedAt'] as String?),
+        isPdf: j['isPdf'] as bool? ?? false,
+      );
+}
+
+/// Where a driver's application stands, with everything the screen needs to
+/// show it: what is uploaded, what is still missing, and — after a rejection —
+/// what the reviewer said about it.
+class DriverVerification {
+  const DriverVerification({
+    this.status = 0,
+    this.licenseNumber,
+    this.appliedAt,
+    this.reviewNote,
+    this.reviewedAt,
+    this.documents = const [],
+    this.missingTypes = const [],
+    this.canSubmit = false,
+  });
+
+  /// Matches `DriverStatus`: 0 none, 1 pending, 2 verified, 3 rejected, 4 suspended.
+  final int status;
+  final String? licenseNumber;
+  final DateTime? appliedAt;
+  final String? reviewNote;
+  final DateTime? reviewedAt;
+  final List<DriverDocument> documents;
+  final List<DriverDocumentType> missingTypes;
+
+  /// Whether the required set is complete. Computed by the server, so the app
+  /// can never offer a submit the API would refuse.
+  final bool canSubmit;
+
+  bool get isPending => status == 1;
+  bool get isVerified => status == 2;
+  bool get isRejected => status == 3;
+
+  DriverDocument? documentOf(DriverDocumentType type) {
+    for (final d in documents) {
+      if (d.type == type) return d;
+    }
+    return null;
+  }
+
+  factory DriverVerification.fromJson(Map<String, dynamic> j) => DriverVerification(
+        status: j['status'] as int? ?? 0,
+        licenseNumber: j['licenseNumber'] as String?,
+        appliedAt: parseServerDate(j['appliedAt'] as String?),
+        reviewNote: j['reviewNote'] as String?,
+        reviewedAt: parseServerDate(j['reviewedAt'] as String?),
+        documents: (j['documents'] as List? ?? [])
+            .map((e) => DriverDocument.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        missingTypes: (j['missingTypes'] as List? ?? [])
+            .map((e) => DriverDocumentType.fromValue(e as int?))
+            .toList(),
+        canSubmit: j['canSubmit'] as bool? ?? false,
+      );
+}
+
+/// The departures a driver cannot take, as the server sees them.
+///
+/// One driver drives one car, so two promises the same distance apart as the
+/// matching window are the same promise twice. The window travels with the list
+/// rather than being restated in Dart: it is a platform rule, and a client
+/// carrying its own copy is a client that will offer a slot the API refuses.
+class DriverAvailability {
+  const DriverAvailability({
+    this.committedDepartures = const [],
+    this.clashWindow = Duration.zero,
+    this.isEngaged = false,
+  });
+
+  /// Departures already promised, in the device's own time.
+  final List<DateTime> committedDepartures;
+  final Duration clashWindow;
+
+  /// Out on a trip right now — no departure is available until they finish.
+  final bool isEngaged;
+
+  factory DriverAvailability.fromJson(Map<String, dynamic> j) => DriverAvailability(
+        committedDepartures: (j['committedDepartures'] as List? ?? [])
+            .map((e) => parseServerDate(e as String?)?.toLocal())
+            .whereType<DateTime>()
+            .toList(),
+        clashWindow: Duration(minutes: (j['clashWindowMinutes'] as num?)?.toInt() ?? 0),
+        isEngaged: j['isEngaged'] as bool? ?? false,
+      );
+}
+
+/// What the rider's own diary blocks off.
+///
+/// The mirror of [DriverAvailability], and the same shape on purpose: one rider
+/// rides in one car, so a seat they already hold rules out another leaving at
+/// about the same moment. Search asks for this before the time picker opens, so
+/// the slots a booking would be refused at are greyed out rather than found out
+/// about at the tap that mattered.
+class RiderAvailability {
+  const RiderAvailability({
+    this.committedDepartures = const [],
+    this.clashWindow = Duration.zero,
+    this.isEngaged = false,
+  });
+
+  /// Departures the rider already holds a seat at, in the device's own time.
+  final List<DateTime> committedDepartures;
+
+  /// How close to one of those another departure may not be. Carried from the
+  /// API rather than restated here: a client with its own copy of the number is
+  /// a client that will one day offer a slot the API refuses.
+  final Duration clashWindow;
+
+  /// On a ride right now, so nothing at all is open until it ends.
+  final bool isEngaged;
+
+  factory RiderAvailability.fromJson(Map<String, dynamic> j) => RiderAvailability(
+        committedDepartures: (j['committedDepartures'] as List? ?? [])
+            .map((e) => parseServerDate(e as String?)?.toLocal())
+            .whereType<DateTime>()
+            .toList(),
+        clashWindow: Duration(minutes: (j['clashWindowMinutes'] as num?)?.toInt() ?? 0),
+        isEngaged: j['isEngaged'] as bool? ?? false,
       );
 }

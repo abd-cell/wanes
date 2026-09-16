@@ -76,7 +76,7 @@ The button shows a teal spinner while it calls the API.
 
 `app/wanes_app/lib/core/environment.dart` reads the base URL from a
 compile-time `--dart-define=API_BASE_URL=...`. The default is the host PC's
-**LAN** address (`http://192.168.10.150:5000/api/v1/`) so a real phone, an
+**LAN** address (`http://192.168.1.43:5000/api/v1/`) so a real phone, an
 emulator and the host browser all hit the same backend. Pass the URL the
 *target* can actually reach:
 
@@ -125,12 +125,15 @@ The IP is DHCP-assigned (`ipconfig` → Wi-Fi IPv4). If it moves, update
 `cms/wanes-cp/src/app/environment.ts` together — or reserve it on the router.
 
 **This address moves often — re-check `ipconfig` before trusting the files.**
-Observed **five** values in seven days, hopping between two subnets:
+Observed **six** values in seven days, hopping between two subnets and
+eventually cycling back to where it started:
 `192.168.1.43` → `192.168.10.149` → `192.168.1.160` → `192.168.1.127` →
-`192.168.10.150` (1-7 Sep 2026). Three of those moved *mid-session*, one of
-them within twenty minutes of being verified — so treat the value in these
-files as a hint, never as fact. Run `ipconfig` at the start of every session
-that touches the API. When the app reports
+`192.168.10.150` → `192.168.1.43` again (1-7 Sep 2026). Four of those moved
+*mid-session*, one within twenty minutes of being verified — so treat the
+value in these files as a hint, never as fact, and **re-check even if you
+verified it earlier in the same session**. Because the address recurs, a
+"familiar-looking" IP is no evidence it is current. Run `ipconfig` before
+every API interaction. When the app reports
 "Connection lost / request timed out" and the console shows
 `net::ERR_CONNECTION_TIMED_OUT`, check `ipconfig` **first** — that symptom was
 a moved lease both times, not CORS and not the firewall. Distinguishing test:
@@ -143,7 +146,7 @@ There is a fourth place worth updating for your own sanity: the smoke-test
 
 Smoke-test the LAN path:
 ```bash
-curl -s -o /dev/null -w "%{http_code}\n" -X POST http://192.168.10.150:5000/api/v1/accounts/request-otp -H "Content-Type: application/json" -d '{"phone":"+962790000000"}'
+curl -s -o /dev/null -w "%{http_code}\n" -X POST http://192.168.1.43:5000/api/v1/accounts/request-otp -H "Content-Type: application/json" -d '{"phone":"+962790000000"}'
 ```
 `200` means the API is reachable at that address.
 

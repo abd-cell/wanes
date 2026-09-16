@@ -1,6 +1,5 @@
-using System.Globalization;
+﻿using System.Globalization;
 using Wanes.Areas.Domain.Bookings;
-using Wanes.Areas.Domain.Requests;
 using Wanes.Areas.Domain.Trips;
 using Wanes.Areas.Domain.Users;
 using Wanes.Areas.Domain.Vehicles;
@@ -78,15 +77,6 @@ public static class AdminLabels
     /// <summary>"Ahmad Ali · 4 seats · #3".</summary>
     public static string? ForVehicleDetail(Vehicle? vehicle) =>
         vehicle == null ? null : Join(ForUser(vehicle.User), Seats(vehicle.SeatCapacity), Ref(vehicle.Id));
-
-    /// <summary>"Ahmad Ali · Amman → Zarqa".</summary>
-    public static string? ForRequest(RideRequest? request) =>
-        request == null ? null
-        : Join(ForUser(request.Rider), Route(request.OriginAddress, request.DestinationAddress, request.Id));
-
-    /// <summary>"2 seats · 3 Sep 08:00 · #5".</summary>
-    public static string? ForRequestDetail(RideRequest? request) =>
-        request == null ? null : Join(Seats(request.Seats), Time(request.RequestedAt), Ref(request.Id));
 
     /// <summary>"Amman → Zarqa", or "#12" when neither address was captured.</summary>
     private static string Route(string? origin, string? destination, int id)

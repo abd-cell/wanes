@@ -140,14 +140,47 @@
 
       <div class="pair">
         <div class="form-row">
-          <label for="cfg-hail-ttl">{{ 'cfg_hail_ttl' | translate }}</label>
-          <input id="cfg-hail-ttl" class="field" type="number" min="1" max="240" step="1"
-                 [ngModel]="model().hailRequestTtlMinutes"
-                 (ngModelChange)="set('hailRequestTtlMinutes', +$event)" />
+          <label for="cfg-confirm-cutoff">{{ 'cfg_confirm_cutoff' | translate }}</label>
+          <input id="cfg-confirm-cutoff" class="field" type="number" min="5" max="720" step="5"
+                 [ngModel]="model().confirmCutoffMinutes"
+                 (ngModelChange)="set('confirmCutoffMinutes', +$event)" />
+        </div>
+        <div class="form-row">
+          <label for="cfg-confirm-lead">{{ 'cfg_confirm_lead' | translate }}</label>
+          <input id="cfg-confirm-lead" class="field" type="number" min="1" max="240" step="1"
+                 [ngModel]="model().confirmDecisionLeadMinutes"
+                 (ngModelChange)="set('confirmDecisionLeadMinutes', +$event)" />
+        </div>
+      </div>
+
+      <div class="form-row">
+        <label for="cfg-min-passengers">{{ 'cfg_min_passengers' | translate }}</label>
+        <input id="cfg-min-passengers" class="field" type="number" min="1" max="8" step="1"
+               [ngModel]="model().minimumPassengersDefault"
+               (ngModelChange)="set('minimumPassengersDefault', +$event)" />
+      </div>
+      <p class="hint">{{ 'cfg_min_passengers_hint' | translate }}</p>
+
+      <div class="form-row">
+        <label for="cfg-selection-window">{{ 'cfg_selection_window' | translate }}</label>
+        <input id="cfg-selection-window" class="field" type="number" min="0" max="120" step="1"
+               [ngModel]="model().driverSelectionWindowMinutes"
+               (ngModelChange)="set('driverSelectionWindowMinutes', +$event)" />
+      </div>
+      <p class="hint">{{ 'cfg_selection_window_hint' | translate }}</p>
+      <p class="hint">{{ confirmPreview() }}</p>
+
+      <div class="pair">
+        <div class="form-row">
+          <label for="cfg-speed">{{ 'cfg_speed' | translate }}</label>
+          <input id="cfg-speed" class="field mono" dir="ltr" type="number"
+                 min="5" max="120" step="1"
+                 [ngModel]="model().averageSpeedKmh"
+                 (ngModelChange)="set('averageSpeedKmh', +$event)" />
         </div>
         <div class="form-row">
           <span class="preview-label">{{ 'cfg_preview' | translate }}</span>
-          <p class="hint">{{ hailTtlPreview() }}</p>
+          <p class="hint">{{ speedPreview() }}</p>
         </div>
       </div>
     </section>

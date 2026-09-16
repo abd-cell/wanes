@@ -53,7 +53,9 @@ class AppConfigController {
         next.currencyCode != current.currencyCode ||
         next.currencyPosition != current.currencyPosition ||
         next.currencyDecimals != current.currencyDecimals ||
-        next.hailTtlMinutes != current.hailTtlMinutes ||
+        next.confirmCutoffMinutes != current.confirmCutoffMinutes ||
+        next.confirmDecisionLeadMinutes != current.confirmDecisionLeadMinutes ||
+        next.averageSpeedKmh != current.averageSpeedKmh ||
         next.supportPhone != current.supportPhone ||
         next.supportWhatsApp != current.supportWhatsApp ||
         next.supportEmail != current.supportEmail ||

@@ -36,6 +36,9 @@ class Place {
   double metresTo(double otherLat, double otherLng) =>
       metresBetween(lat, lng, otherLat, otherLng);
 
+  /// The filter group this place belongs to, derived from [kind].
+  PlaceCategory get category => categoryOf(kind);
+
   /// True when the query matches the name or the address, case-insensitively.
   /// Used to surface saved/recent picks before the geocoder answers.
   bool matches(String query) {
@@ -155,3 +158,145 @@ IconData placeIcon(String? kind) => switch (kind) {
       'pin' => Icons.my_location_rounded,
       _ => Icons.place_outlined,
     };
+
+/// The coarse groups the place picker filters by.
+///
+/// Nominatim's `type`/`category` vocabulary runs to hundreds of values, which
+/// is useless as a filter row, so each group folds the kinds a rider thinks of
+/// as one thing ("food", "transport") into a single chip. Declaration order is
+/// chip order, with the two catch-all groups — areas and plain addresses —
+/// last, because they are what a query lands in when nothing more specific
+/// matched.
+enum PlaceCategory {
+  transport('placeCategory.transport', Icons.directions_transit_rounded, {
+    'aeroway', 'airport', 'aerodrome', 'terminal', 'railway', 'station',
+    'halt', 'platform', 'subway', 'tram_stop', 'bus_station', 'bus_stop',
+    'taxi', 'ferry_terminal', 'parking',
+  }),
+  food('placeCategory.food', Icons.restaurant_rounded, {
+    'restaurant', 'cafe', 'fast_food', 'bakery', 'bar', 'pub', 'food_court',
+    'ice_cream',
+  }),
+  shopping('placeCategory.shopping', Icons.shopping_bag_rounded, {
+    'mall', 'supermarket', 'shop', 'marketplace', 'department_store',
+    'convenience', 'retail', 'bakery_shop', 'kiosk',
+  }),
+  health('placeCategory.health', Icons.local_hospital_rounded, {
+    'hospital', 'clinic', 'doctors', 'pharmacy', 'dentist', 'veterinary',
+    'healthcare',
+  }),
+  education('placeCategory.education', Icons.school_rounded, {
+    'university', 'college', 'school', 'kindergarten', 'library',
+    'driving_school', 'language_school',
+  }),
+  worship('placeCategory.worship', Icons.mosque_rounded, {
+    'mosque', 'church', 'place_of_worship', 'cathedral', 'chapel',
+    'synagogue', 'shrine',
+  }),
+  leisure('placeCategory.leisure', Icons.park_rounded, {
+    'park', 'garden', 'leisure', 'stadium', 'sports_centre', 'pitch',
+    'playground', 'museum', 'attraction', 'tourism', 'cinema', 'theatre',
+    'zoo', 'viewpoint',
+  }),
+  lodging('placeCategory.lodging', Icons.hotel_rounded, {
+    'hotel', 'guest_house', 'hostel', 'motel', 'resort', 'apartments',
+  }),
+  services('placeCategory.services', Icons.account_balance_rounded, {
+    'bank', 'atm', 'fuel', 'charging_station', 'police', 'fire_station',
+    'post_office', 'office', 'government', 'embassy', 'townhall', 'courthouse',
+  }),
+  area('placeCategory.area', Icons.location_city_rounded, {
+    'place', 'city', 'town', 'village', 'hamlet', 'suburb', 'neighbourhood',
+    'quarter', 'municipality', 'county', 'state', 'district', 'locality',
+  }),
+  address('placeCategory.address', Icons.signpost_rounded, {
+    'road', 'highway', 'street', 'residential', 'building', 'house',
+    'apartment', 'pin', 'amenity',
+  });
+
+  const PlaceCategory(this.labelKey, this.icon, this.kinds);
+
+  /// i18n key for the chip label — see `l10n/strings_{en,ar}.dart`.
+  final String labelKey;
+  final IconData icon;
+
+  /// The geocoder kinds that land in this group. Anything unlisted falls back
+  /// to [PlaceCategory.address], so a new OSM type is never invisible.
+  final Set<String> kinds;
+
+  String get label => AppLocalizations.current.t(labelKey);
+}
+
+/// The group a geocoder [kind] belongs to. Unknown and missing kinds are plain
+/// addresses — the bucket that means "a spot on the map", not "uncategorised".
+PlaceCategory categoryOf(String? kind) {
+  final k = kind?.trim().toLowerCase();
+  if (k == null || k.isEmpty) return PlaceCategory.address;
+  for (final category in PlaceCategory.values) {
+    if (category.kinds.contains(k)) return category;
+  }
+  return PlaceCategory.address;
+}
+
+/// The categories actually present in [places], in chip order. The picker only
+/// offers a filter that would return something, so a search for "airport"
+/// never grows a "Food & drink" chip.
+List<PlaceCategory> categoriesIn(Iterable<Place> places) {
+  final present = places.map((p) => p.category).toSet();
+  return PlaceCategory.values
+      .where(present.contains)
+      .toList(growable: false);
+}
+
+/// What the picker's filter row selects: at most one category, plus an
+/// optional "only what is close to me" radius.
+///
+/// Pure and value-like on purpose — the chip row, the result list and the
+/// tests all decide what a filter means by calling the same [allows].
+class PlaceFilter {
+  const PlaceFilter({this.category, this.nearbyOnly = false});
+
+  /// Nothing filtered — the state the picker opens in and returns to.
+  static const none = PlaceFilter();
+
+  /// What "nearby" means: a walk-or-short-drive radius around the rider, wide
+  /// enough to cover the city they are standing in and narrow enough to drop
+  /// the same-named place two governorates over.
+  static const nearbyRadiusMetres = 10000.0;
+
+  final PlaceCategory? category;
+
+  /// Ignored while the rider's position is unknown — there is nothing to
+  /// measure from, and hiding every row would be a worse answer than none.
+  final bool nearbyOnly;
+
+  bool get isActive => category != null || nearbyOnly;
+
+  PlaceFilter copyWith({PlaceCategory? category, bool? nearbyOnly}) =>
+      PlaceFilter(
+        category: category ?? this.category,
+        nearbyOnly: nearbyOnly ?? this.nearbyOnly,
+      );
+
+  /// Same filter with the category cleared — the "All" chip.
+  PlaceFilter withoutCategory() => PlaceFilter(nearbyOnly: nearbyOnly);
+
+  bool allows(Place place, {double? lat, double? lng}) {
+    if (category != null && place.category != category) return false;
+    if (!nearbyOnly || lat == null || lng == null) return true;
+    return place.metresTo(lat, lng) <= nearbyRadiusMetres;
+  }
+
+  List<Place> apply(List<Place> places, {double? lat, double? lng}) => places
+      .where((p) => allows(p, lat: lat, lng: lng))
+      .toList(growable: false);
+
+  @override
+  bool operator ==(Object other) =>
+      other is PlaceFilter &&
+      other.category == category &&
+      other.nearbyOnly == nearbyOnly;
+
+  @override
+  int get hashCode => Object.hash(category, nearbyOnly);
+}

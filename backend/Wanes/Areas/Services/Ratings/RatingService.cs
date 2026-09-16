@@ -1,4 +1,4 @@
-using Wanes.Areas.Domain.Bookings;
+﻿using Wanes.Areas.Domain.Bookings;
 using Wanes.Areas.Domain.Ratings;
 using Wanes.Areas.Domain.Trips;
 using Wanes.Areas.Domain.Users;
@@ -65,7 +65,9 @@ public class RatingService : IRatingService
         if (!isRider && !isDriver) return new BaseResponse(ErrorCode.Forbidden);
 
         var direction = isRider ? RatingDirection.RiderToDriver : RatingDirection.DriverToRider;
-        var toUserId = isRider ? trip.DriverId : booking.RiderId;
+        // A trip nobody drove cannot have been completed, and only a completed
+        // booking is rateable — checked above — so the driver is there.
+        var toUserId = isRider ? trip.DriverId!.Value : booking.RiderId;
 
         var alreadyRated = await ratingRepository.AnyAsync(r =>
             r.BookingId == booking.Id && r.Direction == direction);

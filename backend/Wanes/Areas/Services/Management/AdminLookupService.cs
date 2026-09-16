@@ -1,7 +1,6 @@
-using System.Linq.Expressions;
+﻿using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using Wanes.Areas.Domain.Bookings;
-using Wanes.Areas.Domain.Requests;
 using Wanes.Areas.Domain.Trips;
 using Wanes.Areas.Domain.Users;
 using Wanes.Areas.Domain.Vehicles;
@@ -24,20 +23,17 @@ public class AdminLookupService : IAdminLookupService
     private readonly IRepository<Vehicle> vehicleRepository;
     private readonly IRepository<Trip> tripRepository;
     private readonly IRepository<Booking> bookingRepository;
-    private readonly IRepository<RideRequest> rideRequestRepository;
 
     public AdminLookupService(
         IRepository<User> userRepository,
         IRepository<Vehicle> vehicleRepository,
         IRepository<Trip> tripRepository,
-        IRepository<Booking> bookingRepository,
-        IRepository<RideRequest> rideRequestRepository)
+        IRepository<Booking> bookingRepository)
     {
         this.userRepository = userRepository;
         this.vehicleRepository = vehicleRepository;
         this.tripRepository = tripRepository;
         this.bookingRepository = bookingRepository;
-        this.rideRequestRepository = rideRequestRepository;
     }
 
     public async Task<BaseResponse<PageOutput<LookupRow>>> Search(string type, PageInput page)
@@ -53,7 +49,6 @@ public class AdminLookupService : IAdminLookupService
             "vehicles" => await SearchVehicles(page, term, id),
             "trips" => await SearchTrips(page, term, id),
             "bookings" => await SearchBookings(page, term, id),
-            "requests" => await SearchRequests(page, term, id),
             _ => new BaseResponse<PageOutput<LookupRow>>(default, ErrorCode.NotFound, $"Unknown lookup type: {type}."),
         };
     }
@@ -66,7 +61,6 @@ public class AdminLookupService : IAdminLookupService
             "vehicles" => Row(await VehicleQuery().FirstOrDefaultAsync(v => v.Id == id)),
             "trips" => Row(await TripQuery().FirstOrDefaultAsync(t => t.Id == id)),
             "bookings" => Row(await BookingQuery().FirstOrDefaultAsync(b => b.Id == id)),
-            "requests" => Row(await RequestQuery().FirstOrDefaultAsync(r => r.Id == id)),
             _ => null,
         };
 
@@ -132,19 +126,6 @@ public class AdminLookupService : IAdminLookupService
         return await Page(query.OrderByDescending(b => b.Id), page, Row);
     }
 
-    private async Task<BaseResponse<PageOutput<LookupRow>>> SearchRequests(PageInput page, string? term, int? id)
-    {
-        var query = RequestQuery();
-        if (term != null)
-            query = query.Where(r =>
-                r.OriginAddress.Contains(term) ||
-                r.DestinationAddress.Contains(term) ||
-                (r.Rider != null && (r.Rider.FirstName.Contains(term) || r.Rider.LastName.Contains(term))) ||
-                r.Id == id);
-
-        return await Page(query.OrderByDescending(r => r.Id), page, Row);
-    }
-
     // ── shared shaping (labels are built in memory; they do not translate to SQL) ──
     private static async Task<BaseResponse<PageOutput<LookupRow>>> Page<T>(
         IQueryable<T> query, PageInput page, Func<T, LookupRow?> toRow)
@@ -163,8 +144,6 @@ public class AdminLookupService : IAdminLookupService
     private IQueryable<Booking> BookingQuery() =>
         bookingRepository.Query().Include(b => b.Rider).Include(b => b.Trip);
 
-    private IQueryable<RideRequest> RequestQuery() => rideRequestRepository.Query().Include(r => r.Rider);
-
     private static LookupRow? Row(User? user) =>
         user == null ? null : new LookupRow(user.Id, AdminLabels.ForUser(user), AdminLabels.ForUserDetail(user));
 
@@ -177,6 +156,4 @@ public class AdminLookupService : IAdminLookupService
     private static LookupRow? Row(Booking? booking) =>
         booking == null ? null : new LookupRow(booking.Id, AdminLabels.ForBooking(booking), AdminLabels.ForBookingDetail(booking));
 
-    private static LookupRow? Row(RideRequest? request) =>
-        request == null ? null : new LookupRow(request.Id, AdminLabels.ForRequest(request), AdminLabels.ForRequestDetail(request));
 }

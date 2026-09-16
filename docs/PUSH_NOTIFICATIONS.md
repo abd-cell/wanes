@@ -37,18 +37,22 @@ action that triggered it.
 
 | Type | Fired by | Recipient |
 |---|---|---|
-| `RideRequestNearby` (1) | `SearchService` opens a hail | verified, online drivers in radius |
+| `RiderTripNearby` (1) | a rider posts a trip, or the sweep brings one into the notify horizon | verified, online drivers in radius who satisfy its conditions |
 | `BookingConfirmed` (2) | `BookingService.Create` | rider **and** driver |
 | `TripCancelled` (3) | `TripService.Cancel` | every rider holding a seat |
-| `DriverAccepted` (4) | `RideRequestService` accept | the rider |
+| `DriverAccepted` (4) | `RiderTripService.Claim` | every rider holding a seat on the posting |
 | `TripCompleted` (5) | `TripService.Complete` | every rider on the trip |
 | `BookingCancelled` (6) | `BookingService.Cancel` | the driver |
 | `TripStarted` (7) | `TripService.Start` | every rider on the trip |
-| `TripMatched` (8) | `TripService` posts a trip fitting an open hail | the waiting riders |
+| `TripMatched` (8) | a new trip fits an open posting (either route into one) | every rider on that posting |
 | `DriverVerified` (9) | `AdminService.VerifyDriver` approve | the driver |
 | `DriverRejected` (10) | `AdminService.VerifyDriver` reject | the driver |
 | `RatingReceived` (11) | `RatingService.Rate` | the rated party |
 | `DriverArrived` (12) | `TripService.Arrive` | the riders waiting at pickup |
+| `FeedbackReplied` (13) | the support desk answers | the user who wrote in |
+| `TripConfirmed` (14) | a trip reaches its seat threshold, or its driver runs it anyway | every rider holding a seat |
+| `TripNotEnoughRiders` (15) | the driver calls it off, or the cutoff passes unanswered | every rider holding a seat |
+| `ConfirmDecision` (16) | `TripConfirmationWorker`, once, before the cutoff | the driver |
 | `General` (100) | admin console — one user, or a whole audience | the chosen user(s) |
 
 Adding a type means five edits, not one: the `NotificationType` enum, the call
@@ -63,18 +67,22 @@ now asserts every wire type maps to a kind of its own — extend that list too.
 
 ### Where a tap goes
 
-Every notification carries a `data` payload (`tripId`, `bookingId`, `requestId`),
+Every notification carries a `data` payload (`tripId`, `bookingId`,
+`riderTripId`),
 and `app/wanes_app/lib/core/notification_router.dart` turns it into a screen. The
 same router serves a tap on the tray and a tap on an inbox row, so the two can
 never disagree.
 
 | Type | Opens |
 |---|---|
-| `RideRequestNearby` | the driver's incoming-hail sheet |
+| `RiderTripNearby` | the driver's board of rider-posted trips |
 | `BookingConfirmed` · `BookingCancelled` · `TripCompleted` · `RatingReceived` | the rider's booking, or the driver's trip |
 | `TripStarted` · `DriverArrived` · `DriverAccepted` | the live-trip rail, while the seat is still running |
 | `TripCancelled` · `TripMatched` | trip details (bookable only for a fresh match) |
 | `DriverVerified` · `DriverRejected` | driver home (after switching role) · the application form |
+| `ConfirmDecision` | the driver's own trip, where run-or-cancel is answered |
+| `TripConfirmed` · `TripNotEnoughRiders` | the rider's own seat |
+| `FeedbackReplied` | the submission that carries the answer |
 | `General` | the inbox, which is also the fallback for anything unroutable |
 
 Two things about it are load-bearing:
@@ -154,6 +162,7 @@ Disabled accounts (`IsDisabled`) are excluded from broadcasts entirely.
 GET    /api/v1/Notifications/mine           inbox page + unreadCount
 POST   /api/v1/Notifications/{id}/read      mark one read
 POST   /api/v1/Notifications/read-all       mark all read
+DELETE /api/v1/Notifications/{id}           clear one off the inbox (soft delete)
 POST   /api/v1/Notifications/device-token   register / refresh this device's FCM token
 DELETE /api/v1/Notifications/device-token   stop push for this device
 GET    /api/v1/sse                          live stream for the signed-in user
@@ -161,6 +170,18 @@ GET    /api/v1/sse                          live stream for the signed-in user
 POST   /api/v1/admin/notifications          admin: compose one, for one user
 POST   /api/v1/admin/notifications/broadcast  admin: one notification -> a whole audience
 ```
+
+### Clearing a notification
+
+`DELETE /Notifications/{id}` is a **soft** delete. `IRepository.Query()` filters
+`IsDeleted` by default, so the row stops being served and stops being counted for
+its owner the moment it is flagged — but it is still there, and the admin console
+asks for it back with `includeDeleted: true`. That asymmetry is the feature: the
+console is the only place a cleared notification is visible, dimmed and badged in
+the table, with a *Live / Cleared* filter and a count on the stats row.
+
+Who cleared it is in the audit log — `notification.delete` for the owner,
+`admin.notifications.delete` (or `admin.notifications.bulk.Delete`) for an admin.
 
 ### Broadcast
 

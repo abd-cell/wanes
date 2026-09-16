@@ -5,9 +5,15 @@
 ///
 /// Applied before the result cap, so the page that comes back is the best twenty
 /// <em>for that sort</em> rather than the twenty nearest re-shuffled on the
-/// client. The explicit sorts run inside the query; <see cref="Best"/> ranks a
-/// pool in memory because it weighs time against distance. Every sort tie-breaks
-/// on proximity and then departure, which keeps the order stable across
+/// client — which is why changing the sort re-asks the server rather than
+/// re-ordering the page in hand.
+///
+/// Every sort runs in memory over the candidate pool, not in the query: a
+/// corridor match is scored on a walk to a projected point on the driver's
+/// route, and that cannot be computed in SQL. It orders <em>within</em> a band
+/// only — the band is the first key, so nothing a sort does can put a trip that
+/// merely passes the rider above one going their way. Ties fall to the shorter
+/// walk and then the earlier departure, which keeps the order stable across
 /// identical requests.
 /// </summary>
 public enum SearchSort

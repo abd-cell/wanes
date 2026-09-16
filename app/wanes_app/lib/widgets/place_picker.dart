@@ -15,13 +15,16 @@ import 'wanes_motion.dart';
 /// Search-driven location picker. Opens a sheet with a text field, queries the
 /// geocoder as the user types (debounced), and returns the chosen [Place].
 ///
-/// Three things happen before the network is involved:
+/// Four things happen before the network is involved:
 ///   * "Use my current location" takes a GPS fix and reverse-geocodes it, so
 ///     the rider never has to type where they are standing.
 ///   * The rider's saved and recent places are matched locally on every
 ///     keystroke, so the obvious pick appears instantly.
 ///   * A known position biases and re-ranks the geocoder results by distance,
 ///     and each row shows how far away it is.
+///   * A filter row narrows what came back — by category, and by "nearby"
+///     once we know where the rider is. It only offers filters the current
+///     results would actually answer, so no chip ever leads to an empty list.
 ///
 /// With an empty box it shows the user's recent picks, falling back to a few
 /// suggestions the first time round. Returns null when dismissed.
@@ -42,6 +45,40 @@ Future<Place?> showPlacePicker(
   );
   if (picked != null) await RecentPlaces.instance.add(picked);
   return picked;
+}
+
+/// A saved or recent place that matched what was typed, with the glyph that
+/// says which of the two it came from.
+typedef _LocalMatch = ({Place place, IconData icon});
+
+/// Everything the list and the filter row are drawn from, computed once per
+/// build so the chips and the rows can never disagree about what a filter does.
+class _Shortlist {
+  const _Shortlist({
+    required this.local,
+    required this.remote,
+    required this.categories,
+    required this.category,
+    required this.hidden,
+  });
+
+  final List<_LocalMatch> local;
+  final List<Place> remote;
+
+  /// The chips worth offering: the categories still present once "nearby" has
+  /// been applied, in taxonomy order.
+  final List<PlaceCategory> categories;
+
+  /// The category actually in force. Null once the chosen one is no longer in
+  /// [categories] — which is what a fresh query does to a stale selection.
+  final PlaceCategory? category;
+
+  /// How many rows the active filter took off the screen. Drives the "nothing
+  /// matches that filter" state, which has to be told apart from "the geocoder
+  /// found nothing".
+  final int hidden;
+
+  bool get isEmpty => local.isEmpty && remote.isEmpty;
 }
 
 class _PlaceSearchSheet extends StatefulWidget {
@@ -74,12 +111,19 @@ class _PlaceSearchSheetState extends State<_PlaceSearchSheet> {
   bool _busy = false;
   String? _error;
 
-  /// Where the rider is, once we know: biases the search, orders the results
-  /// and feeds the distance badges. Null until a fix lands (or for good, if
-  /// they decline) — everything below degrades to the un-located behaviour.
+  /// What the chip row has selected. Reset whenever the query is cleared, so a
+  /// filter can never sit active behind an empty box where its row is hidden.
+  PlaceFilter _filter = PlaceFilter.none;
+
+  /// Where the rider is, once we know: biases the search, orders the results,
+  /// feeds the distance badges and unlocks the "nearby" filter. Null until a
+  /// fix lands (or for good, if they decline) — everything below degrades to
+  /// the un-located behaviour.
   double? _lat;
   double? _lng;
   bool _locating = false;
+
+  bool get _located => _lat != null && _lng != null;
 
   @override
   void initState() {
@@ -119,6 +163,8 @@ class _PlaceSearchSheetState extends State<_PlaceSearchSheet> {
       if (q.length < 2) {
         _results = const [];
         _busy = false;
+        // The chip row lives with the results; clearing the box clears it too.
+        _filter = PlaceFilter.none;
       } else {
         _busy = true;
       }
@@ -129,7 +175,10 @@ class _PlaceSearchSheetState extends State<_PlaceSearchSheet> {
 
   Future<void> _run(String q) async {
     final id = ++_requestId;
-    setState(() => _busy = true);
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
     final res = await GeocodingService.instance.search(q, nearLat: _lat, nearLng: _lng);
     if (!mounted || id != _requestId) return;
     setState(() {
@@ -191,15 +240,23 @@ class _PlaceSearchSheetState extends State<_PlaceSearchSheet> {
 
   void _pick(Place p) => Navigator.pop(context, p);
 
-  // ── Local matches ─────────────────────────────────────────────────────────
+  // ── Filtering ─────────────────────────────────────────────────────────────
+
+  void _selectCategory(PlaceCategory? category) => setState(() => _filter =
+      category == null ? _filter.withoutCategory() : _filter.copyWith(category: category));
+
+  void _toggleNearby() =>
+      setState(() => _filter = _filter.copyWith(nearbyOnly: !_filter.nearbyOnly));
+
+  void _clearFilter() => setState(() => _filter = PlaceFilter.none);
 
   /// Saved and recent places that match what has been typed so far, nearest
   /// first, deduplicated against each other. Shown above the geocoder results
   /// so a place the rider already knows never loses to a server row.
-  List<({Place place, IconData icon})> get _localMatches {
+  List<_LocalMatch> _localMatches() {
     if (_query.length < 2) return const [];
     final seen = <String>{};
-    final out = <({Place place, IconData icon})>[];
+    final out = <_LocalMatch>[];
 
     for (final s in _saved) {
       if (s.place.matches(_query) && seen.add(s.place.key)) {
@@ -218,7 +275,42 @@ class _PlaceSearchSheetState extends State<_PlaceSearchSheet> {
       out.sort((a, b) =>
           a.place.metresTo(lat, lng).compareTo(b.place.metresTo(lat, lng)));
     }
-    return out.length > _maxLocalMatches ? out.sublist(0, _maxLocalMatches) : out;
+    return out;
+  }
+
+  /// Folds the local matches and the geocoder results into what the sheet
+  /// shows. "Nearby" is applied first because it decides which category chips
+  /// are worth offering; the category then narrows what is left.
+  _Shortlist _shortlist() {
+    final lat = _lat;
+    final lng = _lng;
+    final localAll = _localMatches();
+    final total = localAll.length + _results.length;
+
+    final nearby = PlaceFilter(nearbyOnly: _filter.nearbyOnly);
+    final localNear =
+        localAll.where((m) => nearby.allows(m.place, lat: lat, lng: lng)).toList();
+    final remoteNear = nearby.apply(_results, lat: lat, lng: lng);
+
+    final categories =
+        categoriesIn([...localNear.map((m) => m.place), ...remoteNear]);
+    final chosen = _filter.category;
+    final category = chosen != null && categories.contains(chosen) ? chosen : null;
+
+    final local = category == null
+        ? localNear
+        : localNear.where((m) => m.place.category == category).toList();
+    final remote = category == null
+        ? remoteNear
+        : remoteNear.where((p) => p.category == category).toList(growable: false);
+
+    return _Shortlist(
+      local: local.length > _maxLocalMatches ? local.sublist(0, _maxLocalMatches) : local,
+      remote: remote,
+      categories: categories,
+      category: category,
+      hidden: total - (local.length + remote.length),
+    );
   }
 
   // ── Build ─────────────────────────────────────────────────────────────────
@@ -228,6 +320,7 @@ class _PlaceSearchSheetState extends State<_PlaceSearchSheet> {
     final t = WanesTokens.of(context);
     final insets = MediaQuery.of(context).viewInsets.bottom;
     final height = MediaQuery.of(context).size.height * 0.86;
+    final shortlist = _query.length >= 2 ? _shortlist() : null;
 
     return SafeArea(
       top: false,
@@ -262,7 +355,8 @@ class _PlaceSearchSheetState extends State<_PlaceSearchSheet> {
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
               child: _currentLocationTile(t),
             ),
-            Expanded(child: _body(t)),
+            if (shortlist != null && _showFilterBar(shortlist)) _filterBar(t, shortlist),
+            Expanded(child: shortlist == null ? _idleList(t) : _body(t, shortlist)),
           ]),
         ),
       ),
@@ -360,20 +454,113 @@ class _PlaceSearchSheetState extends State<_PlaceSearchSheet> {
     );
   }
 
-  Widget _body(WanesTokens t) {
-    if (_error != null) {
-      return _message(t, Icons.wifi_off_rounded, _error!, context.tr('places.searchRetryHint'));
-    }
+  // ── Filter row ────────────────────────────────────────────────────────────
 
-    if (_query.length < 2) return _idleList(t);
+  /// Worth showing when there is a choice to make: more than one category in
+  /// the results, or a fix that makes "nearby" meaningful. It also stays up
+  /// while a filter is active and has emptied the list, otherwise the rider
+  /// would have no way back to the full set.
+  bool _showFilterBar(_Shortlist shortlist) =>
+      shortlist.categories.length > 1 || _located || _filter.isActive;
 
-    final local = _localMatches;
+  Widget _filterBar(WanesTokens t, _Shortlist shortlist) {
+    final chips = <Widget>[
+      // Distance first: it is the one filter that is about the rider rather
+      // than about the place.
+      if (_located)
+        _chip(t,
+            label: context.tr('places.filterNearby'),
+            icon: Icons.near_me_rounded,
+            selected: _filter.nearbyOnly,
+            onTap: _toggleNearby),
+      if (shortlist.categories.length > 1) ...[
+        _chip(t,
+            label: context.tr('places.filterAll'),
+            selected: shortlist.category == null,
+            onTap: () => _selectCategory(null)),
+        ...shortlist.categories.map((c) => _chip(t,
+            label: c.label,
+            icon: c.icon,
+            selected: shortlist.category == c,
+            onTap: () => _selectCategory(c))),
+      ],
+    ];
 
-    if (_busy && _results.isEmpty && local.isEmpty) {
-      return Center(child: WanesSpinner(color: t.teal));
-    }
+    return SizedBox(
+      height: 42,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 5),
+        itemCount: chips.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (_, i) => chips[i],
+      ),
+    );
+  }
 
-    if (_results.isEmpty && local.isEmpty) {
+  Widget _chip(
+    WanesTokens t, {
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+    IconData? icon,
+  }) {
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: WanesMotion.press,
+          curve: Curves.easeOut,
+          padding: const EdgeInsets.symmetric(horizontal: 11),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: selected ? t.tealTint : t.surface2,
+            borderRadius: BorderRadius.circular(11),
+            border: Border.all(color: selected ? t.teal : t.border),
+          ),
+          child: Row(children: [
+            if (icon != null) ...[
+              Icon(icon, size: 14, color: selected ? t.tealInk : t.ink2),
+              const SizedBox(width: 6),
+            ],
+            Text(label,
+                style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: selected ? t.tealInk : t.ink)),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  // ── Lists ─────────────────────────────────────────────────────────────────
+
+  Widget _body(WanesTokens t, _Shortlist shortlist) {
+    if (shortlist.isEmpty) {
+      if (_busy) return Center(child: WanesSpinner(color: t.teal));
+
+      // A filter that hid everything is the rider's own doing, so say so and
+      // hand back the way out rather than claiming there were no matches.
+      if (_filter.isActive && shortlist.hidden > 0) {
+        return _message(
+          t,
+          Icons.filter_alt_off_rounded,
+          context.tr('places.noFilterMatches'),
+          context.tr('places.noFilterMatchesHint', {'query': _query}),
+          actionLabel: context.tr('places.clearFilter'),
+          onAction: _clearFilter,
+        );
+      }
+
+      if (_error != null) {
+        return _message(
+            t, Icons.wifi_off_rounded, _error!, context.tr('places.searchRetryHint'),
+            actionLabel: context.tr('common.retry'), onAction: () => _run(_query));
+      }
+
       return _message(
           t,
           Icons.search_off_rounded,
@@ -383,11 +570,12 @@ class _PlaceSearchSheetState extends State<_PlaceSearchSheet> {
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       children: [
-        if (local.isNotEmpty) ...[
+        if (shortlist.local.isNotEmpty) ...[
           MonoLabel(context.tr('places.yourPlaces'), size: 11),
           const SizedBox(height: 4),
-          ...local.map((m) => _row(m.place, icon: m.icon)),
+          ...shortlist.local.map((m) => _row(m.place, icon: m.icon)),
           const SizedBox(height: 16),
           Row(children: [
             MonoLabel(context.tr('places.searchResults'), size: 11),
@@ -398,7 +586,14 @@ class _PlaceSearchSheetState extends State<_PlaceSearchSheet> {
           ]),
           const SizedBox(height: 4),
         ],
-        ..._results.map((p) => _row(p)),
+        // The rider's own places are already on screen, so a dead geocoder is
+        // a strip above the missing half — not a takeover of the whole sheet.
+        if (_error != null) ...[
+          const SizedBox(height: 4),
+          WanesInlineAlert(_error!, onTap: () => _run(_query)),
+          const SizedBox(height: 8),
+        ],
+        ...shortlist.remote.map((p) => _row(p)),
       ],
     );
   }
@@ -407,6 +602,7 @@ class _PlaceSearchSheetState extends State<_PlaceSearchSheet> {
     final showing = _recents.isNotEmpty ? _recents : kSuggestedPlaces;
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       children: [
         // Saved shortcuts first — picking Home as a pick-up is one tap.
         if (_saved.isNotEmpty) ...[
@@ -449,7 +645,15 @@ class _PlaceSearchSheetState extends State<_PlaceSearchSheet> {
     );
   }
 
-  Widget _message(WanesTokens t, IconData icon, String title, String hint) => Center(
+  Widget _message(
+    WanesTokens t,
+    IconData icon,
+    String title,
+    String hint, {
+    String? actionLabel,
+    VoidCallback? onAction,
+  }) =>
+      Center(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 32),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -460,6 +664,26 @@ class _PlaceSearchSheetState extends State<_PlaceSearchSheet> {
                 style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: t.ink)),
             const SizedBox(height: 4),
             Text(hint, textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: t.ink2)),
+            if (actionLabel != null && onAction != null) ...[
+              const SizedBox(height: 14),
+              Semantics(
+                button: true,
+                child: GestureDetector(
+                  onTap: onAction,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                    decoration: BoxDecoration(
+                      color: t.tealTint,
+                      borderRadius: BorderRadius.circular(11),
+                      border: Border.all(color: t.teal.withValues(alpha: 0.4)),
+                    ),
+                    child: Text(actionLabel,
+                        style: TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.w700, color: t.tealInk)),
+                  ),
+                ),
+              ),
+            ],
           ]),
         ),
       );

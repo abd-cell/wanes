@@ -92,6 +92,8 @@ export class NotificationsComponent implements OnInit {
   readonly search = signal('');
   readonly filterType = signal<string>('');
   readonly filterRead = signal<string>('');
+  /** '' both, 'false' live only, 'true' cleared only. */
+  readonly filterDeleted = signal<string>('');
   readonly filterUserId = signal<number | null>(null);
 
   readonly stats = signal<NotificationStats | null>(null);
@@ -130,7 +132,8 @@ export class NotificationsComponent implements OnInit {
   });
 
   readonly anyFilter = computed(() =>
-    !!this.search() || this.filterType() !== '' || this.filterRead() !== '' || this.filterUserId() !== null);
+    !!this.search() || this.filterType() !== '' || this.filterRead() !== ''
+    || this.filterDeleted() !== '' || this.filterUserId() !== null);
 
   /** Bad JSON is caught before sending, so the admin sees it next to the field. */
   readonly draftDataError = computed(() => this.jsonError(this.draft().dataJson));
@@ -188,6 +191,7 @@ export class NotificationsComponent implements OnInit {
         {
           type: this.filterType() || undefined,
           isRead: this.filterRead() || undefined,
+          isDeleted: this.filterDeleted() || undefined,
           userId: this.filterUserId() ?? undefined,
         },
       ));
@@ -221,12 +225,15 @@ export class NotificationsComponent implements OnInit {
 
   setRead(value: string): void { this.filterRead.set(value); this.pageNumber.set(1); this.load(); }
 
+  setDeleted(value: string): void { this.filterDeleted.set(value); this.pageNumber.set(1); this.load(); }
+
   setUser(value: number | null): void { this.filterUserId.set(value); this.pageNumber.set(1); this.load(); }
 
   clearFilters(): void {
     this.search.set('');
     this.filterType.set('');
     this.filterRead.set('');
+    this.filterDeleted.set('');
     this.filterUserId.set(null);
     this.pageNumber.set(1);
     this.load();

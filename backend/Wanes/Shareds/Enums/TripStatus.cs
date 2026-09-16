@@ -1,4 +1,4 @@
-﻿namespace Wanes.Shareds.Enums;
+namespace Wanes.Shareds.Enums;
 
 public enum TripStatus
 {
@@ -27,4 +27,19 @@ public enum TripStatus
     /// backwards.
     /// </summary>
     EnRoute = 7,
+
+    /// <summary>
+    /// **Retired in v2.** A rider's unmet demand was once a Trip row in this
+    /// state, with no driver, vehicle or price; it is now a
+    /// <c>RideRequest</c>, which has a lifecycle of its own
+    /// (<see cref="RideRequestStatus"/>) because "nobody is driving this yet" was
+    /// never a place a *trip* could be.
+    ///
+    /// The member stays, and the number stays 8, for one reason: the migration
+    /// moved the live rows but the status log did not, so historical
+    /// <c>TripStatusHistories</c> entries still read 8. Nothing writes it, and
+    /// nothing should start.
+    /// </summary>
+    [Obsolete("Demand is a RideRequest now. Kept only so historical status-log rows still resolve.")]
+    AwaitingDriver = 8,
 }
