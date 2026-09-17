@@ -26,11 +26,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   final _auth = AuthService();
   late final Profile? _initial = widget.profile ?? Session.instance.profile;
   late final ProfileFormState _form = ProfileFormState(_initial);
+  late final _contactName = TextEditingController(text: _initial?.emergencyContactName ?? '');
+  late final _contactPhone = TextEditingController(text: _initial?.emergencyContactPhone ?? '');
   bool _busy = false;
 
   @override
   void dispose() {
     _form.dispose();
+    _contactName.dispose();
+    _contactPhone.dispose();
     super.dispose();
   }
 
@@ -52,6 +56,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       gender: _form.gender,
       dateOfBirth: _form.dateOfBirth,
       bio: _form.bio.text.trim(),
+      emergencyContactName: _contactName.text.trim(),
+      emergencyContactPhone: _contactPhone.text.trim(),
     );
     if (!mounted) return;
     setState(() => _busy = false);
@@ -84,6 +90,27 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             state: _form,
             phone: _initial?.phone,
             onChanged: () => setState(() {}),
+          ),
+          const SizedBox(height: 26),
+          // Who the SOS button messages, with a link to follow the ride.
+          Text(context.tr('profile.emergencyContact'),
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: t.ink)),
+          const SizedBox(height: 4),
+          Text(context.tr('profile.emergencyContactBody'),
+              style: TextStyle(color: t.ink2, fontSize: 12.5, height: 1.4)),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _contactName,
+            textCapitalization: TextCapitalization.words,
+            decoration: InputDecoration(labelText: context.tr('profile.emergencyName')),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _contactPhone,
+            keyboardType: TextInputType.phone,
+            textDirection: TextDirection.ltr,
+            decoration: InputDecoration(
+                labelText: context.tr('profile.emergencyPhone'), hintText: '+9627…'),
           ),
           const SizedBox(height: 26),
           PrimaryButton(

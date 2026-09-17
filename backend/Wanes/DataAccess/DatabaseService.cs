@@ -3,6 +3,7 @@ using Wanes.Areas.Domain.Audit;
 using Wanes.Areas.Domain.Bookings;
 using Wanes.Areas.Domain.Configuration;
 using Wanes.Areas.Domain.Logging;
+using Wanes.Areas.Domain.Marketplace;
 using Wanes.Areas.Domain.Notifications;
 using Wanes.Areas.Domain.Ratings;
 using Wanes.Areas.Domain.RideRequests;
@@ -44,6 +45,13 @@ public class DatabaseService : DbContext
     public DbSet<UserNotification> UserNotifications => Set<UserNotification>();
 
     public DbSet<AppConfiguration> AppConfigurations => Set<AppConfiguration>();
+
+    // The shared marketplace: agreements, reliability, alerts, safety.
+    public DbSet<UserAcknowledgement> UserAcknowledgements => Set<UserAcknowledgement>();
+    public DbSet<ReliabilityEvent> ReliabilityEvents => Set<ReliabilityEvent>();
+    public DbSet<DemandAlert> DemandAlerts => Set<DemandAlert>();
+    public DbSet<DemandAlertHit> DemandAlertHits => Set<DemandAlertHit>();
+    public DbSet<SafetyIncident> SafetyIncidents => Set<SafetyIncident>();
 
     public DbSet<FaqItem> FaqItems => Set<FaqItem>();
     public DbSet<Feedback> Feedbacks => Set<Feedback>();

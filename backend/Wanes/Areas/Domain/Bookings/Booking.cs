@@ -55,6 +55,26 @@ public class Booking : AuditableEntity
     public int? MinAge { get; set; }
     public int? MaxAge { get; set; }
 
+    // ── Safety ──
+
+    /// <summary>
+    /// Four digits the rider reads to the driver at pickup. The driver cannot
+    /// mark the seat boarded without it (when the setting is on), which is how
+    /// both know the right person got into the right car.
+    /// </summary>
+    public string? BoardingCode { get; set; }
+
+    /// <summary>
+    /// The handle behind a read-only "follow my trip" link the rider shared.
+    /// Null until they share; cleared when they stop.
+    /// </summary>
+    public string? ShareToken { get; set; }
+
+    public DateTime? ShareTokenCreatedAt { get; set; }
+
+    /// <summary>When the rider agreed the ride is shared. Null for older clients.</summary>
+    public DateTime? SharedTermsAcceptedAt { get; set; }
+
     /// <summary>What this rider requires of the others, as one value.</summary>
     public RideConditions Conditions => new(CoRiderGenderPolicy, MinAge, MaxAge);
 }

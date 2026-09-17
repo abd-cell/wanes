@@ -108,6 +108,19 @@ const Map<int, String> _keys = {
   506: 'errors.alreadyJoined',
   507: 'errors.cannotServeOwnRequest',
   508: 'errors.driverInterestNotFound',
+  509: 'errors.sharedTermsNotAccepted',
+  510: 'errors.driverSuspended',
+  511: 'errors.offerChoiceNotAvailable',
+  512: 'errors.offerNotAvailable',
+  513: 'errors.invalidSeatsOffered',
+  520: 'errors.demandAlertNotFound',
+
+  // Trip safety and reliability
+  320: 'errors.cancelReasonRequired',
+  411: 'errors.boardingCodeInvalid',
+  412: 'errors.boardingCodeRequired',
+  413: 'errors.shareLinkNotFound',
+  800: 'errors.safetyIncidentNotFound',
 
   // Schedules
   550: 'errors.scheduleNotFound',

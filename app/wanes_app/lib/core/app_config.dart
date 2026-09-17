@@ -46,21 +46,10 @@ class AppConfigController {
   /// Adopts settings fetched from the server and caches them. A no-op when
   /// nothing actually changed, so the app is not rebuilt on every refresh.
   static Future<void> adopt(AppConfig next) async {
-    final current = value;
-    final changed = next.primaryColor != current.primaryColor ||
-        next.font != current.font ||
-        next.currencySymbol != current.currencySymbol ||
-        next.currencyCode != current.currencyCode ||
-        next.currencyPosition != current.currencyPosition ||
-        next.currencyDecimals != current.currencyDecimals ||
-        next.confirmCutoffMinutes != current.confirmCutoffMinutes ||
-        next.confirmDecisionLeadMinutes != current.confirmDecisionLeadMinutes ||
-        next.averageSpeedKmh != current.averageSpeedKmh ||
-        next.supportPhone != current.supportPhone ||
-        next.supportWhatsApp != current.supportWhatsApp ||
-        next.supportEmail != current.supportEmail ||
-        next.supportWebsite != current.supportWebsite ||
-        next.supportHours != current.supportHours;
+    // Compared through the serialised form, so a field added to the model
+    // cannot be forgotten here — a field-by-field list once left the fare rates
+    // out, and a device kept quoting the old prices until something else moved.
+    final changed = jsonEncode(next.toJson()) != jsonEncode(value.toJson());
     if (!changed) return;
 
     config.value = next;

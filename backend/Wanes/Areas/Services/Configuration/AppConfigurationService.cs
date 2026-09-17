@@ -3,6 +3,7 @@ using Wanes.Areas.Services.Audit;
 using Wanes.Areas.Services.Configuration.Models;
 using Wanes.DataAccess.Repositories;
 using Wanes.DataAccess.UnitOfWorks;
+using Wanes.Areas.Domain.Marketplace;
 using Wanes.Areas.Domain.RiderTrips;
 using Wanes.Areas.Domain.RideRequests;
 using Wanes.Areas.Domain.Trips;
@@ -67,6 +68,21 @@ public class AppConfigurationService : IAppConfigurationService
         entity.AverageSpeedKmh = RiderTripRules.SpeedFor(input.AverageSpeedKmh);
         entity.FareBaseAmount = FareRules.RateFor(input.FareBaseAmount);
         entity.FarePerKm = FareRules.RateFor(input.FarePerKm);
+        entity.ScheduledSelectionWindowMinutes =
+            DriverSelectionRules.WindowFor(input.ScheduledSelectionWindowMinutes);
+        entity.RiderOfferChoice = input.RiderOfferChoice;
+        entity.RequireSharedTermsAcceptance = input.RequireSharedTermsAcceptance;
+        entity.FreeCancelGraceMinutes = Math.Clamp(input.FreeCancelGraceMinutes, 0, ReliabilityRules.MaxGraceMinutes);
+        entity.LateCancelLeadMinutes = Math.Clamp(input.LateCancelLeadMinutes, 0, ReliabilityRules.MaxLateLeadMinutes);
+        entity.ReliabilityWarnPoints = Math.Clamp(input.ReliabilityWarnPoints, 1, ReliabilityRules.MaxPoints);
+        // A suspension below the warning would suspend without warning first.
+        entity.ReliabilitySuspendPoints = Math.Clamp(input.ReliabilitySuspendPoints,
+            entity.ReliabilityWarnPoints, ReliabilityRules.MaxPoints);
+        entity.ReliabilityWindowDays = Math.Clamp(input.ReliabilityWindowDays, 1, ReliabilityRules.MaxWindowDays);
+        entity.SuspensionDays = Math.Clamp(input.SuspensionDays, 0, ReliabilityRules.MaxSuspensionDays);
+        entity.BoardingCodeRequired = input.BoardingCodeRequired;
+        entity.EmergencyNumber = string.IsNullOrWhiteSpace(input.EmergencyNumber) ? "911" : input.EmergencyNumber.Trim();
+        entity.ShareBaseUrl = Blank(input.ShareBaseUrl)?.TrimEnd('/');
         entity.SupportPhone = Blank(input.SupportPhone);
         entity.SupportWhatsApp = Blank(input.SupportWhatsApp);
         entity.SupportEmail = Blank(input.SupportEmail)?.ToLowerInvariant();

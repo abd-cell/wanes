@@ -103,6 +103,43 @@ public class AppConfiguration : AuditableEntity
     /// <summary>Per-kilometre rate on top of <see cref="FareBaseAmount"/>.</summary>
     public decimal FarePerKm { get; set; } = FareRules.DefaultPerKm;
 
+    // ── Shared marketplace ──
+
+    /// <summary>
+    /// How long a request leaving later than the hour collects offers before a
+    /// driver is chosen. Instant requests keep <see cref="DriverSelectionWindowMinutes"/>.
+    /// </summary>
+    public int ScheduledSelectionWindowMinutes { get; set; } = DriverSelectionRules.DefaultScheduledWindowMinutes;
+
+    /// <summary>While a scheduled request collects offers, its riders may pick one themselves.</summary>
+    public bool RiderOfferChoice { get; set; } = true;
+
+    /// <summary>A driver's offer is refused unless they agreed the trip is shared.</summary>
+    public bool RequireSharedTermsAcceptance { get; set; } = true;
+
+    // ── Reliability ──
+
+    public int FreeCancelGraceMinutes { get; set; } = Marketplace.ReliabilityRules.DefaultFreeCancelGraceMinutes;
+    public int LateCancelLeadMinutes { get; set; } = Marketplace.ReliabilityRules.DefaultLateCancelLeadMinutes;
+    public int ReliabilityWarnPoints { get; set; } = Marketplace.ReliabilityRules.DefaultWarnPoints;
+    public int ReliabilitySuspendPoints { get; set; } = Marketplace.ReliabilityRules.DefaultSuspendPoints;
+    public int ReliabilityWindowDays { get; set; } = Marketplace.ReliabilityRules.DefaultWindowDays;
+    public int SuspensionDays { get; set; } = Marketplace.ReliabilityRules.DefaultSuspensionDays;
+
+    // ── Safety ──
+
+    /// <summary>The driver must enter the rider's boarding code to mark them aboard.</summary>
+    public bool BoardingCodeRequired { get; set; } = true;
+
+    /// <summary>The number the SOS button dials.</summary>
+    public string EmergencyNumber { get; set; } = "911";
+
+    /// <summary>
+    /// Public web address trip links are built on (the CMS host), e.g.
+    /// <c>https://wanes.app</c>. Unset, the app shares the bare code.
+    /// </summary>
+    public string? ShareBaseUrl { get; set; }
+
     // ── Support contact ──
     //
     // Every channel below is optional and starts unset: a fresh install has no

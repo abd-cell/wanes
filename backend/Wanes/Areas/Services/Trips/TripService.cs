@@ -5,7 +5,10 @@ using Wanes.Areas.Domain.Trips;
 using Wanes.Areas.Domain.Users;
 using Wanes.Areas.Domain.Vehicles;
 using Wanes.Areas.Services.Audit;
+using Wanes.Areas.Domain.Marketplace;
 using Wanes.Areas.Services.Configuration;
+using Wanes.Areas.Services.Marketplace;
+using Wanes.Areas.Services.Marketplace.Models;
 using Wanes.Areas.Services.Notifications;
 using Wanes.Areas.Services.Trips.Models;
 using Wanes.Areas.Services.Users.Availability;
@@ -28,6 +31,8 @@ public class TripService : ITripService
     private readonly INotificationService notificationService;
     private readonly IDriverAvailabilityService driverAvailabilityService;
     private readonly IAppConfigurationService appConfigurationService;
+    private readonly IReliabilityService reliabilityService;
+    private readonly IDemandRecoveryService demandRecoveryService;
     private readonly IRepository<Trip> tripRepository;
     private readonly IRepository<TripStatusHistory> tripHistoryRepository;
     private readonly IRepository<Vehicle> vehicleRepository;
@@ -42,6 +47,8 @@ public class TripService : ITripService
         INotificationService notificationService,
         IDriverAvailabilityService driverAvailabilityService,
         IAppConfigurationService appConfigurationService,
+        IReliabilityService reliabilityService,
+        IDemandRecoveryService demandRecoveryService,
         IRepository<Trip> tripRepository,
         IRepository<TripStatusHistory> tripHistoryRepository,
         IRepository<Vehicle> vehicleRepository,
@@ -54,6 +61,8 @@ public class TripService : ITripService
         this.notificationService = notificationService;
         this.driverAvailabilityService = driverAvailabilityService;
         this.appConfigurationService = appConfigurationService;
+        this.reliabilityService = reliabilityService;
+        this.demandRecoveryService = demandRecoveryService;
         this.tripRepository = tripRepository;
         this.tripHistoryRepository = tripHistoryRepository;
         this.vehicleRepository = vehicleRepository;
@@ -66,6 +75,9 @@ public class TripService : ITripService
     /// Read per call rather than cached: an admin who raises it means the next
     /// trip, not the next restart.
     /// </summary>
+    private async Task<bool> BoardingCodeRequired() =>
+        (await appConfigurationService.Get()).Data?.BoardingCodeRequired ?? true;
+
     private async Task<int> MinimumPassengersDefault() =>
         (await appConfigurationService.Get()).Data?.MinimumPassengersDefault
         ?? TripConfirmationRules.DefaultMinimumPassengers;
@@ -234,7 +246,25 @@ public class TripService : ITripService
         return new BaseResponse<List<TripOutput>>(data);
     }
 
-    public async Task<BaseResponse> Cancel(int id)
+    /// <summary>
+    /// What cancelling would cost the driver right now — shown on the confirm
+    /// sheet so the consequence is read before it is paid.
+    /// </summary>
+    public async Task<BaseResponse<CancelPreviewOutput>> CancelPreview(int id)
+    {
+        var driverId = securityManager.RequireUserId();
+        var trip = tripRepository.FirstOrDefault(t => t.Id == id && t.DriverId == driverId);
+        if (trip == null) return new BaseResponse<CancelPreviewOutput>(default, ErrorCode.TripNotFound);
+        if (trip.Status is TripStatus.Completed or TripStatus.Cancelled)
+            return new BaseResponse<CancelPreviewOutput>(default, ErrorCode.TripNotBookable);
+
+        var riders = await RidersAffected(trip.Id);
+        var requeued = riders > 0 && await demandRecoveryService.WouldReopen(trip);
+        return new BaseResponse<CancelPreviewOutput>(
+            await reliabilityService.PreviewDriverCancel(trip, riders, requeued));
+    }
+
+    public async Task<BaseResponse> Cancel(int id, CancelTripInput? input = null)
     {
         var driverId = securityManager.RequireUserId();
         var trip = tripRepository.FirstOrDefault(t => t.Id == id && t.DriverId == driverId);
@@ -242,7 +272,14 @@ public class TripService : ITripService
         if (trip.Status is TripStatus.Completed or TripStatus.Cancelled)
             return new BaseResponse(ErrorCode.TripNotBookable);
 
-        List<int> affectedRiders;
+        // Walking away from people who depend on the trip needs a reason — it is
+        // what an admin reads before deciding whether the record should count.
+        var ridersAffected = await RidersAffected(trip.Id);
+        if (ReliabilityRules.ReasonRequired(ridersAffected) && input?.Reason == null)
+            return new BaseResponse(ErrorCode.CancelReasonRequired);
+
+        List<Booking> cancelled;
+        var statusAtCancel = trip.Status;
 
         await unitOfWork.BeginTransactionAsync();
         try
@@ -251,20 +288,17 @@ public class TripService : ITripService
             tripRepository.Update(trip);
 
             // auto-cancel all confirmed/pending bookings
-            var bookings = await bookingRepository
+            cancelled = await bookingRepository
                 .Where(b => b.TripId == trip.Id &&
                     (b.Status == BookingStatus.Pending ||
                      b.Status == BookingStatus.Confirmed ||
                      b.Status == BookingStatus.Arrived))
                 .ToListAsync();
-            foreach (var booking in bookings)
+            foreach (var booking in cancelled)
             {
                 booking.Status = BookingStatus.Cancelled;
                 bookingRepository.Update(booking);
             }
-
-            // Captured before the scope closes; the riders are notified after the commit.
-            affectedRiders = bookings.Select(b => b.RiderId).ToList();
 
             AddHistory(trip.Id, TripStatus.Cancelled, driverId);
             await unitOfWork.CommitAsync();
@@ -277,15 +311,32 @@ public class TripService : ITripService
 
         await auditService.LogAsync(AuditActions.TripCancel, nameof(Trip), trip.Id);
 
-        // Everyone who had a seat loses their ride — this is the one that most
-        // needs to reach a backgrounded phone.
-        await notificationService.NotifyMany(affectedRiders, NotificationTemplate.TripCancelledRider,
+        // Classified on where the trip stood when the driver walked away — a
+        // driver already on the road is cancelling late whatever the clock says.
+        await reliabilityService.RecordDriverCancel(trip, driverId, ridersAffected, input?.Reason, input?.Note,
+            statusAtCancel);
+
+        // A trip that came from a request puts its riders back on the market —
+        // they hear "finding you another driver" rather than a dead end.
+        var requeued = await demandRecoveryService.ReopenFor(trip, cancelled);
+
+        // Everyone else who had a seat loses their ride — this is the one that
+        // most needs to reach a backgrounded phone.
+        var others = cancelled.Select(b => b.RiderId).Where(r => !requeued.Contains(r)).Distinct().ToList();
+        await notificationService.NotifyMany(others, NotificationTemplate.TripCancelledRider,
             args: new { origin = trip.OriginAddress, destination = trip.DestinationAddress },
             data:
             new { tripId = trip.Id });
 
         return new BaseResponse();
     }
+
+    /// <summary>Riders holding a live seat that has not boarded — the people a cancellation strands.</summary>
+    private Task<int> RidersAffected(int tripId) =>
+        bookingRepository.CountAsync(b => b.TripId == tripId &&
+            (b.Status == BookingStatus.Pending ||
+             b.Status == BookingStatus.Confirmed ||
+             b.Status == BookingStatus.Arrived));
 
     /// <summary>
     /// Who is riding. Scoped to the caller's own trip — a driver may see the
@@ -360,7 +411,8 @@ public class TripService : ITripService
     /// everyone at once, and either way the trip's own status is read back off
     /// the seats through <see cref="TripStatusRules.Derive"/>.
     /// </summary>
-    public async Task<BaseResponse<TripBookingRow>> SetBookingStatus(int tripId, int bookingId, BookingStatus status)
+    public async Task<BaseResponse<TripBookingRow>> SetBookingStatus(int tripId, int bookingId, BookingStatus status,
+        string? boardingCode = null)
     {
         var driverId = securityManager.RequireUserId();
 
@@ -383,6 +435,13 @@ public class TripService : ITripService
         if (!BookingStatusRules.CanDriverSet(booking.Status, status))
             return new BaseResponse<TripBookingRow>(default, ErrorCode.BookingStatusNotAllowed);
 
+        // Boarding is the moment a stranger gets into the car: the rider reads
+        // their code and the driver types it, so both know it is the right one.
+        if (status == BookingStatus.InProgress
+            && await BoardingCodeRequired()
+            && !BoardingCodes.Matches(booking.BoardingCode, boardingCode))
+            return new BaseResponse<TripBookingRow>(default, ErrorCode.BoardingCodeInvalid);
+
         booking.Status = status;
         bookingRepository.Update(booking);
 
@@ -395,6 +454,8 @@ public class TripService : ITripService
         ApplyDerivedStatus(trip, bookings, driverId);
         await unitOfWork.SaveAsync();
         await auditService.LogAsync(AuditFor(status), nameof(Booking), booking.Id);
+
+        if (status == BookingStatus.NoShow) await reliabilityService.RecordRiderNoShow(booking, trip);
 
         await NotifyRiders(trip, [booking.RiderId], status, booking.Id);
 
@@ -445,6 +506,14 @@ public class TripService : ITripService
         if (seatStatus is { } seat)
         {
             moved = bookings.Where(b => BookingStatusRules.CanDriverSet(b.Status, seat)).ToList();
+
+            // "Everybody in" would board riders without their codes. With codes
+            // on, each rider is boarded one at a time.
+            if (seat == BookingStatus.InProgress
+                && moved.Any(b => b.BoardingCode != null)
+                && await BoardingCodeRequired())
+                return new BaseResponse<TripOutput>(default, ErrorCode.BoardingCodeRequired);
+
             foreach (var booking in moved)
             {
                 booking.Status = seat;

@@ -8,7 +8,10 @@ import '../core/places.dart';
 import '../core/push_service.dart';
 import '../core/saved_places.dart';
 import '../core/session.dart';
+import '../models/marketplace_models.dart';
 import '../models/models.dart';
+
+export '../models/marketplace_models.dart';
 
 /// The admin-controlled platform settings (currency + brand colour).
 class ConfigService {
@@ -84,8 +87,12 @@ class AuthService {
     Gender? gender,
     DateTime? dateOfBirth,
     String? bio,
+    String? emergencyContactName,
+    String? emergencyContactPhone,
   }) async {
     final body = <String, dynamic>{
+      if (emergencyContactName != null) 'emergencyContactName': emergencyContactName,
+      if (emergencyContactPhone != null) 'emergencyContactPhone': emergencyContactPhone,
       if (firstName != null) 'firstName': firstName,
       if (lastName != null) 'lastName': lastName,
       if (displayName != null) 'displayName': displayName,
@@ -206,7 +213,8 @@ class BookingService {
   Future<AppResponse<Booking>> book(int tripId, {int seats = 1}) =>
       _api.post<Booking>(
         'Bookings',
-        body: {'tripId': tripId, 'seats': seats},
+        // The booking screen shows the shared-ride notice before this tap.
+        body: {'tripId': tripId, 'seats': seats, 'acceptSharedRide': true},
         parse: (d) => Booking.fromJson(d as Map<String, dynamic>),
       );
 
@@ -434,10 +442,11 @@ class TripService {
   /// or they never showed. The server enforces the order per seat, derives the
   /// trip's own status from every seat on it, and tells only the rider whose
   /// seat moved — which is what advances that one rider's tracking rail.
-  Future<AppResponse<TripBooking>> setBookingStatus(int tripId, int bookingId, int status) =>
+  Future<AppResponse<TripBooking>> setBookingStatus(int tripId, int bookingId, int status,
+          {String? boardingCode}) =>
       _api.put<TripBooking>(
         'Trips/$tripId/bookings/$bookingId/status',
-        body: {'status': status},
+        body: {'status': status, if (boardingCode != null) 'boardingCode': boardingCode},
         parse: (d) => TripBooking.fromJson(d as Map<String, dynamic>),
       );
 
@@ -465,6 +474,21 @@ class TripService {
   Future<AppResponse<Trip>> cancelForLowSeats(int id) => _api.post<Trip>(
         'Trips/$id/cancel-low-seats',
         parse: (d) => Trip.fromJson(d as Map<String, dynamic>),
+      );
+
+  /// What cancelling this trip now would cost the driver.
+  Future<AppResponse<CancelPreview>> cancelPreview(int id) => _api.get<CancelPreview>(
+        'Trips/$id/cancel-preview',
+        parse: (d) => CancelPreview.fromJson(d as Map<String, dynamic>),
+      );
+
+  /// Cancels the trip. Once riders depend on it the server wants a [reason].
+  Future<AppResponse> cancel(int id, {CancelReason? reason, String? note}) => _api.post(
+        'Trips/$id/cancel',
+        body: {
+          if (reason != null) 'reason': reason.value,
+          if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
+        },
       );
 
   Future<AppResponse<Trip>> _transition(int id, String verb) => _api.post<Trip>(
@@ -522,6 +546,8 @@ class RiderTripService {
           'coRiderGenderPolicy': coRiderGenderPolicy.value,
           'minAge': minAge,
           'maxAge': maxAge,
+          // The posting form will not submit until the rider ticked this.
+          'acceptSharedRide': true,
         },
         parse: (d) => RiderTrip.fromJson(d as Map<String, dynamic>),
       );
@@ -557,6 +583,8 @@ class RiderTripService {
           'coRiderGenderPolicy': coRiderGenderPolicy.value,
           'minAge': minAge,
           'maxAge': maxAge,
+          // Joining goes through the shared-ride sheet first.
+          'acceptSharedRide': true,
         },
         parse: (d) => RiderTrip.fromJson(d as Map<String, dynamic>),
       );
@@ -630,6 +658,9 @@ class RiderTripService {
     required double pricePerSeat,
     int? vehicleId,
     String? message,
+    int? seatsOffered,
+    int? minPassengers,
+    bool acceptSharedTrip = true,
   }) =>
       _api.post<RiderTrip>(
         'ride-requests/$id/interest',
@@ -637,12 +668,29 @@ class RiderTripService {
           'pricePerSeat': pricePerSeat,
           'vehicleId': vehicleId,
           'message': message,
+          'acceptSharedTrip': acceptSharedTrip,
+          if (seatsOffered != null) 'seatsOffered': seatsOffered,
+          if (minPassengers != null) 'minPassengers': minPassengers,
         },
         parse: (d) => RiderTrip.fromJson(d as Map<String, dynamic>),
       );
 
   /// Takes the offer back, while nobody has been selected.
   Future<AppResponse> withdraw(int id) => _api.delete('ride-requests/$id/interest');
+
+  /// The drivers who offered — for the request's own riders to compare.
+  Future<AppResponse<List<RideOffer>>> offers(int id) => _api.get<List<RideOffer>>(
+        'ride-requests/$id/offers',
+        parse: (d) => (d as List)
+            .map((e) => RideOffer.fromJson(e as Map<String, dynamic>))
+            .toList(),
+      );
+
+  /// A rider picks one offer; the trip forms with that driver.
+  Future<AppResponse<RiderTrip>> chooseOffer(int id, int interestId) => _api.post<RiderTrip>(
+        'ride-requests/$id/offers/$interestId/choose',
+        parse: (d) => RiderTrip.fromJson(d as Map<String, dynamic>),
+      );
 }
 
 /// Recurring postings, from either side (`api/v1/schedules`).
@@ -840,4 +888,95 @@ class FeedbackService {
         },
         parse: (d) => FeedbackEntry.fromJson(d as Map<String, dynamic>),
       );
+}
+
+/// Agreements, route alerts and the reliability record — the parts of the
+/// shared marketplace that belong to the signed-in user.
+class MarketplaceService {
+  final _api = ApiClient.instance;
+
+  Future<AppResponse<List<int>>> acknowledgedKinds() => _api.get<List<int>>(
+        'me/acknowledgements',
+        parse: (d) => (d as List)
+            .map((e) => ((e as Map<String, dynamic>)['kind'] as num).toInt())
+            .toList(),
+      );
+
+  Future<AppResponse> acknowledge(int kind, {int version = 1}) =>
+      _api.post('me/acknowledgements', body: {'kind': kind, 'version': version});
+
+  Future<AppResponse<List<DemandAlert>>> alerts() => _api.get<List<DemandAlert>>(
+        'me/demand-alerts',
+        parse: (d) => (d as List)
+            .map((e) => DemandAlert.fromJson(e as Map<String, dynamic>))
+            .toList(),
+      );
+
+  /// A standing route alert.
+  Future<AppResponse<DemandAlert>> addRouteAlert({
+    required Place from,
+    required Place to,
+    required int minSeats,
+    int radiusMeters = 3000,
+  }) =>
+      _api.post<DemandAlert>(
+        'me/demand-alerts',
+        body: {
+          'origin': {'lat': from.lat, 'lng': from.lng, 'address': from.name},
+          'destination': {'lat': to.lat, 'lng': to.lng, 'address': to.name},
+          'minSeats': minSeats,
+          'radiusMeters': radiusMeters,
+        },
+        parse: (d) => DemandAlert.fromJson(d as Map<String, dynamic>),
+      );
+
+  /// "Tell me when this request reaches [minSeats]."
+  Future<AppResponse<DemandAlert>> watchRequest(int rideRequestId, int minSeats) =>
+      _api.post<DemandAlert>(
+        'me/demand-alerts',
+        body: {'rideRequestId': rideRequestId, 'minSeats': minSeats},
+        parse: (d) => DemandAlert.fromJson(d as Map<String, dynamic>),
+      );
+
+  Future<AppResponse> deleteAlert(int id) => _api.delete('me/demand-alerts/$id');
+
+  Future<AppResponse<ReliabilityRecord>> reliability() => _api.get<ReliabilityRecord>(
+        'me/reliability',
+        parse: (d) => ReliabilityRecord.fromJson(d as Map<String, dynamic>),
+      );
+}
+
+/// The emergency button and "follow my trip" links.
+class SafetyApi {
+  final _api = ApiClient.instance;
+
+  /// Raises an SOS (kind 1) or a report (kind 2). The admin team is alerted; an
+  /// SOS also messages the emergency contact on the profile.
+  Future<AppResponse<SafetyIncidentResult>> raise({
+    int kind = 1,
+    int? tripId,
+    int? bookingId,
+    double? lat,
+    double? lng,
+    String? note,
+  }) =>
+      _api.post<SafetyIncidentResult>(
+        'safety/incidents',
+        body: {
+          'kind': kind,
+          if (tripId != null) 'tripId': tripId,
+          if (bookingId != null) 'bookingId': bookingId,
+          if (lat != null) 'lat': lat,
+          if (lng != null) 'lng': lng,
+          if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
+        },
+        parse: (d) => SafetyIncidentResult.fromJson(d as Map<String, dynamic>),
+      );
+
+  Future<AppResponse<ShareLink>> share(int bookingId) => _api.post<ShareLink>(
+        'safety/bookings/$bookingId/share',
+        parse: (d) => ShareLink.fromJson(d as Map<String, dynamic>),
+      );
+
+  Future<AppResponse> stopSharing(int bookingId) => _api.delete('safety/bookings/$bookingId/share');
 }

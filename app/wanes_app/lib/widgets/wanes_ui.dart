@@ -434,9 +434,10 @@ class WanesBottomNav extends StatelessWidget {
   /// Defaults to [defaultItems], translated for the current language.
   final List<WanesNavItem>? items;
 
-  /// Home · Trips · Profile — the driver shell's three tabs.
+  /// Home · Market · Trips · Profile — the driver shell's tabs.
   static List<WanesNavItem> defaultItems(BuildContext context) => [
         WanesNavItem(Icons.home_outlined, context.tr('nav.home')),
+        WanesNavItem(Icons.storefront_outlined, context.tr('nav.market')),
         WanesNavItem(Icons.subject_rounded, context.tr('nav.trips')),
         WanesNavItem(Icons.person_outline_rounded, context.tr('nav.profile')),
       ];

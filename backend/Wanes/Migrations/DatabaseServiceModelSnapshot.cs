@@ -89,6 +89,10 @@ namespace Wanes.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("BoardingCode")
+                        .HasMaxLength(8)
+                        .HasColumnType("nvarchar(8)");
+
                     b.Property<int>("CoRiderGenderPolicy")
                         .HasColumnType("int");
 
@@ -122,6 +126,16 @@ namespace Wanes.Migrations
                     b.Property<int>("Seats")
                         .HasColumnType("int");
 
+                    b.Property<string>("ShareToken")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTime?>("ShareTokenCreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("SharedTermsAcceptedAt")
+                        .HasColumnType("datetime2");
+
                     b.Property<int>("Status")
                         .HasColumnType("int");
 
@@ -131,6 +145,10 @@ namespace Wanes.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("RiderId");
+
+                    b.HasIndex("ShareToken")
+                        .IsUnique()
+                        .HasFilter("[ShareToken] IS NOT NULL");
 
                     b.HasIndex("TripId", "RiderId")
                         .IsUnique()
@@ -149,6 +167,9 @@ namespace Wanes.Migrations
 
                     b.Property<double>("AverageSpeedKmh")
                         .HasColumnType("float");
+
+                    b.Property<bool>("BoardingCodeRequired")
+                        .HasColumnType("bit");
 
                     b.Property<int>("ConfirmCutoffMinutes")
                         .HasColumnType("int");
@@ -184,6 +205,11 @@ namespace Wanes.Migrations
                     b.Property<int>("DriverSelectionWindowMinutes")
                         .HasColumnType("int");
 
+                    b.Property<string>("EmergencyNumber")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
                     b.Property<decimal>("FareBaseAmount")
                         .HasColumnType("decimal(18,2)");
 
@@ -193,8 +219,14 @@ namespace Wanes.Migrations
                     b.Property<int>("FontFamily")
                         .HasColumnType("int");
 
+                    b.Property<int>("FreeCancelGraceMinutes")
+                        .HasColumnType("int");
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
+
+                    b.Property<int>("LateCancelLeadMinutes")
+                        .HasColumnType("int");
 
                     b.Property<int>("MinimumPassengersDefault")
                         .HasColumnType("int");
@@ -209,6 +241,28 @@ namespace Wanes.Migrations
                         .IsRequired()
                         .HasMaxLength(9)
                         .HasColumnType("nvarchar(9)");
+
+                    b.Property<int>("ReliabilitySuspendPoints")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ReliabilityWarnPoints")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ReliabilityWindowDays")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("RequireSharedTermsAcceptance")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("RiderOfferChoice")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("ScheduledSelectionWindowMinutes")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ShareBaseUrl")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
 
                     b.Property<string>("SupportEmail")
                         .HasMaxLength(256)
@@ -229,6 +283,9 @@ namespace Wanes.Migrations
                     b.Property<string>("SupportWhatsApp")
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");
+
+                    b.Property<int>("SuspensionDays")
+                        .HasColumnType("int");
 
                     b.HasKey("Id");
 
@@ -293,6 +350,312 @@ namespace Wanes.Migrations
                     b.HasIndex("ActorUserId", "StatusCode");
 
                     b.ToTable("ApiLogs");
+                });
+
+            modelBuilder.Entity("Wanes.Areas.Domain.Marketplace.DemandAlert", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreationDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DeletionDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Point>("Destination")
+                        .IsRequired()
+                        .HasColumnType("geography");
+
+                    b.Property<string>("DestinationAddress")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<int>("DriverId")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("LastNotifiedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("MinSeats")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ModificationDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
+
+                    b.Property<int>("NotifiedCount")
+                        .HasColumnType("int");
+
+                    b.Property<Point>("Origin")
+                        .IsRequired()
+                        .HasColumnType("geography");
+
+                    b.Property<string>("OriginAddress")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<int>("RadiusMeters")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("RideRequestId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DriverId");
+
+                    b.HasIndex("RideRequestId");
+
+                    b.HasIndex("IsActive", "RideRequestId");
+
+                    b.ToTable("DemandAlerts");
+                });
+
+            modelBuilder.Entity("Wanes.Areas.Domain.Marketplace.DemandAlertHit", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreationDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DeletionDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("DemandAlertId")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("ModificationDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("RideRequestId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DemandAlertId", "RideRequestId")
+                        .IsUnique();
+
+                    b.ToTable("DemandAlertHits");
+                });
+
+            modelBuilder.Entity("Wanes.Areas.Domain.Marketplace.ReliabilityEvent", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int?>("BookingId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreationDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DeletionDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<int>("MinutesBeforeDeparture")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ModificationDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("NeedsReview")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("Points")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("Reason")
+                        .HasColumnType("int");
+
+                    b.Property<int>("RidersAffected")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Role")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("TripId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("WaiveNote")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime?>("WaivedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("WaivedBy")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "CreationDate");
+
+                    b.ToTable("ReliabilityEvents");
+                });
+
+            modelBuilder.Entity("Wanes.Areas.Domain.Marketplace.SafetyIncident", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AdminNote")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<int?>("BookingId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreationDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DeletionDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("EmergencyContactNotified")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("HandledAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("HandledBy")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<Point>("Location")
+                        .HasColumnType("geography");
+
+                    b.Property<DateTime?>("ModificationDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<int>("ReporterId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("TripId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReporterId");
+
+                    b.HasIndex("TripId");
+
+                    b.HasIndex("Status", "CreationDate");
+
+                    b.ToTable("SafetyIncidents");
+                });
+
+            modelBuilder.Entity("Wanes.Areas.Domain.Marketplace.UserAcknowledgement", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("AcceptedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreationDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DeletionDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ModificationDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "Kind", "Version")
+                        .IsUnique()
+                        .HasFilter("[IsDeleted] = 0");
+
+                    b.ToTable("UserAcknowledgements");
                 });
 
             modelBuilder.Entity("Wanes.Areas.Domain.Notifications.UserNotification", b =>
@@ -429,6 +792,9 @@ namespace Wanes.Migrations
                         .HasMaxLength(300)
                         .HasColumnType("nvarchar(300)");
 
+                    b.Property<int?>("MinPassengers")
+                        .HasColumnType("int");
+
                     b.Property<DateTime?>("ModificationDate")
                         .HasColumnType("datetime2");
 
@@ -441,6 +807,12 @@ namespace Wanes.Migrations
 
                     b.Property<int>("RideRequestId")
                         .HasColumnType("int");
+
+                    b.Property<int?>("SeatsOffered")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("SharedTermsAcceptedAt")
+                        .HasColumnType("datetime2");
 
                     b.Property<int>("Status")
                         .HasColumnType("int");
@@ -473,6 +845,9 @@ namespace Wanes.Migrations
                         .HasColumnType("int");
 
                     b.Property<DateTime>("CreationDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DecideAt")
                         .HasColumnType("datetime2");
 
                     b.Property<DateTime?>("DeletionDate")
@@ -535,6 +910,9 @@ namespace Wanes.Migrations
                     b.Property<int>("RadiusMeters")
                         .HasColumnType("int");
 
+                    b.Property<int?>("ReopenedFromRequestId")
+                        .HasColumnType("int");
+
                     b.Property<LineString>("Route")
                         .HasColumnType("geography");
 
@@ -562,6 +940,8 @@ namespace Wanes.Migrations
                     b.HasIndex("ScheduleId", "OccurrenceDate")
                         .IsUnique()
                         .HasFilter("[ScheduleId] IS NOT NULL AND [IsDeleted] = 0");
+
+                    b.HasIndex("Status", "DecideAt");
 
                     b.HasIndex("Status", "DepartAt");
 
@@ -615,6 +995,9 @@ namespace Wanes.Migrations
 
                     b.Property<int>("Seats")
                         .HasColumnType("int");
+
+                    b.Property<DateTime?>("SharedTermsAcceptedAt")
+                        .HasColumnType("datetime2");
 
                     b.Property<int>("Status")
                         .HasColumnType("int");
@@ -1220,6 +1603,9 @@ namespace Wanes.Migrations
                     b.Property<DateTime?>("DriverAppliedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<int>("DriverCancellations")
+                        .HasColumnType("int");
+
                     b.Property<string>("DriverReviewNote")
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
@@ -1323,6 +1709,15 @@ namespace Wanes.Migrations
 
                     b.Property<int>("RatingCount")
                         .HasColumnType("int");
+
+                    b.Property<int>("RiderLateCancels")
+                        .HasColumnType("int");
+
+                    b.Property<int>("RiderNoShows")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("SuspendedUntil")
+                        .HasColumnType("datetime2");
 
                     b.Property<int>("Theme")
                         .HasColumnType("int");
@@ -1525,6 +1920,75 @@ namespace Wanes.Migrations
                     b.Navigation("Rider");
 
                     b.Navigation("Trip");
+                });
+
+            modelBuilder.Entity("Wanes.Areas.Domain.Marketplace.DemandAlert", b =>
+                {
+                    b.HasOne("Wanes.Areas.Domain.Users.User", "Driver")
+                        .WithMany()
+                        .HasForeignKey("DriverId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Wanes.Areas.Domain.RideRequests.RideRequest", "RideRequest")
+                        .WithMany()
+                        .HasForeignKey("RideRequestId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Driver");
+
+                    b.Navigation("RideRequest");
+                });
+
+            modelBuilder.Entity("Wanes.Areas.Domain.Marketplace.DemandAlertHit", b =>
+                {
+                    b.HasOne("Wanes.Areas.Domain.Marketplace.DemandAlert", "DemandAlert")
+                        .WithMany()
+                        .HasForeignKey("DemandAlertId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("DemandAlert");
+                });
+
+            modelBuilder.Entity("Wanes.Areas.Domain.Marketplace.ReliabilityEvent", b =>
+                {
+                    b.HasOne("Wanes.Areas.Domain.Users.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Wanes.Areas.Domain.Marketplace.SafetyIncident", b =>
+                {
+                    b.HasOne("Wanes.Areas.Domain.Users.User", "Reporter")
+                        .WithMany()
+                        .HasForeignKey("ReporterId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Wanes.Areas.Domain.Trips.Trip", "Trip")
+                        .WithMany()
+                        .HasForeignKey("TripId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Reporter");
+
+                    b.Navigation("Trip");
+                });
+
+            modelBuilder.Entity("Wanes.Areas.Domain.Marketplace.UserAcknowledgement", b =>
+                {
+                    b.HasOne("Wanes.Areas.Domain.Users.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("Wanes.Areas.Domain.Ratings.Rating", b =>

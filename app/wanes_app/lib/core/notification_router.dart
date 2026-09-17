@@ -6,10 +6,13 @@ import '../features/booking_details_screen.dart';
 import '../features/driver/driver_apply_screen.dart';
 import '../features/driver/driver_home_screen.dart';
 import '../features/driver/driver_trip_details_screen.dart';
+import '../features/driver/marketplace_screen.dart';
+import '../features/driver/reliability_screen.dart';
 import '../features/driver/requests_screen.dart';
 import '../features/feedback_screen.dart';
 import '../features/live_trip_screen.dart';
 import '../features/notifications_screen.dart';
+import '../features/ride_offers_screen.dart';
 import '../features/trip_details_screen.dart';
 import '../models/models.dart';
 import '../services/services.dart';
@@ -205,7 +208,23 @@ class NotificationRouter {
       case NotificationKind.feedbackReplied:
         return (_) => const FeedbackScreen();
 
-      // Admin-composed: there is no entity behind it, so show it in full.
+      // A driver offered on the rider's planned request: compare the offers.
+      // The other request news (a rider joined, another driver was chosen)
+      // is readable in full in the inbox.
+      case NotificationKind.rideRequest:
+        final requestId = n.rideRequestId;
+        if (requestId == null || !n.carriesOfferWindow) return null;
+        return (_) => RideOffersScreen(rideRequestId: requestId);
+
+      // A route alert or a watched request filled up: to the marketplace.
+      case NotificationKind.demandAlert:
+        return (_) => const Scaffold(body: MarketplaceScreen(initialSegment: MarketSegment.scheduled));
+
+      case NotificationKind.reliability:
+        return (_) => const ReliabilityScreen();
+
+      // Admin-only, worked in the console. Admin-composed: nothing behind it.
+      case NotificationKind.safetyIncident:
       case NotificationKind.general:
         return null;
     }

@@ -6,9 +6,12 @@ import '../../core/l10n.dart';
 import '../../core/theme.dart';
 import '../../models/models.dart';
 import '../../services/services.dart';
+import '../../widgets/safety_notes.dart';
+import '../../widgets/trip_safety.dart';
 import '../../widgets/wanes_alerts.dart';
 import '../../widgets/wanes_motion.dart';
 import '../../widgets/wanes_ui.dart';
+import 'cancel_trip_sheet.dart';
 import 'post_trip_screen.dart';
 import 'trip_lifecycle.dart';
 
@@ -61,6 +64,13 @@ class _DriverTripDetailsScreenState extends State<DriverTripDetailsScreen> {
     if (!riders.success && mounted) {
       WanesAlerts.failure(context, riders, title: context.tr('driver.loadRidersFailed'));
     }
+  }
+
+  Future<void> _cancelTrip() async {
+    final cancelled = await showCancelTripSheet(context, _trip);
+    if (!cancelled || !mounted) return;
+    _changed = true;
+    Navigator.pop(context, true);
   }
 
   Future<void> _onTripChanged() async {
@@ -122,10 +132,15 @@ class _DriverTripDetailsScreenState extends State<DriverTripDetailsScreen> {
           child: Column(children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-              child: ScreenHeader(
-                title: context.tr('driver.tripDetails'),
-                onBack: () => Navigator.pop(context, _changed),
-              ),
+              child: Row(children: [
+                Expanded(
+                  child: ScreenHeader(
+                    title: context.tr('driver.tripDetails'),
+                    onBack: () => Navigator.pop(context, _changed),
+                  ),
+                ),
+                if (_trip.isUnderway) SosButton(tripId: _trip.id, compact: true),
+              ]),
             ),
             Expanded(
               child: RefreshIndicator(
@@ -174,6 +189,19 @@ class _DriverTripDetailsScreenState extends State<DriverTripDetailsScreen> {
                             padding: const EdgeInsets.only(bottom: 10),
                             child: _riderCard(t, r),
                           )),
+                    if (!_trip.isFinished) ...[
+                      const SizedBox(height: 12),
+                      const SafetyReminder(audience: SafetyAudience.driver),
+                      const SizedBox(height: 4),
+                      Center(
+                        child: TextButton.icon(
+                          onPressed: _cancelTrip,
+                          icon: Icon(Icons.cancel_outlined, color: t.alert, size: 18),
+                          label: Text(context.tr('cancel.title'),
+                              style: TextStyle(color: t.alert, fontWeight: FontWeight.w700)),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),

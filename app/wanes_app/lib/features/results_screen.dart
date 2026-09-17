@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import '../core/acknowledgements.dart';
 import '../core/fare.dart';
 import '../core/l10n.dart';
 import '../core/theme.dart';
 import '../core/trip_sort.dart';
 import '../models/models.dart';
 import '../widgets/map_backdrop.dart';
+import '../widgets/safety_notes.dart';
 import '../widgets/sort_picker.dart';
 import '../widgets/wanes_motion.dart';
 import '../widgets/wanes_ui.dart';
@@ -139,6 +141,12 @@ class _ResultsScreenState extends State<ResultsScreen> {
   }
 
   Future<void> _join(RiderTrip posting) async {
+    // Joining is agreeing to travel with strangers: the rider says so, and has
+    // read the safety notes, before their seats are added to the pool.
+    if (!await ensureSafetyAcknowledged(context, SafetyAudience.rider) || !mounted) return;
+    if (!await confirmSharedJoin(context) || !mounted) return;
+    await Acknowledgements.record(Acknowledgement.riderSharedRide);
+    if (!mounted) return;
     final res = await RiderTripService().join(posting.id, seats: widget.seats);
     if (!mounted) return;
     if (!res.success) {

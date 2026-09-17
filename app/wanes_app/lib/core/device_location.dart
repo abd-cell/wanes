@@ -83,6 +83,27 @@ class DeviceLocation {
     return _inFlight ??= _read().whenComplete(() => _inFlight = null);
   }
 
+  /// A fix only if the user already granted location — never raises the OS
+  /// prompt. For background refreshes, where a dialog nobody asked for would be
+  /// the wrong thing to show.
+  Future<LocationFix> currentIfPermitted() async {
+    if (debugOverride == null) {
+      try {
+        // Bounded: a background refresh must not stall on the platform.
+        final permission = await Geolocator.checkPermission().timeout(const Duration(seconds: 5));
+        if (permission == LocationPermission.denied) {
+          return const LocationFix.failed(LocationFailure.permissionDenied);
+        }
+        if (permission == LocationPermission.deniedForever) {
+          return const LocationFix.failed(LocationFailure.permissionDeniedForever);
+        }
+      } catch (_) {
+        return const LocationFix.failed(LocationFailure.unavailable);
+      }
+    }
+    return current();
+  }
+
   Future<LocationFix> _read() async {
     final override = debugOverride;
     if (override != null) return _remember(await override());

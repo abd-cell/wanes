@@ -325,6 +325,14 @@ public class AccountService : IAccountService
         if (input.DateOfBirth != null) user.DateOfBirth = input.DateOfBirth;
         if (input.Bio != null) user.Bio = input.Bio;
 
+        // The SOS button messages this person. An empty string clears it.
+        if (input.EmergencyContactName != null)
+            user.EmergencyContactName = string.IsNullOrWhiteSpace(input.EmergencyContactName)
+                ? null : input.EmergencyContactName.Trim();
+        if (input.EmergencyContactPhone != null)
+            user.EmergencyContactPhone = string.IsNullOrWhiteSpace(input.EmergencyContactPhone)
+                ? null : input.EmergencyContactPhone.Trim();
+
         userRepository.Update(user);
         await unitOfWork.SaveAsync();
         await auditService.LogAsync(AuditActions.ProfileUpdate, nameof(User), user.Id);

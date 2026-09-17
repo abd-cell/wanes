@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Wanes.Areas.Domain.Bookings;
+using Wanes.Areas.Domain.Marketplace;
 using Wanes.Areas.Domain.RideRequests;
 using Wanes.Areas.Domain.Trips;
 using Wanes.Areas.Domain.Users;
@@ -7,6 +8,8 @@ using Wanes.Areas.Domain.Vehicles;
 using Wanes.Areas.Services.Audit;
 using Wanes.Areas.Services.Configuration;
 using Wanes.Areas.Services.Configuration.Models;
+using Wanes.Areas.Services.Marketplace;
+using Wanes.Areas.Services.Marketplace.Models;
 using Wanes.Areas.Services.Notifications;
 using Wanes.Areas.Services.RideRequests.Models;
 using Wanes.Areas.Services.Users.Availability;
@@ -25,14 +28,18 @@ namespace Wanes.Areas.Services.RideRequests;
 /// Where demand becomes supply: a driver offers, one offer is selected, and the
 /// selected one is formed into a trip.
 ///
-/// Three named steps for what a driver experiences as one tap. That is the
-/// point. With <c>DriverSelectionWindowMinutes</c> at zero — the shipped value —
-/// <see cref="ExpressInterest"/> records the offer, selects it and forms the
-/// trip inside a single transaction, and the driver cannot tell this from the
-/// old claim. Raise the window and the same three steps spread out over minutes,
-/// with <see cref="SelectDue"/> doing the deciding, and **nothing else in the
-/// system changes**. First-come-first-served stops being the architecture and
-/// becomes a number an admin can move.
+/// Three named steps for what a driver experiences as one tap on instant work.
+/// With the instant window at zero — the shipped value — <see cref="ExpressInterest"/>
+/// records the offer, selects it and forms the trip inside a single
+/// transaction. Planned work (a request leaving later than
+/// <see cref="DriverSelectionRules.InstantHorizon"/>) collects offers for the
+/// scheduled window instead: the riders may compare and pick one
+/// (<see cref="ChooseOffer"/>), and <see cref="SelectDue"/> decides whatever
+/// they leave to the marketplace.
+///
+/// Every offer says the trip is shared (<see cref="ExpressInterestInput.AcceptSharedTrip"/>),
+/// how many seats it puts on sale, and — for a conditional accept — how many
+/// must be held before it runs.
 /// </summary>
 public class DriverInterestService : IDriverInterestService
 {
@@ -42,6 +49,7 @@ public class DriverInterestService : IDriverInterestService
     private readonly INotificationService notificationService;
     private readonly IDriverAvailabilityService driverAvailabilityService;
     private readonly IAppConfigurationService appConfigurationService;
+    private readonly IReliabilityService reliabilityService;
     private readonly IRepository<User> userRepository;
     private readonly IRepository<Vehicle> vehicleRepository;
     private readonly IRepository<Trip> tripRepository;
@@ -58,6 +66,7 @@ public class DriverInterestService : IDriverInterestService
         INotificationService notificationService,
         IDriverAvailabilityService driverAvailabilityService,
         IAppConfigurationService appConfigurationService,
+        IReliabilityService reliabilityService,
         IRepository<User> userRepository,
         IRepository<Vehicle> vehicleRepository,
         IRepository<Trip> tripRepository,
@@ -73,6 +82,7 @@ public class DriverInterestService : IDriverInterestService
         this.notificationService = notificationService;
         this.driverAvailabilityService = driverAvailabilityService;
         this.appConfigurationService = appConfigurationService;
+        this.reliabilityService = reliabilityService;
         this.userRepository = userRepository;
         this.vehicleRepository = vehicleRepository;
         this.tripRepository = tripRepository;
@@ -94,6 +104,12 @@ public class DriverInterestService : IDriverInterestService
         // with RideRequestNotOpen would be a lie to the driver who is holding
         // the ride they were just given.
         if (await Existing(requestId, driverId) is { } already) return already;
+
+        // The shared-trip agreement. Asked before anything else about the
+        // offer, because it is the promise every other rule leans on: the seats
+        // this driver does not fill stay on sale, and more riders may join.
+        if (settings.RequireSharedTermsAcceptance && input?.AcceptSharedTrip != true)
+            return new BaseResponse<RideRequestRow>(default, ErrorCode.SharedTermsNotAccepted);
 
         var driver = await userRepository.GetByIdAsync(driverId);
         if (driver == null) return new BaseResponse<RideRequestRow>(default, ErrorCode.NotFound);
@@ -137,6 +153,11 @@ public class DriverInterestService : IDriverInterestService
             var wanted = participants.Sum(p => p.Seats);
             if (wanted > vehicle.SeatCapacity) return await RollBack(ErrorCode.SeatsExceedCapacity);
 
+            // Seats on sale: at least the pool's, at most the car's.
+            var seatsOffered = input?.SeatsOffered ?? vehicle.SeatCapacity;
+            if (seatsOffered < wanted || seatsOffered > vehicle.SeatCapacity)
+                return await RollBack(ErrorCode.InvalidSeatsOffered);
+
             // What the driver is committing to. The request carries the
             // departure its riders want, so this is not "now" — and availability
             // has to be asked about that moment, or a driver free all evening
@@ -145,6 +166,10 @@ public class DriverInterestService : IDriverInterestService
             var departAt = MatchRules.DepartureFor(request.DepartAt, now);
             if (await driverAvailabilityService.CheckCanCommit(driverId, departAt) is { } busy)
                 return await RollBack(busy);
+
+            // A driver whose record paused instant work can still plan ahead.
+            if (reliabilityService.CheckCanTake(driver, departAt, now) is { } paused)
+                return await RollBack(paused);
 
             var interest = new DriverInterest
             {
@@ -155,6 +180,11 @@ public class DriverInterestService : IDriverInterestService
                 Vehicle = vehicle,
                 Status = DriverInterestStatus.Interested,
                 Message = string.IsNullOrWhiteSpace(input?.Message) ? null : input!.Message!.Trim(),
+                SeatsOffered = seatsOffered,
+                MinPassengers = input?.MinPassengers is { } min && min > wanted
+                    ? Math.Min(min, seatsOffered)
+                    : null,
+                SharedTermsAcceptedAt = input?.AcceptSharedTrip == true ? now : null,
 
                 // Verbatim if the driver named a price, derived from the distance
                 // if they somehow did not. Either way the trip this becomes
@@ -171,16 +201,22 @@ public class DriverInterestService : IDriverInterestService
 
             // Stamped on the first offer only — it is when the window opens, not
             // when the latest driver happened to arrive.
-            request.FirstInterestAt ??= now;
+            if (request.FirstInterestAt == null)
+            {
+                request.FirstInterestAt = now;
+                request.DecideAt = DriverSelectionRules.DecideAt(now, request.DepartAt,
+                    settings.DriverSelectionWindowMinutes, settings.ScheduledSelectionWindowMinutes);
+            }
+            request.DecideAt ??= request.FirstInterestAt;
             requestRepository.Update(request);
 
-            var immediate = DriverSelectionRules.IsImmediate(settings.DriverSelectionWindowMinutes);
+            var immediate = request.DecideAt <= now;
             Trip? trip = null;
             if (immediate)
             {
-                // The whole of first-come-first-served, in one place: this offer
-                // is the only live one, so it is the best one, and the request is
-                // decided now. Inside the same transaction as the interest, and
+                // First-come-first-served, in one place: this offer is the only
+                // live one, so it is the best one, and the request is decided
+                // now. Inside the same transaction as the interest, and
                 // conditional on the request's row version — which is what makes
                 // "first wins" true rather than hoped for.
                 trip = await Form(request, interest, participants, driver, vehicle, now);
@@ -191,7 +227,7 @@ public class DriverInterestService : IDriverInterestService
 
             if (trip != null)
             {
-                await AfterFormation(request, trip, driver, participants, [interest]);
+                await AfterFormation(request, trip, driver, interest, participants);
             }
             else
             {
@@ -206,7 +242,7 @@ public class DriverInterestService : IDriverInterestService
                         origin = request.OriginAddress,
                         destination = request.DestinationAddress,
                     },
-                    data: new { rideRequestId = request.Id });
+                    data: new { rideRequestId = request.Id, decideAt = request.DecideAt });
             }
 
             return await RowFor(request, participants, driverId, settings);
@@ -248,23 +284,71 @@ public class DriverInterestService : IDriverInterestService
         return new BaseResponse();
     }
 
-    public async Task<int> SelectDue()
+    public async Task<BaseResponse<List<OfferRow>>> GetOffers(int requestId)
     {
-        var settings = await Settings();
-        var window = settings.DriverSelectionWindowMinutes;
+        var callerId = securityManager.RequireUserId();
+        var request = requestRepository.FirstOrDefault(r => r.Id == requestId);
+        if (request == null) return new BaseResponse<List<OfferRow>>(default, ErrorCode.RideRequestNotFound);
 
-        // Nothing to sweep while selection is immediate: every request was
-        // decided inside the call that made the offer. Checked here rather than
-        // at the worker so the behaviour follows the setting without a restart.
-        if (DriverSelectionRules.IsImmediate(window)) return 0;
+        // The offers are the riders' to compare, and nobody else's.
+        var participants = await ActiveParticipants(requestId);
+        if (participants.All(p => p.RiderId != callerId))
+            return new BaseResponse<List<OfferRow>>(default, ErrorCode.Forbidden);
+
+        var offers = await interestRepository
+            .Where(i => i.RideRequestId == requestId && i.Status == DriverInterestStatus.Interested,
+                q => q.Include(i => i.Driver).Include(i => i.Vehicle))
+            .OrderBy(i => i.PricePerSeat)
+            .ThenBy(i => i.Id)
+            .ToListAsync();
+        return new BaseResponse<List<OfferRow>>(offers.Select(i => new OfferRow(i)).ToList());
+    }
+
+    public async Task<BaseResponse<RideRequestRow>> ChooseOffer(int requestId, int interestId)
+    {
+        var callerId = securityManager.RequireUserId();
+        var settings = await Settings();
+        if (!settings.RiderOfferChoice)
+            return new BaseResponse<RideRequestRow>(default, ErrorCode.OfferChoiceNotAvailable);
+
+        var request = requestRepository.FirstOrDefault(r => r.Id == requestId);
+        if (request == null) return new BaseResponse<RideRequestRow>(default, ErrorCode.RideRequestNotFound);
 
         var now = DateTime.UtcNow;
-        var cutoff = now.AddMinutes(-DriverSelectionRules.WindowFor(window));
+        var participants = await ActiveParticipants(requestId);
+        if (participants.All(p => p.RiderId != callerId))
+            return new BaseResponse<RideRequestRow>(default, ErrorCode.Forbidden);
+        if (!request.IsOpenAt(now))
+            return new BaseResponse<RideRequestRow>(default, ErrorCode.RideRequestNotOpen);
 
+        var offer = interestRepository.FirstOrDefault(i =>
+            i.Id == interestId && i.RideRequestId == requestId && i.Status == DriverInterestStatus.Interested);
+        if (offer == null) return new BaseResponse<RideRequestRow>(default, ErrorCode.OfferNotAvailable);
+
+        var outcome = await Decide(request, now, forcedInterestId: offer.Id);
+        if (outcome == null) return new BaseResponse<RideRequestRow>(default, ErrorCode.OfferNotAvailable);
+
+        await auditService.LogAsync(AuditActions.OfferChosen, nameof(DriverInterest), offer.Id);
+        await notificationService.Notify(outcome.Value.DriverId, NotificationTemplate.OfferChosenDriver,
+            args: new { origin = request.OriginAddress, destination = request.DestinationAddress },
+            data: new { rideRequestId = request.Id, tripId = outcome.Value.TripId });
+
+        return await RowFor(request, participants, callerId, settings);
+    }
+
+    public async Task<int> SelectDue()
+    {
+        var now = DateTime.UtcNow;
+
+        // Requests whose offers are due a decision. Instant ones were decided
+        // inside the call that made the offer and are no longer open, so this
+        // only ever finds planned work — and any legacy row whose window the
+        // admin has since changed.
         var due = await requestRepository
             .Where(r => r.Status == RideRequestStatus.Open
                         && r.FirstInterestAt != null
-                        && r.FirstInterestAt <= cutoff
+                        && r.DecideAt != null
+                        && r.DecideAt <= now
                         && r.DepartAt > now)
             .ToListAsync();
         if (due.Count == 0) return 0;
@@ -272,7 +356,7 @@ public class DriverInterestService : IDriverInterestService
         var matched = 0;
         foreach (var request in due)
         {
-            if (await Decide(request, now)) matched++;
+            if (await Decide(request, now) != null) matched++;
         }
 
         return matched;
@@ -281,12 +365,13 @@ public class DriverInterestService : IDriverInterestService
     // ── Selection and formation ──────────────────────────────────────────────
 
     /// <summary>
-    /// Picks the best live offer on one request and forms the trip. One
-    /// transaction per request rather than one for the sweep: a pool whose
-    /// chosen driver turns out to be busy must not take the rest of the batch
-    /// down with it.
+    /// Picks the best live offer on one request — or the one its riders chose —
+    /// and forms the trip. One transaction per request rather than one for the
+    /// sweep: a pool whose chosen driver turns out to be busy must not take the
+    /// rest of the batch down with it.
     /// </summary>
-    private async Task<bool> Decide(RideRequest request, DateTime now)
+    private async Task<(int DriverId, int TripId)?> Decide(RideRequest request, DateTime now,
+        int? forcedInterestId = null)
     {
         await unitOfWork.BeginTransactionAsync();
         try
@@ -298,14 +383,14 @@ public class DriverInterestService : IDriverInterestService
             if (live.Count == 0)
             {
                 await unitOfWork.RollBackAsync();
-                return false;
+                return null;
             }
 
             var participants = await ActiveParticipants(request.Id);
             if (participants.Count == 0)
             {
                 await unitOfWork.RollBackAsync();
-                return false;
+                return null;
             }
 
             var driverIds = live.Select(i => i.DriverId).Distinct().ToList();
@@ -322,14 +407,19 @@ public class DriverInterestService : IDriverInterestService
             var wanted = participants.Sum(p => p.Seats);
             var departAt = MatchRules.DepartureFor(request.DepartAt, now);
             var busy = await driverAvailabilityService.BusyDrivers(driverIds, departAt);
-            var eligible = live.Where(i => !busy.Contains(i.DriverId)).ToList();
+            var eligible = live
+                .Where(i => !busy.Contains(i.DriverId))
+                // A pool that grew past an offer's seats cannot be carried by it.
+                .Where(i => i.SeatsOffered == null || i.SeatsOffered >= wanted)
+                .ToList();
 
-            var winner = DriverSelectionRules.Best(
-                eligible, drivers.ToDictionary(d => d.Id), wanted);
+            var winner = forcedInterestId is { } forced
+                ? eligible.FirstOrDefault(i => i.Id == forced)
+                : DriverSelectionRules.Best(eligible, drivers.ToDictionary(d => d.Id), wanted);
             if (winner == null)
             {
                 await unitOfWork.RollBackAsync();
-                return false;
+                return null;
             }
 
             var driver = drivers.First(d => d.Id == winner.DriverId);
@@ -347,15 +437,15 @@ public class DriverInterestService : IDriverInterestService
             }
 
             await unitOfWork.CommitAsync();
-            await AfterFormation(request, trip, driver, participants, live);
+            await AfterFormation(request, trip, driver, winner, participants);
             await NotifyLosers(request, losers);
-            return true;
+            return (driver.Id, trip.Id);
         }
         catch (DbUpdateConcurrencyException)
         {
             await unitOfWork.RollBackAsync();
             unitOfWork.Detach();
-            return false;
+            return null;
         }
         catch
         {
@@ -372,11 +462,12 @@ public class DriverInterestService : IDriverInterestService
     /// nobody dropped — a conversion that lost a rider would put somebody at a
     /// kerb the driver was never told about.
     ///
-    /// The trip is confirmed at formation, not gathering. Its passengers are
-    /// already secured: they asked for this ride, a driver is making it, and the
-    /// only new fact is the price — which a rider who dislikes it answers by
-    /// leaving, at no cost. A second handshake would ask them to re-confirm
-    /// something they requested.
+    /// The trip is confirmed at formation unless the driver accepted on a
+    /// condition the pool does not meet yet. Its passengers are secured: they
+    /// asked for this ride, a driver is making it, and the only new fact is the
+    /// price — which a rider who dislikes it answers by leaving, at no cost. A
+    /// conditional accept is the one exception, and it is the ordinary
+    /// gathering trip every other rule already understands.
     ///
     /// Staged inside the caller's transaction, and conditional on the request's
     /// row version, so two drivers cannot both form a trip from one request.
@@ -392,6 +483,16 @@ public class DriverInterestService : IDriverInterestService
         var wanted = participants.Sum(p => p.Seats);
         var departAt = MatchRules.DepartureFor(request.DepartAt, now);
 
+        // Seats come from the driver's offer, bounded by the car: the spare ones
+        // are ordinary carpool seats, searchable and bookable by anybody,
+        // because after formation this is an ordinary trip in every respect.
+        var seatsTotal = Math.Clamp(winner.SeatsOffered ?? vehicle.SeatCapacity, wanted, vehicle.SeatCapacity);
+
+        var threshold = winner.MinPassengers is { } min
+            ? TripConfirmationRules.ThresholdFor(min, seatsTotal)
+            : TripConfirmationRules.NoThreshold;
+        var confirmed = TripConfirmationRules.IsMet(threshold, wanted);
+
         var trip = new Trip
         {
             DriverId = driver.Id,
@@ -402,12 +503,8 @@ public class DriverInterestService : IDriverInterestService
             Destination = request.Destination,
             Route = request.Route ?? GeoFactory.Line(request.Origin, request.Destination),
             DepartAt = departAt,
-
-            // Seats come from the car, not from the ask: the spare ones are
-            // ordinary carpool seats, searchable and bookable by anybody, because
-            // after formation this is an ordinary trip in every respect.
-            SeatsTotal = vehicle.SeatCapacity,
-            SeatsLeft = Math.Max(vehicle.SeatCapacity - wanted, 0),
+            SeatsTotal = seatsTotal,
+            SeatsLeft = Math.Max(seatsTotal - wanted, 0),
             PricePerSeat = winner.PricePerSeat,
 
             // The riders' conditions come with them. A pool that asked to share
@@ -417,10 +514,8 @@ public class DriverInterestService : IDriverInterestService
             MinAge = request.MinAge,
             MaxAge = request.MaxAge,
 
-            // The passengers are already here, so there is nothing to gather and
-            // no threshold to fail. Confirmed below, in this same commit.
-            MinSeatsToConfirm = TripConfirmationRules.NoThreshold,
-            ConfirmedAt = now,
+            MinSeatsToConfirm = confirmed ? TripConfirmationRules.NoThreshold : threshold,
+            ConfirmedAt = confirmed ? now : null,
             Status = TripStatus.Posted,
         };
         tripRepository.Create(trip);
@@ -440,10 +535,12 @@ public class DriverInterestService : IDriverInterestService
                 TripId = trip.Id,
                 RiderId = participant.RiderId,
                 Seats = participant.Seats,
-                Status = BookingStatus.Confirmed,
+                Status = confirmed ? BookingStatus.Confirmed : BookingStatus.Pending,
                 CoRiderGenderPolicy = participant.CoRiderGenderPolicy,
                 MinAge = participant.MinAge,
                 MaxAge = participant.MaxAge,
+                BoardingCode = BoardingCodes.New(),
+                SharedTermsAcceptedAt = participant.SharedTermsAcceptedAt,
             });
         }
 
@@ -469,8 +566,8 @@ public class DriverInterestService : IDriverInterestService
         RideRequest request,
         Trip trip,
         User driver,
-        IReadOnlyCollection<RideRequestParticipant> participants,
-        IReadOnlyCollection<DriverInterest> allInterests)
+        DriverInterest winner,
+        IReadOnlyCollection<RideRequestParticipant> participants)
     {
         await auditService.LogAsync(AuditActions.DriverSelect, nameof(RideRequest), request.Id);
         await auditService.LogAsync(AuditActions.TripForm, nameof(Trip), trip.Id);
@@ -478,15 +575,17 @@ public class DriverInterestService : IDriverInterestService
         // The riders learn two things at once: they have a driver, and their ride
         // now has an id of its own. The trip id is what their screens follow from
         // here — the request has done its job.
+        var gathering = !trip.IsConfirmed;
         await notificationService.NotifyMany(
             participants.Select(p => p.RiderId).Distinct().ToList(),
-            NotificationTemplate.RideRequestMatchedRider,
-            args: new { name = driver.FirstName },
+            gathering ? NotificationTemplate.RideRequestMatchedGatheringRider : NotificationTemplate.RideRequestMatchedRider,
+            args: new { name = driver.FirstName, min = trip.MinSeatsToConfirm },
             data: new
             {
                 rideRequestId = request.Id,
                 tripId = trip.Id,
                 pricePerSeat = trip.PricePerSeat,
+                gathering,
             });
 
         // Every driver who was offered this request is now holding a card that
@@ -497,7 +596,7 @@ public class DriverInterestService : IDriverInterestService
         // own open requests along this route can have them.
         if (trip.SeatsLeft > 0) await notificationService.NotifyWaitingRiders(trip, driver);
 
-        _ = allInterests;
+        _ = winner;
     }
 
     private async Task NotifyLosers(RideRequest request, IReadOnlyCollection<DriverInterest> losers)

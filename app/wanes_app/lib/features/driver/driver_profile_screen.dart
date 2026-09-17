@@ -5,6 +5,7 @@ import '../../core/theme.dart';
 import '../../models/models.dart';
 import '../../services/services.dart';
 import '../../widgets/language_picker.dart';
+import '../../widgets/safety_notes.dart';
 import '../../widgets/wanes_alerts.dart';
 import '../notifications_screen.dart';
 import '../../widgets/wanes_ui.dart';
@@ -12,7 +13,10 @@ import '../schedules_screen.dart';
 import '../contact_us_screen.dart';
 import '../edit_profile_screen.dart';
 import '../login_screen.dart';
+import 'accept_flow.dart';
+import 'demand_alerts_screen.dart';
 import 'driver_apply_screen.dart';
+import 'reliability_screen.dart';
 import 'vehicles_screen.dart';
 
 /// Driver profile — prototype screen 12. Verified identity, the Trips /
@@ -60,8 +64,11 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
     return (parts.first[0] + parts.last[0]).toUpperCase();
   }
 
-  /// Share of the driver's posted trips that reached "Completed" (status 4).
+  /// Share of accepted trips the driver completed rather than cancelled — the
+  /// server's figure, which counts the cancellations the trip list cannot see.
   String get _completionRate {
+    final server = _profile?.driverCompletionRate;
+    if (server != null) return '${(server * 100).round()}%';
     if (_trips.isEmpty) return '—';
     final done = _trips.where((t) => t.status == 4).length;
     return '${(done / _trips.length * 100).round()}%';
@@ -334,6 +341,29 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
             message: context.tr('driver.reviewsComingSoon')),
       ),
       GroupedRow(
+        icon: Icons.verified_user_outlined,
+        title: context.tr('reliability.title'),
+        subtitle: _profile?.isSuspended == true
+            ? context.tr('reliability.pausedShort')
+            : context.tr('reliability.rowSubtitle'),
+        iconColor: _profile?.isSuspended == true ? t.warning : null,
+        onTap: () => Navigator.push(
+            context, MaterialPageRoute(builder: (_) => const ReliabilityScreen())).then((_) => _load()),
+      ),
+      GroupedRow(
+        icon: Icons.notifications_active_outlined,
+        title: context.tr('alerts.title'),
+        subtitle: context.tr('alerts.rowSubtitle'),
+        onTap: () => Navigator.push(
+            context, MaterialPageRoute(builder: (_) => const DemandAlertsScreen())),
+      ),
+      GroupedRow(
+        icon: Icons.shield_outlined,
+        title: context.tr('safety.tipsRow'),
+        subtitle: context.tr('safety.tipsRowSubtitle'),
+        onTap: () => showSafetyNotes(context, SafetyAudience.driver),
+      ),
+      GroupedRow(
         icon: Icons.support_agent_rounded,
         title: context.tr('contact.title'),
         subtitle: context.tr('contact.subtitle'),
@@ -368,5 +398,9 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
   }
 
   void _openVehicles() =>
-      Navigator.push(context, MaterialPageRoute(builder: (_) => const VehiclesScreen())).then((_) => _load());
+      Navigator.push(context, MaterialPageRoute(builder: (_) => const VehiclesScreen())).then((_) {
+        // The garage may have changed; offers must pick up the new default.
+        DriverVehicles.reset();
+        _load();
+      });
 }

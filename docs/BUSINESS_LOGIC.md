@@ -1212,7 +1212,14 @@ in application code, and never repeat a "±30 minutes" rule at a call site.**
 | `LiveFixWindowMinutes` | how fresh a driver position must be to count (§9.1) |
 | `CandidatePoolSize` | how many rows are re-ranked in memory (§9.5) |
 | `RankTimeScale` | minutes that cost as much as one match radius of walking (§9.5) |
-| `FareBaseAmount` / `FarePerKm` | the suggested-price estimate (§8.2) |
+| `FareBaseAmount` / `FarePerKm` | the suggested-price estimate (§8.2) — shipped at 0.50 + 0.10/km per seat, a cost-share, not a taxi fare |
+| `ScheduledSelectionWindowMinutes` | how long planned requests collect offers (§26.2) |
+| `RiderOfferChoice` | whether riders may pick an offer themselves (§26.2) |
+| `RequireSharedTermsAcceptance` | an offer must agree the trip is shared (§26.1) |
+| `FreeCancelGraceMinutes` / `LateCancelLeadMinutes` | what a cancellation costs (§26.4) |
+| `ReliabilityWarnPoints` / `ReliabilitySuspendPoints` / `ReliabilityWindowDays` / `SuspensionDays` | when a record warns, and pauses instant work (§26.4) |
+| `BoardingCodeRequired` | boarding needs the rider's code (§26.6) |
+| `EmergencyNumber` / `ShareBaseUrl` | the SOS button and trip links (§26.6) |
 
 Every value is clamped to a sane range on write, and the ones the clients draw
 clocks from are on the wire to the app and the CMS.
@@ -1341,6 +1348,13 @@ place to change it, and the place a change will break a test.
 | Recurrence (§11) | `Areas/Domain/Schedules/RecurrenceRules` + `Services/Schedules/TripScheduleService` (+ `ScheduleMaterialiserWorker`) |
 | Seat moves (§12) | `Areas/Domain/Bookings/BookingStatusRules` |
 | Races and retries (§13) | `Shareds/Constants/ConcurrencyRules`, row versions on `Trip` **and** `RideRequest` |
+| Instant vs scheduled selection, riders choosing (§26.2) | `DriverSelectionRules.DecideAt` + `DriverInterestService.ChooseOffer` / `SelectDue` |
+| Seats opened, conditional accept (§26.1, §26.3) | `DriverInterestService.Form` |
+| Route alerts and request watches (§26.5) | `Services/Marketplace/DemandAlertService` — called from `RideRequestService.Create` / `Join` |
+| Cancellation cost, pauses, waivers (§26.4) | `Areas/Domain/Marketplace/ReliabilityRules` + `Services/Marketplace/ReliabilityService` |
+| Riders back on the market (§26.4) | `Services/Marketplace/DemandRecoveryService` — called from `TripService.Cancel` |
+| Agreements (§26.1) | `Services/Marketplace/AcknowledgementService` |
+| Boarding codes, SOS, trip links (§26.6) | `BoardingCodes` + `TripService.SetBookingStatus` + `Services/Safety/SafetyService` |
 
 **The sweepers.** Hosted services share `Shareds/Hosting/PeriodicWorker`, which owns
 the timer, the per-pass DI scope, the catch-up pass on startup and the rule that a
@@ -1440,12 +1454,15 @@ secured seat — it reads as if nothing has happened.
 - A driver claiming an entire recurring series permanently.
 - Full route optimisation and real road geometry (the corridor is straight-line
   today, §9.2).
-- Any consequence for leaving a trip (a fee, a rating hit, a strike count).
+- Money as a consequence for leaving a trip (a fee). The non-monetary record —
+  points, a pause on instant work — is in scope: §26.4.
+- A live panic line staffed around the clock: the SOS button dials the public
+  emergency number and queues the incident for the admin team (§26.6).
 
 **The architecture must not make these impossible**, and none of them should need a
-domain change: driver bidding and rider choice between offers (§8.2 already carries
-the offer), dynamic pricing, reliability scores (§21.3), demand forecasting and
-heatmaps, corporate and shared commuting groups.
+domain change: dynamic pricing, demand forecasting and heatmaps, corporate and
+shared commuting groups. (Rider choice between offers and reliability scores,
+listed here before, are now implemented — §26.)
 
 ---
 
@@ -1479,6 +1496,128 @@ Recurring → Schedule → Occurrences → each enters the same lifecycle
 
 > **Wanes is not only a ride-booking application. It is a marketplace that
 > continuously connects transportation supply with transportation demand.**
+
+---
+
+## 26. The shared, scheduled marketplace
+
+Wanes is not a taxi app. The product is **seats on journeys planned ahead**; a
+ride needed within the hour is served, but it is the fallback. Everything in this
+section follows from that, and from one fact the driver and the riders must both
+hold: **a Wanes trip is shared.**
+
+### 26.1 Agreeing the trip is shared
+
+- **Riders** agree when they post a request, join one, or book a seat; the
+  agreement is stamped on the participation / booking (`SharedTermsAcceptedAt`).
+  Older clients that send nothing are not refused.
+- **Drivers** agree on every offer (`ExpressInterestInput.AcceptSharedTrip`).
+  While `RequireSharedTermsAcceptance` is on (the default) an offer without it is
+  refused `SharedTermsNotAccepted`. The accept sheet shows the split — riders now,
+  seats in the car, seats left open, total now and if full — before the box arms.
+- **Seats opened.** The driver chooses how many seats the trip carries
+  (`SeatsOffered`), from the riders' own up to the car's capacity. The rest stay on
+  sale until departure, like any trip's (§8.4). Fewer than the pool, or more than
+  the car, is `InvalidSeatsOffered`.
+- **Versioned agreements** (safety notes, shared-ride terms) are recorded per user,
+  kind and version (`UserAcknowledgement`); the app asks again when the version
+  moves, and a new device picks the old agreements back up.
+
+### 26.2 Instant versus scheduled work
+
+When a request's first offer arrives, its decision time is stamped
+(`RideRequest.DecideAt`, from `DriverSelectionRules.DecideAt`):
+
+| Request leaves… | Window | Behaviour |
+|---|---|---|
+| within `InstantHorizon` (1 h) of the first offer | `DriverSelectionWindowMinutes` (0) | first offer wins on the spot, as in v1 |
+| later | `ScheduledSelectionWindowMinutes` (20) | offers collect; riders may compare |
+
+A scheduled decision never lands inside `DecisionMargin` (30 min) of departure.
+While the window is open:
+
+- the request's riders see the offers (`GET ride-requests/{id}/offers`) — price,
+  rating, completion rate, trips, car, seats offered, and whether the offer is
+  conditional — and **may pick one** (`…/offers/{interestId}/choose`) while
+  `RiderOfferChoice` is on. The pick forms the trip at once, if the driver is still
+  free; the other offers are rejected and told.
+- anything they leave is decided by `SelectDue` at `DecideAt`, with the ranking of
+  §8.3 — which now weighs the driver's **completion rate** after rating.
+
+### 26.3 The conditional accept
+
+A driver may accept "only if it reaches N" (`MinPassengers`). Above the pool's
+seats, the trip forms **gathering**: its threshold is N, its bookings are pending,
+and the riders are told a driver will take the ride once N are in
+(`RideRequestMatchedGatheringRider`). From there it is an ordinary gathering trip —
+§5.1's prompt and cutoff decide it. A condition the pool already meets confirms at
+formation.
+
+### 26.4 Cancellations and reliability
+
+There are no fees, so the record is the lever. Each cancellation of a trip is
+classified (`ReliabilityRules.ClassifyDriverCancel`):
+
+| Situation | Kind | Points |
+|---|---|---|
+| nobody holds a live seat | free | 0 |
+| within `FreeCancelGraceMinutes` (3) of accepting, and not close to departure | free | 0 |
+| within `LateCancelLeadMinutes` (120) of departure, or the trip already under way | late | 2 |
+| otherwise | counted | 1 |
+
+- **A reason is required** once riders depend on the trip (`CancelReasonRequired`).
+  Vehicle problems, safety concerns and emergencies are **flagged for review**; an
+  admin may **waive** an entry, which takes it off the scales without deleting it.
+- **The preview** (`GET trips/{id}/cancel-preview`) tells the driver the kind,
+  the points, the riders affected and where the record would stand — before they
+  confirm.
+- **Standing.** Points in the last `ReliabilityWindowDays` (30): at
+  `ReliabilityWarnPoints` (3) the driver is warned; at `ReliabilitySuspendPoints` (5)
+  **instant requests pause** for `SuspensionDays` (7) — `DriverSuspended` on offers
+  leaving within the hour. Scheduled work stays open. A waiver that brings the
+  points back under the line lifts the pause.
+- **Completion rate** = trips completed ÷ (completed + counted/late
+  cancellations), shown on trip cards, offers and the driver's profile; null for a
+  driver with no history.
+- **Riders** are recorded too: giving a seat back within `LateCancelLeadMinutes`
+  (`RiderLateCancel`) and a no-show (`RiderNoShow`). Riders are never paused.
+- **Riders are not stranded.** When a driver cancels a trip formed from a request,
+  its riders are put back on the market in a **new** request
+  (`ReopenedFromRequestId` → the matched one, which never reopens, §7.4), with the
+  same journey and conditions — unless departure is within 15 minutes. They hear
+  "finding you another driver" instead of a plain cancellation, and nearby drivers
+  and route alerts are told as for any new request. A low-seats call-off (§5.1) is
+  the platform's decision and is not recorded against anyone.
+
+### 26.5 Route alerts and request watches
+
+A driver can save routes they drive with a minimum seat count
+(`DemandAlert`: origin, destination, radius, min seats). When a request is created
+or grows by a join and now matches — both ends within the radius, enough seats,
+driver eligible for its conditions — the driver is told **once per request**
+(`DemandAlertHit`). A **watch** is the same row pointed at one request ("tell me
+when this reaches 3"); it retires after it fires.
+
+### 26.6 Safety
+
+- **Safety notes** — five for riders, five for drivers — are agreed once, before
+  the first booking, request or offer, and reminded on the screens where they
+  matter.
+- **Boarding codes.** Every booking gets four random digits. The rider sees theirs
+  while the seat is committed and not yet boarded; the driver types it to mark
+  them aboard (`BoardingCodeInvalid` otherwise) while `BoardingCodeRequired` is on.
+  With codes on, the trip-wide "everybody in" is refused (`BoardingCodeRequired`):
+  on a shared ride each rider is boarded by name and code.
+- **Trip links.** A rider can share a read-only link
+  (`POST safety/bookings/{id}/share`); the public page (`GET share/{token}`, CMS
+  `/:lang/share/:token`) shows the journey, the driver's first name, the car and
+  plate, and the car's position **only while the ride is under way**. It stops
+  working two hours after the seat settles, or when the rider revokes it.
+- **SOS.** The button dials `EmergencyNumber` and raises an incident with the
+  reporter's location. Admins are notified; if the reporter has an emergency
+  contact on their profile, it is messaged with the location and a trip link. The
+  admin team works the queue (open → acknowledged → resolved). Only somebody on the
+  trip can attach a report to it.
 
 ---
 

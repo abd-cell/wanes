@@ -8,6 +8,7 @@ import '../core/sse_client.dart';
 import '../core/theme.dart';
 import '../models/models.dart';
 import '../services/services.dart';
+import '../widgets/trip_safety.dart';
 import '../widgets/wanes_alerts.dart';
 import '../widgets/wanes_ui.dart';
 import 'rate_screen.dart';
@@ -462,6 +463,19 @@ class _LiveTripScreenState extends State<LiveTripScreen> {
             ),
           ],
         ]),
+        // The code the rider reads at the kerb, while it is still useful.
+        if (_booking.boardingCode != null && _booking.isLive && !_booking.isInProgress) ...[
+          const SizedBox(height: 12),
+          BoardingCodeCard(code: _booking.boardingCode!),
+        ],
+        if (_booking.isLive) ...[
+          const SizedBox(height: 10),
+          Row(children: [
+            Expanded(child: ShareTripButton(bookingId: _booking.id)),
+            const SizedBox(width: 10),
+            SosButton(tripId: trip.id, bookingId: _booking.id),
+          ]),
+        ],
         const SizedBox(height: 14),
         if (_completed)
           PrimaryButton(

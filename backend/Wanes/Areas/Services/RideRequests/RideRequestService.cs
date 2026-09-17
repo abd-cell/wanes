@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Wanes.Areas.Domain.RideRequests;
 using Wanes.Areas.Domain.RiderTrips;
 using Wanes.Areas.Domain.Trips;
@@ -6,6 +6,7 @@ using Wanes.Areas.Domain.Users;
 using Wanes.Areas.Services.Audit;
 using Wanes.Areas.Services.Configuration;
 using Wanes.Areas.Services.Configuration.Models;
+using Wanes.Areas.Services.Marketplace;
 using Wanes.Areas.Services.Notifications;
 using Wanes.Areas.Services.RideRequests.Models;
 using Wanes.Areas.Services.Users.Availability;
@@ -42,6 +43,7 @@ public class RideRequestService : IRideRequestService
     private readonly IDriverAvailabilityService driverAvailabilityService;
     private readonly IRiderAvailabilityService riderAvailabilityService;
     private readonly IAppConfigurationService appConfigurationService;
+    private readonly IDemandAlertService demandAlertService;
     private readonly IRepository<User> userRepository;
     private readonly IRepository<RideRequest> requestRepository;
     private readonly IRepository<RideRequestParticipant> participantRepository;
@@ -55,6 +57,7 @@ public class RideRequestService : IRideRequestService
         IDriverAvailabilityService driverAvailabilityService,
         IRiderAvailabilityService riderAvailabilityService,
         IAppConfigurationService appConfigurationService,
+        IDemandAlertService demandAlertService,
         IRepository<User> userRepository,
         IRepository<RideRequest> requestRepository,
         IRepository<RideRequestParticipant> participantRepository,
@@ -67,6 +70,7 @@ public class RideRequestService : IRideRequestService
         this.driverAvailabilityService = driverAvailabilityService;
         this.riderAvailabilityService = riderAvailabilityService;
         this.appConfigurationService = appConfigurationService;
+        this.demandAlertService = demandAlertService;
         this.userRepository = userRepository;
         this.requestRepository = requestRepository;
         this.participantRepository = participantRepository;
@@ -139,6 +143,7 @@ public class RideRequestService : IRideRequestService
             CoRiderGenderPolicy = input.CoRiderGenderPolicy,
             MinAge = input.MinAge,
             MaxAge = input.MaxAge,
+            SharedTermsAcceptedAt = input.AcceptSharedRide == true ? now : null,
         };
 
         await unitOfWork.BeginTransactionAsync();
@@ -168,6 +173,9 @@ public class RideRequestService : IRideRequestService
             await unitOfWork.SaveAsync();
             await notificationService.NotifyNearbyDrivers(request);
         }
+
+        // Drivers watching this route hear about it once it is full enough.
+        await demandAlertService.Match(request);
 
         return new BaseResponse<RideRequestRow>(Row(request, [participant], rider, riderId, settings));
     }
@@ -278,6 +286,7 @@ public class RideRequestService : IRideRequestService
             CoRiderGenderPolicy = input.CoRiderGenderPolicy,
             MinAge = input.MinAge,
             MaxAge = input.MaxAge,
+            SharedTermsAcceptedAt = input.AcceptSharedRide == true ? DateTime.UtcNow : null,
         };
         participantRepository.Create(joined);
 
@@ -300,6 +309,9 @@ public class RideRequestService : IRideRequestService
                 args: new { origin = request.OriginAddress, destination = request.DestinationAddress },
                 data: new { rideRequestId = request.Id });
         }
+
+        // A pool that just reached a driver's number is the moment their alert exists for.
+        await demandAlertService.Match(request);
 
         List<RideRequestParticipant> now = [.. active, joined];
         return new BaseResponse<RideRequestRow>(

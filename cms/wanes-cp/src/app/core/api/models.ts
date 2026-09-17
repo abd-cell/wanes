@@ -100,7 +100,85 @@ export interface AppConfiguration {
   supportWebsite?: string;
   /** Free text, e.g. "Sun-Thu, 9:00-17:00". */
   supportHours?: string;
+
+  // ── Shared marketplace ──
+  /** How long a request leaving later than the hour collects offers. */
+  scheduledSelectionWindowMinutes: number;
+  /** Riders may pick one of the collected offers themselves. */
+  riderOfferChoice: boolean;
+  /** A driver's offer is refused unless they agree the trip is shared. */
+  requireSharedTermsAcceptance: boolean;
+
+  // ── Reliability ──
+  freeCancelGraceMinutes: number;
+  lateCancelLeadMinutes: number;
+  reliabilityWarnPoints: number;
+  reliabilitySuspendPoints: number;
+  reliabilityWindowDays: number;
+  suspensionDays: number;
+
+  // ── Safety ──
+  /** The driver must type the rider's code to board them. */
+  boardingCodeRequired: boolean;
+  /** What the SOS button dials. */
+  emergencyNumber: string;
+  /** Public address trip links are built on — this console's own host. */
+  shareBaseUrl?: string;
+
   updatedAt?: string;
+}
+
+/** How a reliability entry was recorded (`ReliabilityEventKind`). */
+export enum ReliabilityEventKind {
+  FreeCancel = 1,
+  Cancel = 2,
+  LateCancel = 3,
+  RiderLateCancel = 4,
+  RiderNoShow = 5,
+}
+
+/** Why a driver cancelled (`CancelReason`). */
+export enum CancelReason {
+  Personal = 1,
+  VehicleProblem = 2,
+  SafetyConcern = 3,
+  Emergency = 4,
+  RouteOrTimeChanged = 5,
+  Other = 9,
+}
+
+export enum SafetyIncidentKind {
+  Sos = 1,
+  Report = 2,
+}
+
+export enum SafetyIncidentStatus {
+  Open = 1,
+  Acknowledged = 2,
+  Resolved = 3,
+}
+
+/** The public page behind a shared trip link (`GET share/{token}`). */
+export interface SharedTrip {
+  riderFirstName: string;
+  originAddress: string;
+  originLat: number;
+  originLng: number;
+  destinationAddress: string;
+  destinationLat: number;
+  destinationLng: number;
+  departAt: string;
+  bookingStatus: BookingStatus;
+  tripStatus: TripStatus;
+  driverFirstName?: string;
+  driverRating: number;
+  vehicleLabel?: string;
+  vehicleColor?: string;
+  vehiclePlate?: string;
+  driverLat?: number;
+  driverLng?: number;
+  driverLocationAt?: string;
+  updatedAt: string;
 }
 
 export enum CurrencyPosition {
@@ -313,6 +391,14 @@ export enum NotificationType {
   TripNotEnoughRiders = 15,
   /** The driver has to say whether a trip short of its threshold still runs. */
   ConfirmDecision = 16,
+  /** Something moved on a ride request — a rider joined, a driver offered. */
+  RideRequest = 17,
+  /** A driver's route alert reached their seat count. */
+  DemandAlert = 18,
+  /** A reliability warning or pause. */
+  Reliability = 19,
+  /** A safety report for the admin team. */
+  SafetyIncident = 20,
   General = 100,
 }
 

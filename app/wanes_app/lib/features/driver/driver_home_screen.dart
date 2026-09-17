@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import '../../core/departure_label.dart';
+import '../../core/driver_position.dart';
 import '../../core/fare.dart';
 import '../../core/geo.dart';
 import '../../core/l10n.dart';
@@ -10,18 +12,21 @@ import '../../core/session.dart';
 import '../../core/theme.dart';
 import '../../models/models.dart';
 import '../../services/services.dart';
-import '../../widgets/accept_price_sheet.dart';
 import '../../widgets/wanes_alerts.dart';
 import '../../widgets/wanes_ui.dart';
 import '../notifications_screen.dart';
+import 'accept_flow.dart';
 import 'driver_profile_screen.dart';
+import 'marketplace_screen.dart';
 import 'my_trips_screen.dart';
 import 'post_trip_screen.dart';
 import 'find_riders_screen.dart';
+import 'reliability_screen.dart';
 import 'requests_screen.dart';
 
-/// Driver app shell — Home · Trips · Profile behind the bottom nav
-/// (prototype's driver tab bar). Home is the dashboard (screen 08).
+/// Driver app shell — Home · Market · Trips · Profile behind the bottom nav.
+/// Home is the dashboard (screen 08); Market is every open request around the
+/// driver, split into rides needed now and journeys to plan.
 class DriverHomeScreen extends StatefulWidget {
   const DriverHomeScreen({super.key});
 
@@ -30,23 +35,35 @@ class DriverHomeScreen extends StatefulWidget {
 }
 
 class _DriverHomeScreenState extends State<DriverHomeScreen> {
+  static const _marketIndex = 1;
+  static const _tripsIndex = 2;
+
   int _index = 0;
 
   /// The tabs live in an `IndexedStack`, so each one is built once and kept
   /// alive. That is what we want for scroll position, but it also means Trips
   /// would keep showing the seat count it loaded on first build — a trip that
-  /// filled up meanwhile would still read "Posted". Reload it on arrival.
+  /// filled up meanwhile would still read "Posted". Reload it on arrival, and
+  /// the marketplace likewise, whose requests other drivers take.
   final _tripsTab = GlobalKey<MyTripsScreenState>();
+  final _marketTab = GlobalKey<MarketplaceScreenState>();
 
   void _select(int i) {
     setState(() => _index = i);
-    if (i == 1) _tripsTab.currentState?.reload();
+    if (i == _tripsIndex) _tripsTab.currentState?.reload();
+    if (i == _marketIndex) _marketTab.currentState?.reload(prompt: true);
+  }
+
+  void _openMarket(MarketSegment segment) {
+    _select(_marketIndex);
+    _marketTab.currentState?.selectSegment(segment);
   }
 
   @override
   Widget build(BuildContext context) {
     final tabs = [
-      DriverDashboard(onGoTrips: () => _select(1)),
+      DriverDashboard(onGoTrips: () => _select(_tripsIndex), onGoMarket: _openMarket),
+      MarketplaceScreen(key: _marketTab),
       MyTripsScreen(key: _tripsTab),
       const DriverProfileScreen(),
     ];
@@ -60,8 +77,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
 /// The driver dashboard — prototype screen 08. Online banner, today's earnings
 /// hero, the ink "Post a trip" CTA and the live incoming-request stack.
 class DriverDashboard extends StatefulWidget {
-  const DriverDashboard({super.key, this.onGoTrips});
+  const DriverDashboard({super.key, this.onGoTrips, this.onGoMarket});
   final VoidCallback? onGoTrips;
+
+  /// Opens the marketplace tab on a segment. Null outside the shell (tests),
+  /// where the dashboard falls back to the full-screen board.
+  final ValueChanged<MarketSegment>? onGoMarket;
 
   @override
   State<DriverDashboard> createState() => _DriverDashboardState();
@@ -71,7 +92,9 @@ class _DriverDashboardState extends State<DriverDashboard> {
   final _presence = PresenceService();
   final _trips = TripService();
   final _requests = RiderTripService();
-  final Place _here = kPlaces.first;
+  /// Where the driver is. Starts on the last known position and is replaced by
+  /// a device fix on refresh; see [DriverPosition].
+  Place _here = DriverPosition.last ?? kPlaces.first;
 
   bool _online = true;
   bool _busyToggle = false;
@@ -80,6 +103,10 @@ class _DriverDashboardState extends State<DriverDashboard> {
   DateTime? _onlineSince;
   List<Trip> _myTrips = [];
   List<RiderTrip> _incoming = [];
+
+  /// Requests around the driver that leave later than the hour — not hails,
+  /// but the marketplace's scheduled work. Counted here to point at it.
+  int _scheduledNearby = 0;
 
   /// Hails this driver waved away. The server has no decline verb — passing is
   /// only ever a local act — so remembering them here is the only thing that
@@ -164,41 +191,52 @@ class _DriverDashboardState extends State<DriverDashboard> {
       // the road is not available for another ride, and the server refuses to
       // raise the flag anyway.
       var online = _online;
+      final here = await DriverPosition.resolve();
+      _here = here;
       if (online || underway) {
         final claiming = online && !underway;
         final presence =
-            await _presence.updateLocation(_here.lat, _here.lng, online: claiming);
+            await _presence.updateLocation(here.lat, here.lng, online: claiming);
         // The banner states the server's view of this driver, not this screen's.
         // A claim the server would not take must not leave it reading
         // "accepting requests" when no hail can ever arrive.
         if (claiming && !presence.success) online = false;
       }
-      final reqs = online && !underway ? await _requests.nearby(_here.lat, _here.lng) : null;
+      final reqs = online && !underway ? await _requests.nearby(here.lat, here.lng) : null;
       if (!mounted) return;
       setState(() {
         _myTrips = myTrips;
         _online = online;
         _onlineSince = online ? (_onlineSince ?? DateTime.now()) : null;
-        _incoming = _answerable(reqs == null
-            ? const <RiderTrip>[]
-            : reqs.success
-                ? (reqs.data ?? [])
-                : _incoming);
+        if (reqs == null) {
+          _incoming = const <RiderTrip>[];
+          _scheduledNearby = 0;
+        } else if (reqs.success) {
+          final rows = reqs.data ?? const <RiderTrip>[];
+          _incoming = _answerable(rows);
+          _scheduledNearby = marketSegment(rows, MarketSegment.scheduled).length;
+        } else {
+          _incoming = _answerable(_incoming);
+        }
       });
     } finally {
       _refreshing = false;
     }
   }
 
-  /// Hails still worth showing: inside their window, and not one already passed
-  /// on. Both filters have to run over every list the server hands back, or a
-  /// declined card comes straight back on the next refresh.
-  List<RiderTrip> _answerable(List<RiderTrip> rows) => rows
-      .where((r) => !_declined.contains(r.id) && r.departAt.isAfter(DateTime.now()))
+  /// Hails still worth showing: leaving within the hour, and not one already
+  /// passed on. Both filters have to run over every list the server hands back,
+  /// or a declined card comes straight back on the next refresh. Anything later
+  /// belongs to the marketplace, not to the dashboard's "now" stack.
+  List<RiderTrip> _answerable(List<RiderTrip> rows) => marketSegment(rows, MarketSegment.now)
+      .where((r) => !_declined.contains(r.id))
       .toList();
 
   Future<void> _toggleOnline(bool value) async {
     setState(() => _busyToggle = true);
+    // Going online is the explicit act that may ask for location.
+    if (value) _here = await DriverPosition.resolve(prompt: true);
+    if (!mounted) return;
     final res = value
         ? await _presence.updateLocation(_here.lat, _here.lng, online: true)
         : await _presence.goOffline();
@@ -216,7 +254,10 @@ class _DriverDashboardState extends State<DriverDashboard> {
     setState(() {
       _online = value;
       _onlineSince = value ? DateTime.now() : null;
-      if (!value) _incoming = [];
+      if (!value) {
+        _incoming = [];
+        _scheduledNearby = 0;
+      }
     });
     if (value) _refresh();
   }
@@ -285,6 +326,10 @@ class _DriverDashboardState extends State<DriverDashboard> {
             ]),
             const SizedBox(height: 16),
             _onlineBanner(t),
+            if (Session.instance.profile?.isSuspended == true) ...[
+              const SizedBox(height: 10),
+              _pausedBanner(t),
+            ],
             const SizedBox(height: 14),
             _todayRow(t),
             const SizedBox(height: 14),
@@ -318,6 +363,8 @@ class _DriverDashboardState extends State<DriverDashboard> {
                 ),
               ),
             ],
+            const SizedBox(height: 6),
+            _marketplaceRow(t),
           ],
         ),
       ),
@@ -327,40 +374,36 @@ class _DriverDashboardState extends State<DriverDashboard> {
   void _openRequests() =>
       Navigator.push(context, MaterialPageRoute(builder: (_) => const RequestsScreen())).then((_) => _refresh());
 
+  void _openMarket(MarketSegment segment) {
+    final go = widget.onGoMarket;
+    if (go != null) {
+      go(segment);
+    } else {
+      _openRequests();
+    }
+  }
+
   Future<void> _acceptRequest(RiderTrip r) async {
     // One driver drives one car: a double tap, or a tap on a second card while
     // the first is still in flight, is an accept the server is bound to refuse.
     if (_accepting) return;
-
-    // Same sheet as the board — a posting carries no price, so the driver names
-    // one wherever they answer from. Backing out is declining.
-    final price = await showAcceptPriceSheet(
-      context,
-      suggestion: r.suggestedPricePerSeat > 0
-          ? r.suggestedPricePerSeat
-          : Fare.perSeat(Geo.distanceKm(
-              r.originLat, r.originLng, r.destinationLat, r.destinationLng)),
-      seats: r.seatsWanted,
-    );
-    if (price == null || !mounted) return;
-
-    setState(() => _accepting = true);
-    final res = await _requests.offer(r.id, pricePerSeat: price);
-    if (!mounted) return;
-    setState(() {
-      _accepting = false;
-      if (res.success) _incoming.removeWhere((x) => x.id == r.id);
-    });
-    if (res.success) {
-      WanesAlerts.success(context, context.tr('driver.requestAccepted'),
-          message: context.tr('driver.requestAcceptedBody'));
-      _refresh();
-    } else {
-      WanesAlerts.failure(context, res,
-          title: context.tr('driver.acceptFailed'),
-          onRetry: () => _acceptRequest(r));
-    }
+    final ok = await acceptRideRequest(context, r,
+        onBusy: (busy) => mounted ? setState(() => _accepting = busy) : null);
+    if (!ok || !mounted) return;
+    setState(() => _incoming.removeWhere((x) => x.id == r.id));
+    _refresh();
   }
+
+  /// The way into the marketplace from Home, with how much is waiting there.
+  Widget _marketplaceRow(WanesTokens t) => WanesListRow(
+        icon: Icons.storefront_outlined,
+        title: context.tr('driver.openMarketplace'),
+        subtitle: _scheduledNearby > 0
+            ? context.trPlural('driver.scheduledNearby', _scheduledNearby)
+            : context.tr('driver.openMarketplaceBody'),
+        onTap: () => _openMarket(
+            _incoming.isEmpty && _scheduledNearby > 0 ? MarketSegment.scheduled : MarketSegment.now),
+      );
 
   /// Passing on a hail. Local by design — there is no decline verb — but it has
   /// to outlive the card, so the id goes into [_declined] as well.
@@ -437,6 +480,29 @@ class _DriverDashboardState extends State<DriverDashboard> {
       ),
     );
   }
+
+  /// Instant requests are paused by the reliability record; planned trips are not.
+  Widget _pausedBanner(WanesTokens t) => Material(
+        color: t.amberTint,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: () => Navigator.push(
+              context, MaterialPageRoute(builder: (_) => const ReliabilityScreen())),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(children: [
+              Icon(Icons.pause_circle_outline_rounded, color: t.amberInk),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(context.tr('reliability.pausedBanner'),
+                    style: TextStyle(fontSize: 12.5, height: 1.35, color: t.amberInk, fontWeight: FontWeight.w600)),
+              ),
+              Icon(Icons.chevron_right_rounded, color: t.amberInk),
+            ]),
+          ),
+        ),
+      );
 
   /// Earnings hero + the two stacked mini stats.
   Widget _todayRow(WanesTokens t) {
@@ -572,14 +638,8 @@ class HailCard extends StatelessWidget {
   final VoidCallback? onDecline;
   final VoidCallback? onTap;
 
-  /// mm:ss while over a minute, then bare seconds — the design's "12s".
-  static String remainingLabel(BuildContext context, Duration d) {
-    if (d.isNegative) return context.tr('units.secondsShort', {'value': 0});
-    if (d.inSeconds < 60) {
-      return context.tr('units.secondsShort', {'value': d.inSeconds});
-    }
-    return '${d.inMinutes}:${(d.inSeconds % 60).toString().padLeft(2, '0')}';
-  }
+  /// Time left to departure — see [untilLabel].
+  static String remainingLabel(BuildContext context, Duration d) => untilLabel(context, d);
 
   static String shortPlace(String address) => address.split(',').first.trim();
 
@@ -620,7 +680,11 @@ class HailCard extends StatelessWidget {
                       Text(context.tr('driver.riderNumber', {'id': request.riderId}),
                           style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: t.ink)),
                       const SizedBox(width: 7),
-                      Text(context.trPlural('vehicle.seatCount', request.seatsWanted),
+                      Text(
+                          request.isPool
+                              ? '${context.trPlural('market.passengers', request.riderCount)} · '
+                                  '${context.trPlural('vehicle.seatCount', request.seatsWanted)}'
+                              : context.trPlural('vehicle.seatCount', request.seatsWanted),
                           style: WanesTheme.mono(size: 11, weight: FontWeight.w500, color: t.ink2, spacing: 0)),
                     ]),
                     const SizedBox(height: 2),

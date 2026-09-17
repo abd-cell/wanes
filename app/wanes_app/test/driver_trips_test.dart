@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:wanes_app/core/app_config.dart';
 import 'package:wanes_app/core/l10n.dart';
 import 'package:wanes_app/core/theme.dart';
 import 'package:wanes_app/features/driver/trip_lifecycle.dart';
@@ -9,7 +10,14 @@ import 'package:wanes_app/services/services.dart';
 /// The driver's side of a trip: which move it offers next, and the manifest row
 /// for each rider holding a seat.
 void main() {
-  setUp(() => AppLocalizations.current = const AppLocalizations(Locale('en')));
+  setUp(() {
+    AppLocalizations.current = const AppLocalizations(Locale('en'));
+    // The trip-wide boarding move only exists with boarding codes off; with
+    // them on the driver boards each rider by code (marketplace_phase2_test).
+    AppConfigController.config.value = AppConfig.fromJson({'boardingCodeRequired': false});
+  });
+
+  tearDown(() => AppConfigController.config.value = AppConfig.fallback);
 
   Widget host(Widget child) => MaterialApp(
         theme: WanesTheme.light(),

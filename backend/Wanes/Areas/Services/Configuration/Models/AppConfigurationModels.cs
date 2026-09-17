@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using Wanes.Areas.Domain.Marketplace;
 using Wanes.Areas.Domain.RiderTrips;
 using Wanes.Areas.Domain.RideRequests;
 using Wanes.Areas.Domain.Trips;
@@ -73,6 +74,20 @@ public class AppConfigurationOutput
 
     public decimal FarePerKm { get; set; }
 
+    // ── Shared marketplace, reliability, safety — see AppConfiguration ──
+    public int ScheduledSelectionWindowMinutes { get; set; }
+    public bool RiderOfferChoice { get; set; }
+    public bool RequireSharedTermsAcceptance { get; set; }
+    public int FreeCancelGraceMinutes { get; set; }
+    public int LateCancelLeadMinutes { get; set; }
+    public int ReliabilityWarnPoints { get; set; }
+    public int ReliabilitySuspendPoints { get; set; }
+    public int ReliabilityWindowDays { get; set; }
+    public int SuspensionDays { get; set; }
+    public bool BoardingCodeRequired { get; set; }
+    public string EmergencyNumber { get; set; } = string.Empty;
+    public string? ShareBaseUrl { get; set; }
+
     // ── Support contact ──
     //
     // Null means "not configured"; the clients hide the channel rather than
@@ -107,6 +122,18 @@ public class AppConfigurationOutput
         AverageSpeedKmh = e.AverageSpeedKmh;
         FareBaseAmount = e.FareBaseAmount;
         FarePerKm = e.FarePerKm;
+        ScheduledSelectionWindowMinutes = e.ScheduledSelectionWindowMinutes;
+        RiderOfferChoice = e.RiderOfferChoice;
+        RequireSharedTermsAcceptance = e.RequireSharedTermsAcceptance;
+        FreeCancelGraceMinutes = e.FreeCancelGraceMinutes;
+        LateCancelLeadMinutes = e.LateCancelLeadMinutes;
+        ReliabilityWarnPoints = e.ReliabilityWarnPoints;
+        ReliabilitySuspendPoints = e.ReliabilitySuspendPoints;
+        ReliabilityWindowDays = e.ReliabilityWindowDays;
+        SuspensionDays = e.SuspensionDays;
+        BoardingCodeRequired = e.BoardingCodeRequired;
+        EmergencyNumber = e.EmergencyNumber;
+        ShareBaseUrl = e.ShareBaseUrl;
         SupportPhone = e.SupportPhone;
         SupportWhatsApp = e.SupportWhatsApp;
         SupportEmail = e.SupportEmail;
@@ -198,6 +225,46 @@ public class AppConfigurationInput
     /// </summary>
     [Range(typeof(decimal), "0", "1000")]
     public decimal FarePerKm { get; set; } = FareRules.DefaultPerKm;
+
+    // ── Shared marketplace ──
+
+    [Range(DriverSelectionRules.ImmediateSelection, DriverSelectionRules.MaxSelectionWindowMinutes)]
+    public int ScheduledSelectionWindowMinutes { get; set; } = DriverSelectionRules.DefaultScheduledWindowMinutes;
+
+    public bool RiderOfferChoice { get; set; } = true;
+    public bool RequireSharedTermsAcceptance { get; set; } = true;
+
+    // ── Reliability ──
+
+    [Range(0, ReliabilityRules.MaxGraceMinutes)]
+    public int FreeCancelGraceMinutes { get; set; } = ReliabilityRules.DefaultFreeCancelGraceMinutes;
+
+    [Range(0, ReliabilityRules.MaxLateLeadMinutes)]
+    public int LateCancelLeadMinutes { get; set; } = ReliabilityRules.DefaultLateCancelLeadMinutes;
+
+    [Range(1, ReliabilityRules.MaxPoints)]
+    public int ReliabilityWarnPoints { get; set; } = ReliabilityRules.DefaultWarnPoints;
+
+    [Range(1, ReliabilityRules.MaxPoints)]
+    public int ReliabilitySuspendPoints { get; set; } = ReliabilityRules.DefaultSuspendPoints;
+
+    [Range(1, ReliabilityRules.MaxWindowDays)]
+    public int ReliabilityWindowDays { get; set; } = ReliabilityRules.DefaultWindowDays;
+
+    [Range(0, ReliabilityRules.MaxSuspensionDays)]
+    public int SuspensionDays { get; set; } = ReliabilityRules.DefaultSuspensionDays;
+
+    // ── Safety ──
+
+    public bool BoardingCodeRequired { get; set; } = true;
+
+    [Required, StringLength(16, MinimumLength = 2)]
+    [RegularExpression(@"^\+?[0-9]{2,15}$", ErrorMessage = "EmergencyNumber must be digits, such as 911.")]
+    public string EmergencyNumber { get; set; } = "911";
+
+    [StringLength(512)]
+    [RegularExpression(@"^$|^https?://\S+$", ErrorMessage = "ShareBaseUrl must be an http(s) URL.")]
+    public string? ShareBaseUrl { get; set; }
 
     // ── Support contact ──
     //

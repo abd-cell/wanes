@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:wanes_app/core/device_location.dart';
 import 'package:wanes_app/core/l10n.dart';
 import 'package:wanes_app/core/places.dart';
 import 'package:wanes_app/core/theme.dart';
@@ -14,7 +15,14 @@ import 'package:wanes_app/models/models.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  setUp(() => AppLocalizations.current = const AppLocalizations(Locale('en')));
+  setUp(() {
+    AppLocalizations.current = const AppLocalizations(Locale('en'));
+    // No sensor in a test: the dashboard falls back to its default position.
+    DeviceLocation.debugOverride =
+        () async => const LocationFix.failed(LocationFailure.unavailable);
+  });
+
+  tearDown(() => DeviceLocation.debugOverride = null);
 
   Widget host(Widget child) => MaterialApp(
         theme: WanesTheme.light(),

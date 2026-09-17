@@ -1,4 +1,4 @@
-using Wanes.Areas.Domain.Bookings;
+﻿using Wanes.Areas.Domain.Bookings;
 using Wanes.Areas.Domain.RideRequests;
 using Wanes.Areas.Domain.RiderTrips;
 using Wanes.Areas.Domain.Trips;
@@ -321,7 +321,7 @@ public class RideRequestTests
         Build.Demand(uow, 30, RiderId, seats: 1, departAt: DateTime.UtcNow.AddHours(4));
 
         var res = await Make.Interests(uow, DriverId)
-            .ExpressInterest(30, new ExpressInterestInput { PricePerSeat = 4m });
+            .ExpressInterest(30, new ExpressInterestInput { AcceptSharedTrip = true, PricePerSeat = 4m });
 
         Assert.True(res.Success);
 
@@ -349,7 +349,7 @@ public class RideRequestTests
         await Make.Requests(uow, JoinerId).Join(30, new JoinRideRequestInput { Seats = 2 });
 
         await Make.Interests(uow, DriverId)
-            .ExpressInterest(30, new ExpressInterestInput { PricePerSeat = 3m });
+            .ExpressInterest(30, new ExpressInterestInput { AcceptSharedTrip = true, PricePerSeat = 3m });
 
         // Two participants, two bookings. A conversion that lost a rider would
         // put somebody at a kerb the driver was never told about; one that
@@ -367,7 +367,7 @@ public class RideRequestTests
         var uow = Scene();
         Build.Demand(uow, 30, RiderId);
 
-        await Make.Interests(uow, DriverId).ExpressInterest(30);
+        await Make.Interests(uow, DriverId).ExpressInterest(30, Offer.Shared());
 
         // Its passengers are already secured — they asked for this ride. There is
         // nothing to gather and no threshold to fail.
@@ -383,7 +383,7 @@ public class RideRequestTests
         var wanted = DateTime.UtcNow.AddHours(5);
         Build.Demand(uow, 30, RiderId, departAt: wanted);
 
-        await Make.Interests(uow, DriverId).ExpressInterest(30);
+        await Make.Interests(uow, DriverId).ExpressInterest(30, Offer.Shared());
 
         var trip = Assert.Single(uow.Store<Trip>());
         Assert.Equal(wanted, trip.DepartAt, TimeSpan.FromMinutes(1));
@@ -397,7 +397,7 @@ public class RideRequestTests
         request.GenderPolicy = GenderPolicy.FemaleOnly;
         request.MinAge = 21;
 
-        await Make.Interests(uow, DriverId).ExpressInterest(30);
+        await Make.Interests(uow, DriverId).ExpressInterest(30, Offer.Shared());
 
         // A pool that asked to share with women only keeps that condition over
         // the seats the driver is now selling — which is what they agreed to.
@@ -413,7 +413,7 @@ public class RideRequestTests
         var notifications = new FakeNotificationService();
         Build.Demand(uow, 30, RiderId);
 
-        await Make.Interests(uow, DriverId, notifications).ExpressInterest(30);
+        await Make.Interests(uow, DriverId, notifications).ExpressInterest(30, Offer.Shared());
 
         Assert.Contains($"{RiderId}:{NotificationTemplate.RideRequestMatchedRider}",
             notifications.Sent);
@@ -430,7 +430,7 @@ public class RideRequestTests
         request.DriverGenderPolicy = GenderPolicy.FemaleOnly;
         uow.Store<User>().Single(u => u.Id == DriverId).Gender = Gender.Male;
 
-        var res = await Make.Interests(uow, DriverId).ExpressInterest(30);
+        var res = await Make.Interests(uow, DriverId).ExpressInterest(30, Offer.Shared());
 
         Assert.False(res.Success);
         Assert.Empty(uow.Store<Trip>());
@@ -442,7 +442,7 @@ public class RideRequestTests
         var uow = Scene();
         Build.Demand(uow, 30, DriverId);
 
-        var res = await Make.Interests(uow, DriverId).ExpressInterest(30);
+        var res = await Make.Interests(uow, DriverId).ExpressInterest(30, Offer.Shared());
 
         Assert.False(res.Success);
         Assert.Equal(ErrorCode.CannotServeOwnRequest, res.ErrorCode);
@@ -455,7 +455,7 @@ public class RideRequestTests
         Build.Demand(uow, 30, RiderId);
         uow.Store<User>().Single(u => u.Id == DriverId).DriverStatus = DriverStatus.Pending;
 
-        var res = await Make.Interests(uow, DriverId).ExpressInterest(30);
+        var res = await Make.Interests(uow, DriverId).ExpressInterest(30, Offer.Shared());
 
         Assert.False(res.Success);
         Assert.Equal(ErrorCode.DriverNotVerified, res.ErrorCode);
@@ -467,7 +467,7 @@ public class RideRequestTests
         var uow = Scene();
         Build.Demand(uow, 30, RiderId, seats: 6);
 
-        var res = await Make.Interests(uow, DriverId).ExpressInterest(30);
+        var res = await Make.Interests(uow, DriverId).ExpressInterest(30, Offer.Shared());
 
         Assert.False(res.Success);
         Assert.Equal(ErrorCode.SeatsExceedCapacity, res.ErrorCode);
@@ -477,10 +477,10 @@ public class RideRequestTests
     public async Task A_driver_may_withdraw_while_offers_are_still_open()
     {
         var uow = Scene();
-        var config = new FakeAppConfigurationService { DriverSelectionWindowMinutes = 10 };
+        var config = new FakeAppConfigurationService { ScheduledSelectionWindowMinutes = 10 };
         Build.Demand(uow, 30, RiderId);
 
-        await Make.Interests(uow, DriverId, config: config).ExpressInterest(30);
+        await Make.Interests(uow, DriverId, config: config).ExpressInterest(30, Offer.Shared());
         var res = await Make.Interests(uow, DriverId, config: config).WithdrawInterest(30);
 
         Assert.True(res.Success);
@@ -494,11 +494,11 @@ public class RideRequestTests
     public async Task With_a_window_open_an_offer_is_recorded_and_no_trip_is_formed()
     {
         var uow = Scene();
-        var config = new FakeAppConfigurationService { DriverSelectionWindowMinutes = 10 };
+        var config = new FakeAppConfigurationService { ScheduledSelectionWindowMinutes = 10 };
         var notifications = new FakeNotificationService();
         Build.Demand(uow, 30, RiderId);
 
-        var res = await Make.Interests(uow, DriverId, notifications, config).ExpressInterest(30);
+        var res = await Make.Interests(uow, DriverId, notifications, config).ExpressInterest(30, Offer.Shared());
 
         Assert.True(res.Success);
         Assert.Equal(1, res.Data!.InterestCount);
@@ -518,7 +518,7 @@ public class RideRequestTests
     public async Task The_window_closing_picks_a_driver_and_tells_the_rest()
     {
         var uow = Scene();
-        var config = new FakeAppConfigurationService { DriverSelectionWindowMinutes = 10 };
+        var config = new FakeAppConfigurationService { ScheduledSelectionWindowMinutes = 10 };
         var notifications = new FakeNotificationService();
 
         // A second driver, better rated, offering later.
@@ -529,11 +529,12 @@ public class RideRequestTests
         uow.Store<Vehicle>().Add(Build.Vehicle(2, userId: OtherDriverId));
 
         Build.Demand(uow, 30, RiderId);
-        await Make.Interests(uow, DriverId, config: config).ExpressInterest(30);
-        await Make.Interests(uow, OtherDriverId, config: config).ExpressInterest(30);
+        await Make.Interests(uow, DriverId, config: config).ExpressInterest(30, Offer.Shared());
+        await Make.Interests(uow, OtherDriverId, config: config).ExpressInterest(30, Offer.Shared());
 
         // The window opened when the first offer arrived; wind it back so it is due.
         uow.Store<RideRequest>()[0].FirstInterestAt = DateTime.UtcNow.AddMinutes(-30);
+        uow.Store<RideRequest>()[0].DecideAt = DateTime.UtcNow.AddMinutes(-20);
 
         var matched = await Make.Interests(uow, DriverId, notifications, config).SelectDue();
 
@@ -561,7 +562,7 @@ public class RideRequestTests
     {
         var uow = Scene();
         Build.Demand(uow, 30, RiderId);
-        await Make.Interests(uow, DriverId).ExpressInterest(30);
+        await Make.Interests(uow, DriverId).ExpressInterest(30, Offer.Shared());
 
         // Immediate selection decided it inside the offer. A sweep that also
         // tried would be a second decision about a settled request.
@@ -593,7 +594,7 @@ public class RideRequestTests
         // Open. The clock is the authority, not the column.
         Build.Demand(uow, 30, RiderId, departAt: DateTime.UtcNow.AddMinutes(-5));
 
-        var res = await Make.Interests(uow, DriverId).ExpressInterest(30);
+        var res = await Make.Interests(uow, DriverId).ExpressInterest(30, Offer.Shared());
 
         Assert.False(res.Success);
         Assert.Equal(ErrorCode.RideRequestNotOpen, res.ErrorCode);

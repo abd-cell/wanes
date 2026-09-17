@@ -1,4 +1,7 @@
 using Wanes.Areas.Domain.Bookings;
+using Wanes.Areas.Domain.Marketplace;
+using Wanes.Areas.Services.Marketplace;
+using Wanes.Areas.Services.Safety;
 using Wanes.Areas.Domain.RideRequests;
 using Wanes.Areas.Domain.RiderTrips;
 using Wanes.Areas.Domain.Schedules;
@@ -39,13 +42,52 @@ public static class Make
             new FakeSecurityManager(riderId));
 
     public static TripService Trips(FakeUnitOfWork uow, int driverId,
-        FakeNotificationService? notifications = null, FakeAppConfigurationService? config = null) =>
-        new(uow, new FakeSecurityManager(driverId), new FakeAuditService(),
-            notifications ?? new FakeNotificationService(),
+        FakeNotificationService? notifications = null, FakeAppConfigurationService? config = null)
+    {
+        notifications ??= new FakeNotificationService();
+        config ??= new FakeAppConfigurationService();
+        return new(uow, new FakeSecurityManager(driverId), new FakeAuditService(),
+            notifications,
             new DriverAvailabilityService(uow.Repository<Trip>(), new FakeSecurityManager(driverId)),
-            config ?? new FakeAppConfigurationService(),
+            config,
+            Reliability(uow, driverId, notifications, config),
+            Recovery(uow, driverId, notifications),
             uow.Repository<Trip>(), uow.Repository<TripStatusHistory>(), uow.Repository<Vehicle>(),
             uow.Repository<User>(), uow.Repository<Booking>());
+    }
+
+    /// <summary>The reliability record: cancellations, no-shows, pauses.</summary>
+    public static ReliabilityService Reliability(FakeUnitOfWork uow, int userId,
+        FakeNotificationService? notifications = null, FakeAppConfigurationService? config = null) =>
+        new(uow, new FakeSecurityManager(userId), new FakeAuditService(),
+            notifications ?? new FakeNotificationService(),
+            config ?? new FakeAppConfigurationService(),
+            uow.Repository<ReliabilityEvent>(), uow.Repository<User>());
+
+    /// <summary>Route alerts and request watches.</summary>
+    public static DemandAlertService Alerts(FakeUnitOfWork uow, int userId,
+        FakeNotificationService? notifications = null) =>
+        new(uow, new FakeSecurityManager(userId), new FakeAuditService(),
+            notifications ?? new FakeNotificationService(),
+            uow.Repository<DemandAlert>(), uow.Repository<DemandAlertHit>(),
+            uow.Repository<RideRequest>(), uow.Repository<RideRequestParticipant>(), uow.Repository<User>());
+
+    /// <summary>Putting riders back on the market when their driver cancels.</summary>
+    public static DemandRecoveryService Recovery(FakeUnitOfWork uow, int userId,
+        FakeNotificationService? notifications = null)
+    {
+        notifications ??= new FakeNotificationService();
+        return new(uow, new FakeAuditService(), notifications, Alerts(uow, userId, notifications),
+            uow.Repository<RideRequest>(), uow.Repository<RideRequestParticipant>());
+    }
+
+    public static SafetyService Safety(FakeUnitOfWork uow, int userId,
+        FakeNotificationService? notifications = null, FakeAppConfigurationService? config = null) =>
+        new(uow, new FakeSecurityManager(userId), new FakeAuditService(),
+            notifications ?? new FakeNotificationService(), new FakeSmsSender(),
+            config ?? new FakeAppConfigurationService(),
+            uow.Repository<SafetyIncident>(), uow.Repository<Trip>(), uow.Repository<Booking>(),
+            uow.Repository<User>(), uow.Repository<UserRole>());
 
     public static TripConfirmationService Confirmations(FakeUnitOfWork uow, int driverId,
         FakeNotificationService? notifications = null, FakeAppConfigurationService? config = null) =>
@@ -61,19 +103,24 @@ public static class Make
         return new BookingService(uow, new FakeSecurityManager(riderId), new FakeAuditService(),
             notifications, Confirmations(uow, riderId, notifications, config),
             RiderAvailability(uow, riderId),
+            Reliability(uow, riderId, notifications, config),
             uow.Repository<Booking>(), uow.Repository<Trip>(), uow.Repository<User>());
     }
 
     /// <summary>The riders' side of demand: create, join, leave, board, sweeps.</summary>
     public static RideRequestService Requests(FakeUnitOfWork uow, int userId,
-        FakeNotificationService? notifications = null, FakeAppConfigurationService? config = null) =>
-        new(uow, new FakeSecurityManager(userId), new FakeAuditService(),
-            notifications ?? new FakeNotificationService(),
+        FakeNotificationService? notifications = null, FakeAppConfigurationService? config = null)
+    {
+        notifications ??= new FakeNotificationService();
+        return new(uow, new FakeSecurityManager(userId), new FakeAuditService(),
+            notifications,
             new DriverAvailabilityService(uow.Repository<Trip>(), new FakeSecurityManager(userId)),
             RiderAvailability(uow, userId),
             config ?? new FakeAppConfigurationService(),
+            Alerts(uow, userId, notifications),
             uow.Repository<User>(), uow.Repository<RideRequest>(),
             uow.Repository<RideRequestParticipant>(), uow.Repository<DriverInterest>());
+    }
 
     /// <summary>
     /// The drivers' side: offer, withdraw, and the selection that forms a trip.
@@ -83,15 +130,20 @@ public static class Make
     /// <c>DriverSelectionWindowMinutes</c> to test competing offers.
     /// </summary>
     public static DriverInterestService Interests(FakeUnitOfWork uow, int userId,
-        FakeNotificationService? notifications = null, FakeAppConfigurationService? config = null) =>
-        new(uow, new FakeSecurityManager(userId), new FakeAuditService(),
-            notifications ?? new FakeNotificationService(),
+        FakeNotificationService? notifications = null, FakeAppConfigurationService? config = null)
+    {
+        notifications ??= new FakeNotificationService();
+        config ??= new FakeAppConfigurationService();
+        return new(uow, new FakeSecurityManager(userId), new FakeAuditService(),
+            notifications,
             new DriverAvailabilityService(uow.Repository<Trip>(), new FakeSecurityManager(userId)),
-            config ?? new FakeAppConfigurationService(),
+            config,
+            Reliability(uow, userId, notifications, config),
             uow.Repository<User>(), uow.Repository<Vehicle>(),
             uow.Repository<Trip>(), uow.Repository<TripStatusHistory>(),
             uow.Repository<Booking>(), uow.Repository<RideRequest>(),
             uow.Repository<RideRequestParticipant>(), uow.Repository<DriverInterest>());
+    }
 
     public static SearchService Search(FakeUnitOfWork uow, int riderId,
         FakeAppConfigurationService? config = null) =>

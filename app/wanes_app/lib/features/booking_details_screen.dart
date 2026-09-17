@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' hide TextDirection;
+import '../core/app_config.dart';
 import '../core/fare.dart';
 import '../core/l10n.dart';
 import '../core/theme.dart';
 import '../models/models.dart';
 import '../services/services.dart';
+import '../widgets/trip_safety.dart';
 import '../widgets/wanes_alerts.dart';
 import '../widgets/wanes_ui.dart';
 import 'live_trip_screen.dart';
@@ -66,11 +68,19 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
 
   Future<void> _cancel() async {
     final t = WanesTokens.of(context);
+    // Giving a seat back close to departure goes on the rider's record, and
+    // they should know that before they tap, not after.
+    final lead = Duration(minutes: AppConfigController.value.lateCancelLeadMinutes);
+    final departAt = _booking.departAt;
+    final late = departAt != null && departAt.toLocal().difference(DateTime.now()) <= lead;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(context.tr('bookings.cancelTitle')),
-        content: Text(context.tr('bookings.cancelBody')),
+        content: Text(late
+            ? '${context.tr('bookings.cancelBody')}\n\n'
+                '${context.tr('bookings.cancelLate', {'hours': (lead.inMinutes / 60).round()})}'
+            : context.tr('bookings.cancelBody')),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -201,6 +211,10 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                   _routeCard(t),
                   const SizedBox(height: 12),
                   _driverCard(t),
+                  if (_booking.boardingCode != null && _booking.isLive) ...[
+                    const SizedBox(height: 12),
+                    BoardingCodeCard(code: _booking.boardingCode!),
+                  ],
                   const SizedBox(height: 12),
                   _actionsCard(t),
                 ],
@@ -416,6 +430,14 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
           title: context.tr('hail.trackTrip'),
           subtitle: context.tr('bookings.trackTripBody'),
           onTap: _track,
+        ),
+      // Someone they trust can follow the ride — shared rides are with strangers.
+      if (_booking.isLive && !_booking.isPending)
+        GroupedRow(
+          icon: Icons.ios_share_rounded,
+          title: context.tr('share.button'),
+          subtitle: context.tr('share.rowBody'),
+          onTap: () => shareTrip(context, _booking.id),
         ),
       if (_booking.isCompleted)
         GroupedRow(

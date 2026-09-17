@@ -35,6 +35,19 @@ public class ProfileOutput
     /// </summary>
     public List<Roles> Roles { get; set; } = [];
 
+    // safety
+    public string? EmergencyContactName { get; set; }
+    public string? EmergencyContactPhone { get; set; }
+
+    // reliability — the user's own view of their record
+    public int TripsAsDriver { get; set; }
+    public int DriverCancellations { get; set; }
+
+    /// <summary>0–1, or null with no history.</summary>
+    public double? DriverCompletionRate { get; set; }
+
+    public DateTime? SuspendedUntil { get; set; }
+
     public ProfileOutput() { }
 
     public ProfileOutput(User user)
@@ -62,5 +75,12 @@ public class ProfileOutput
         Theme = user.Theme;
         NotifPush = user.NotifPush;
         NotifSms = user.NotifSms;
+        EmergencyContactName = user.EmergencyContactName;
+        EmergencyContactPhone = user.EmergencyContactPhone;
+        TripsAsDriver = user.TripsAsDriver;
+        DriverCancellations = user.DriverCancellations;
+        DriverCompletionRate = Wanes.Areas.Domain.Marketplace.ReliabilityRules.CompletionRate(
+            user.TripsAsDriver, user.DriverCancellations);
+        SuspendedUntil = user.SuspendedUntil > DateTime.UtcNow ? user.SuspendedUntil : null;
     }
 }

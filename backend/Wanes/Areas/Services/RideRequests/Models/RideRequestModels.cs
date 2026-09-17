@@ -95,6 +95,15 @@ public class RideRequestRow
     /// </summary>
     public decimal SuggestedPricePerSeat { get; set; }
 
+    /// <summary>
+    /// When the collected offers are decided. Null before the first offer; in
+    /// the future while a scheduled request is still comparing drivers.
+    /// </summary>
+    public DateTime? DecideAt { get; set; }
+
+    /// <summary>The request this one replaced after its driver cancelled.</summary>
+    public int? ReopenedFromRequestId { get; set; }
+
     public RideRequestRow() { }
 
     public RideRequestRow(
@@ -143,6 +152,8 @@ public class RideRequestRow
         IHaveOffered = callerHasOffered;
         DistanceKm = Math.Round(distanceKm, 2);
         SuggestedPricePerSeat = suggestedPricePerSeat;
+        DecideAt = request.DecideAt;
+        ReopenedFromRequestId = request.ReopenedFromRequestId;
     }
 }
 
@@ -195,6 +206,9 @@ public class CreateRideRequestInput
     public int? MaxAge { get; set; }
 
     public RideConditions CoRiderConditions => new(CoRiderGenderPolicy, MinAge, MaxAge);
+
+    /// <summary>The rider agreed the ride is shared. Recorded on their place; older clients send nothing.</summary>
+    public bool? AcceptSharedRide { get; set; }
 }
 
 /// <summary>
@@ -221,6 +235,9 @@ public class JoinRideRequestInput
     public int? MaxAge { get; set; }
 
     public RideConditions Conditions => new(CoRiderGenderPolicy, MinAge, MaxAge);
+
+    /// <summary>The rider agreed the ride is shared.</summary>
+    public bool? AcceptSharedRide { get; set; }
 }
 
 /// <summary>
@@ -254,4 +271,26 @@ public class ExpressInterestInput
 
     [MaxLength(300)]
     public string? Message { get; set; }
+
+    /// <summary>
+    /// The driver agreed that the trip is shared: the seats they do not fill
+    /// from this request stay on sale, and more riders may join until
+    /// departure. Required while <c>RequireSharedTermsAcceptance</c> is on.
+    /// </summary>
+    public bool? AcceptSharedTrip { get; set; }
+
+    /// <summary>
+    /// Seats the driver will put on the trip. At least the riders' own, at
+    /// most the car's; null offers the whole car.
+    /// </summary>
+    [Range(1, RiderTripRules.MaxSeats)]
+    public int? SeatsOffered { get; set; }
+
+    /// <summary>
+    /// The conditional accept — "I'll take it if it reaches this many". Above
+    /// the riders already on it, the trip forms gathering and runs only once
+    /// the seats are held (or the driver decides to run anyway).
+    /// </summary>
+    [Range(1, RiderTripRules.MaxSeats)]
+    public int? MinPassengers { get; set; }
 }

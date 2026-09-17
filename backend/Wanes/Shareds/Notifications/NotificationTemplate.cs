@@ -87,4 +87,24 @@ public enum NotificationTemplate
     /// </summary>
     RideRequestNotSelectedDriver = 23,
 
+    /// <summary>A driver took the request on condition it reaches their minimum — the riders are gathering.</summary>
+    RideRequestMatchedGatheringRider = 24,
+
+    /// <summary>The driver cancelled, and the riders were put back on the market in a new request.</summary>
+    TripCancelledReopenedRider = 25,
+
+    /// <summary>A route alert, or a watched request, reached the driver's seat count.</summary>
+    DemandAlertMatchedDriver = 26,
+
+    /// <summary>The driver's cancellations are close to pausing instant requests.</summary>
+    ReliabilityWarningDriver = 27,
+
+    /// <summary>Instant requests are paused for the driver until a date.</summary>
+    ReliabilitySuspendedDriver = 28,
+
+    /// <summary>An SOS or safety report for the admin team.</summary>
+    SafetyIncidentAdmin = 29,
+
+    /// <summary>A rider picked this driver's offer.</summary>
+    OfferChosenDriver = 30,
 }

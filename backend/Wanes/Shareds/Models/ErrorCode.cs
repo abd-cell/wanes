@@ -139,6 +139,44 @@ public enum ErrorCode
     /// <summary>The driver has no live interest on this request to withdraw.</summary>
     DriverInterestNotFound = 508,
 
+    /// <summary>The driver did not agree that the trip is shared and its free seats stay on sale.</summary>
+    SharedTermsNotAccepted = 509,
+
+    /// <summary>
+    /// The driver's reliability record has paused instant requests for now.
+    /// Scheduled work is still open to them.
+    /// </summary>
+    DriverSuspended = 510,
+
+    /// <summary>Riders may not pick an offer here — selection is immediate, or the setting is off.</summary>
+    OfferChoiceNotAvailable = 511,
+
+    /// <summary>The offer was withdrawn, or another driver was already chosen.</summary>
+    OfferNotAvailable = 512,
+
+    /// <summary>The seats a driver offered are fewer than the riders already need, or more than the car has.</summary>
+    InvalidSeatsOffered = 513,
+
+    DemandAlertNotFound = 520,
+
+    // Trip safety and reliability
+    /// <summary>Cancelling a trip riders depend on needs a reason.</summary>
+    CancelReasonRequired = 320,
+
+    /// <summary>The code the driver entered is not this rider's boarding code.</summary>
+    BoardingCodeInvalid = 411,
+
+    /// <summary>
+    /// Boarding everyone at once would skip the boarding codes. Board each
+    /// rider with their code instead.
+    /// </summary>
+    BoardingCodeRequired = 412,
+
+    /// <summary>The shared trip link has been revoked or has expired.</summary>
+    ShareLinkNotFound = 413,
+
+    SafetyIncidentNotFound = 800,
+
     // Schedules
     ScheduleNotFound = 550,
 

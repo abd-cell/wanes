@@ -94,6 +94,31 @@ public static class AuditActions
     /// <summary>Demand became supply: the trip formed from a matched request.</summary>
     public const string TripForm = "trip.form";
 
+    /// <summary>A rider picked one of the collected offers.</summary>
+    public const string OfferChosen = "request.offer_chosen";
+
+    /// <summary>A driver cancelled a formed trip and its riders were put back on the market.</summary>
+    public const string RideRequestReopen = "request.reopen";
+
+    // marketplace
+    public const string AcknowledgementRecord = "ack.record";
+    public const string DemandAlertCreate = "alert.create";
+    public const string DemandAlertDelete = "alert.delete";
+    public const string ReliabilityRecord = "reliability.record";
+    public const string ReliabilitySuspend = "reliability.suspend";
+    public const string AdminReliabilityWaive = "admin.reliability_waive";
+    public const string AdminRideRequestCancel = "admin.request_cancel";
+
+    // safety
+    public const string SafetySos = "safety.sos";
+    public const string SafetyReport = "safety.report";
+    public const string AdminSafetyUpdate = "admin.safety_update";
+    public const string ShareLinkCreate = "share.create";
+    public const string ShareLinkRevoke = "share.revoke";
+
+    /// <summary>The driver boarded everyone at once, bypassing the boarding codes (only when codes are off).</summary>
+    public const string BookingPickUpCode = "booking.pickup_code";
+
     // schedules
     public const string ScheduleCreate = "schedule.create";
     public const string ScheduleUpdate = "schedule.update";

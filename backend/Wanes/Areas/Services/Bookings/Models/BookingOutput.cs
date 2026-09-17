@@ -44,6 +44,16 @@ public class BookingOutput
 
     public int SeatsHeld { get; set; }
 
+    /// <summary>
+    /// The code the rider reads to the driver at pickup. Only on a seat that
+    /// is committed and not yet boarded — it is useless before, and must not
+    /// linger after.
+    /// </summary>
+    public string? BoardingCode { get; set; }
+
+    /// <summary>The rider has a live "follow my trip" link.</summary>
+    public bool HasShareLink { get; set; }
+
     public BookingOutput() { }
 
     public BookingOutput(Booking booking, Trip? trip)
@@ -71,5 +81,8 @@ public class BookingOutput
         var committed = BookingStatusRules.IsLive(booking.Status)
                         && !BookingStatusRules.IsPending(booking.Status);
         if (committed) DriverPhone = trip?.Driver?.Phone;
+        if (booking.Status is BookingStatus.Confirmed or BookingStatus.Arrived)
+            BoardingCode = booking.BoardingCode;
+        HasShareLink = !string.IsNullOrEmpty(booking.ShareToken);
     }
 }

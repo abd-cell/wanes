@@ -73,3 +73,9 @@
 @media (max-width: 520px) {
   .pair { grid-template-columns: 1fr; }
 }
+
+/* The marketplace section: yes/no switches beside the numbers, and small
+   headings to split reliability from safety. */
+.check { display: flex; align-items: center; gap: 8px; font-weight: 600; margin: 6px 0; }
+.check input { width: 16px; height: 16px; }
+.section h3 { margin: 18px 0 6px; font-size: 14px; }

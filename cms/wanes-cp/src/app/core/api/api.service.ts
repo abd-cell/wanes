@@ -8,7 +8,7 @@ import {
   AnalyticsOverview, AnalyticsTimeSeries, AppConfiguration, AppResponse, AuditRow,
   AuthResult, BroadcastInput, BroadcastResult, BulkNotificationInput, BulkNotificationResult,
   DeviceType, DriverDocument, DriverRow, DriverStatus, LookupOption, NotificationStats, PageQuery,
-  ResourceRecord, Roles,
+  ResourceRecord, Roles, SharedTrip,
   TargetedSendInput, TargetedSendResult,
 } from './models';
 
@@ -54,6 +54,14 @@ export class ApiService {
    */
   configuration = (): Observable<AppResponse<AppConfiguration>> =>
     this.http.get<AppResponse<AppConfiguration>>(`${this.base}configuration`,
+      { context: new HttpContext().set(SKIP_AUTH_HANDLING, true) });
+
+  /**
+   * The public page behind a rider's shared trip link. Anonymous — the person
+   * following the ride has no account — so it skips the auth interceptors.
+   */
+  sharedTrip = (token: string): Observable<AppResponse<SharedTrip>> =>
+    this.http.get<AppResponse<SharedTrip>>(`${this.base}share/${encodeURIComponent(token)}`,
       { context: new HttpContext().set(SKIP_AUTH_HANDLING, true) });
 
   updateConfiguration = (body: AppConfiguration): Observable<AppResponse<AppConfiguration>> =>

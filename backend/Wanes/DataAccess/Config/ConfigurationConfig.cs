@@ -19,5 +19,11 @@ public class AppConfigurationConfig : IEntityTypeConfiguration<AppConfiguration>
         b.Property(x => x.SupportEmail).HasMaxLength(256);
         b.Property(x => x.SupportWebsite).HasMaxLength(512);
         b.Property(x => x.SupportHours).HasMaxLength(200);
+
+        // Safety. The existing row picks up the shipped defaults from the
+        // migration's column defaults, not from here — a model default on a
+        // bool would stop EF ever writing `false`.
+        b.Property(x => x.EmergencyNumber).HasMaxLength(16).IsRequired();
+        b.Property(x => x.ShareBaseUrl).HasMaxLength(512);
     }
 }

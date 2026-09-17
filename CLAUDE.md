@@ -38,6 +38,18 @@ change). §22 of the doc maps every rule to its file and records how the demand 
 migrated — including the one place an id changes, at trip formation, where
 `RideRequest.MatchedTripId` is the only thread across.
 
+**The shared, scheduled marketplace (§26 of the doc) sits on top of v2.** Offers
+state that the trip is shared and how many seats it opens, and may be conditional.
+Requests leaving within the hour are still first-offer-wins; later ones collect
+offers for `ScheduledSelectionWindowMinutes` and riders may choose. Driver
+cancellations are recorded (free / counted / late) with a reason, and enough points
+pause instant work; a cancelled trip formed from demand re-queues its riders.
+Boarding codes, trip links and the SOS flow live in `Services/Safety`; reliability,
+route alerts, agreements and re-queuing in `Services/Marketplace`. The test settings
+double deliberately ships `ScheduledSelectionWindowMinutes = 0` and
+`BoardingCodeRequired = false` (production: 20 and true) so formation and tracking
+tests are not about those features — the tests for them turn them on.
+
 ## Toolchain
 
 - **Flutter is not on PATH** — always call `C:\flutter\bin\flutter.bat`.

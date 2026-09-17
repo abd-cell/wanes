@@ -1,4 +1,4 @@
-using Wanes.Areas.Domain.Bookings;
+﻿using Wanes.Areas.Domain.Bookings;
 using Wanes.Areas.Domain.RiderTrips;
 using Wanes.Areas.Domain.RideRequests;
 using Wanes.Areas.Domain.Trips;
@@ -31,11 +31,7 @@ public class DriverAvailabilityTests
     private const int RiderId = 5;
 
     private static TripService Trips(FakeUnitOfWork uow, int driverId = DriverId) =>
-        new(uow, new FakeSecurityManager(driverId), new FakeAuditService(), new FakeNotificationService(),
-            new DriverAvailabilityService(uow.Repository<Trip>(), new FakeSecurityManager()),
-            new FakeAppConfigurationService(),
-            uow.Repository<Trip>(), uow.Repository<TripStatusHistory>(), uow.Repository<Vehicle>(),
-            uow.Repository<User>(), uow.Repository<Booking>());
+        Make.Trips(uow, driverId);
 
     private static RideRequestService Requests(FakeUnitOfWork uow, int driverId = DriverId) =>
         Make.Requests(uow, driverId);
@@ -177,7 +173,7 @@ public class DriverAvailabilityTests
         uow.Store<Trip>().Add(Held(10, TripStatus.Active, minutesAhead: -20));
         OpenRequest(uow);
 
-        var res = await Interests(uow).ExpressInterest(30);
+        var res = await Interests(uow).ExpressInterest(30, Offer.Shared());
 
         Assert.False(res.Success);
         Assert.Equal(ErrorCode.DriverOnActiveTrip, res.ErrorCode);
@@ -193,7 +189,7 @@ public class DriverAvailabilityTests
         uow.Store<Trip>().Add(Held(10, TripStatus.Posted, minutesAhead: 125));
         OpenRequest(uow);
 
-        var res = await Interests(uow).ExpressInterest(30);
+        var res = await Interests(uow).ExpressInterest(30, Offer.Shared());
 
         Assert.False(res.Success);
         Assert.Equal(ErrorCode.DriverTripTimeConflict, res.ErrorCode);
@@ -206,7 +202,7 @@ public class DriverAvailabilityTests
         uow.Store<Trip>().Add(Held(10, TripStatus.Posted, minutesAhead: 480));
         OpenRequest(uow);
 
-        var res = await Interests(uow).ExpressInterest(30);
+        var res = await Interests(uow).ExpressInterest(30, Offer.Shared());
 
         Assert.True(res.Success);
         Assert.Equal(TripStatus.Posted, uow.Store<Trip>()[0].Status);

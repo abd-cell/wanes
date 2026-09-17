@@ -51,6 +51,22 @@ public class User : AuditableEntity
     public int TripsAsRider { get; set; }
     public int TripsAsDriver { get; set; }
 
+    // reliability — denormalised from ReliabilityEvent, net of waivers, so a
+    // trip card can show a completion rate without a query per row.
+
+    /// <summary>Counted and late cancellations of trips riders depended on.</summary>
+    public int DriverCancellations { get; set; }
+
+    public int RiderLateCancels { get; set; }
+    public int RiderNoShows { get; set; }
+
+    /// <summary>
+    /// While set in the future the driver may not take instant requests. Set
+    /// when their record crosses the admin's threshold; cleared by time or by
+    /// an admin waiving the entries behind it.
+    /// </summary>
+    public DateTime? SuspendedUntil { get; set; }
+
     // preferences
     public Language Language { get; set; } = Language.En;
     public AppTheme Theme { get; set; } = AppTheme.System;

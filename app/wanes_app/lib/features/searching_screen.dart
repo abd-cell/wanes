@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
+import '../core/app_config.dart';
+import '../core/departure_label.dart';
 import '../core/error_messages.dart';
 import '../core/l10n.dart';
 import '../core/sse_client.dart';
@@ -13,6 +15,7 @@ import '../widgets/wanes_alerts.dart';
 import '../widgets/wanes_motion.dart';
 import '../widgets/wanes_ui.dart';
 import 'live_trip_screen.dart';
+import 'ride_offers_screen.dart';
 
 /// Waiting for a driver — prototype screen 04, re-pointed at the posting the
 /// rider just made. The map pings out from their pin while nearby drivers are
@@ -99,6 +102,11 @@ class _SearchingScreenState extends State<SearchingScreen>
 
   bool _accepted = false;
 
+  /// Offers collected on a planned request, which the rider may compare.
+  int _offers = 0;
+  DateTime? _decideAt;
+  Timer? _offerPoll;
+
   /// Set when the server closed the hail out from under us — the rider took too
   /// long, or an admin ended it. Distinct from [_accepted], and from the local
   /// countdown, which is only ever an estimate of the same thing.
@@ -116,6 +124,36 @@ class _SearchingScreenState extends State<SearchingScreen>
       setState(() => _left = _expiresAt.difference(DateTime.now()));
     });
     _listenForAccept();
+    // A planned request collects offers instead of forming on the first one.
+    // The push says so, but a poll keeps the count honest if it was missed.
+    _refreshOffers();
+    _offerPoll = Timer.periodic(const Duration(seconds: 20), (_) => _refreshOffers());
+  }
+
+  Future<void> _refreshOffers() async {
+    final id = widget.riderTripId;
+    if (id == null || _accepted) return;
+    final res = await _riderTrips.get(id);
+    if (!mounted || !res.success || res.data == null) return;
+    final row = res.data!;
+    setState(() {
+      _offers = row.interestCount;
+      _decideAt = row.decideAt;
+    });
+  }
+
+  bool get _canCompare =>
+      AppConfigController.value.riderOfferChoice &&
+      _offers > 0 &&
+      _decideAt != null &&
+      _decideAt!.isAfter(DateTime.now());
+
+  Future<void> _compare() async {
+    final id = widget.riderTripId;
+    if (id == null) return;
+    await Navigator.push(
+        context, MaterialPageRoute(builder: (_) => RideOffersScreen(rideRequestId: id)));
+    if (mounted) _refreshOffers();
   }
 
   Future<void> _listenForAccept() async {
@@ -137,6 +175,14 @@ class _SearchingScreenState extends State<SearchingScreen>
             _left = Duration.zero;
           });
         }
+        return;
+      }
+
+      // A driver offered on this planned request: there is something to compare.
+      if (event['type'] == 'RideRequest') {
+        final data = event['data'];
+        final id = data is Map<String, dynamic> ? (data['rideRequestId'] as num?)?.toInt() : null;
+        if (id == widget.riderTripId) _refreshOffers();
         return;
       }
 
@@ -237,6 +283,7 @@ class _SearchingScreenState extends State<SearchingScreen>
   @override
   void dispose() {
     _locationPoll?.cancel();
+    _offerPoll?.cancel();
     _bob.dispose();
     _timer?.cancel();
     _sseSub?.cancel();
@@ -244,10 +291,8 @@ class _SearchingScreenState extends State<SearchingScreen>
     super.dispose();
   }
 
-  String get _clock {
-    if (_left.isNegative) return '0:00';
-    return '${_left.inMinutes}:${(_left.inSeconds % 60).toString().padLeft(2, '0')}';
-  }
+  /// Time to departure — "12:05", "3h 7m" or "1d 3h" (see [untilLabel]).
+  String get _clock => _left.isNegative ? '0:00' : untilLabel(context, _left);
 
   bool get _expired => !_accepted && (_closed || _left.isNegative);
 
@@ -307,6 +352,14 @@ class _SearchingScreenState extends State<SearchingScreen>
             if (!_accepted && !_expired) ...[
               const SizedBox(height: 16),
               _notifiedRow(t),
+            ],
+            if (!_accepted && !_expired && _canCompare) ...[
+              const SizedBox(height: 12),
+              PrimaryButton(
+                label: context.trPlural('offers.compare', _offers),
+                arrow: true,
+                onPressed: _compare,
+              ),
             ],
             const SizedBox(height: 14),
             if (_accepted)

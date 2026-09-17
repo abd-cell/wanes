@@ -1,3 +1,4 @@
+using Wanes.Areas.Services.Marketplace.Models;
 using Wanes.Areas.Services.RideRequests.Models;
 using Wanes.Shareds.Attributes;
 using Wanes.Shareds.Models;
@@ -44,4 +45,13 @@ public interface IDriverInterestService
     /// where offers accumulate.
     /// </summary>
     Task<int> SelectDue();
+
+    /// <summary>The live offers on a request, for its riders to compare. Participants only.</summary>
+    Task<BaseResponse<List<OfferRow>>> GetOffers(int requestId);
+
+    /// <summary>
+    /// A rider picking one of the collected offers. Forms the trip with that
+    /// driver at once, if they are still free to take it.
+    /// </summary>
+    Task<BaseResponse<RideRequestRow>> ChooseOffer(int requestId, int interestId);
 }

@@ -130,6 +130,41 @@ public static class NotificationTexts
             "Another driver was chosen", "{origin} -> {destination} went to someone else this time.",
             "تم اختيار سائق آخر", "طلب {origin} إلى {destination} ذهب لسائق آخر هذه المرة."),
 
+        [NotificationTemplate.RideRequestMatchedGatheringRider] = new(
+            NotificationType.DriverAccepted,
+            "A driver will take your ride", "{name} runs it once {min} passengers are in. Your seat is held.",
+            "سائق سيأخذ رحلتك", "{name} سينطلق عند اكتمال {min} ركاب. مقعدك محجوز."),
+
+        [NotificationTemplate.TripCancelledReopenedRider] = new(
+            NotificationType.TripCancelled,
+            "Your driver cancelled", "We put {origin} -> {destination} back on the market and are finding you another driver.",
+            "ألغى السائق رحلتك", "أعدنا طلب {origin} إلى {destination} إلى السوق ونبحث لك عن سائق آخر."),
+
+        [NotificationTemplate.DemandAlertMatchedDriver] = new(
+            NotificationType.DemandAlert,
+            "{seats} passengers want your route", "{origin} -> {destination} is ready to fill your car.",
+            "{seats} ركاب على طريقك", "طلب {origin} إلى {destination} جاهز ليملأ سيارتك."),
+
+        [NotificationTemplate.ReliabilityWarningDriver] = new(
+            NotificationType.Reliability,
+            "Cancellations add up", "You have {points} cancellation points. At {limit}, instant requests pause for {days} days.",
+            "الإلغاءات تتراكم", "لديك {points} نقاط إلغاء. عند {limit} تتوقف الطلبات الفورية لمدة {days} أيام."),
+
+        [NotificationTemplate.ReliabilitySuspendedDriver] = new(
+            NotificationType.Reliability,
+            "Instant requests paused", "Too many cancellations. You can still take scheduled trips; instant requests resume {until}.",
+            "توقفت الطلبات الفورية", "إلغاءات كثيرة. ما زال بإمكانك أخذ الرحلات المجدولة؛ تعود الطلبات الفورية في {until}."),
+
+        [NotificationTemplate.SafetyIncidentAdmin] = new(
+            NotificationType.SafetyIncident,
+            "Safety alert: {kind}", "{name} raised a {kind}. Open the safety queue now.",
+            "تنبيه سلامة: {kind}", "{name} أرسل {kind}. افتح قائمة السلامة الآن."),
+
+        [NotificationTemplate.OfferChosenDriver] = new(
+            NotificationType.DriverAccepted,
+            "The riders chose you", "{origin} -> {destination} is yours — check your trips.",
+            "اختارك الركاب", "رحلة {origin} إلى {destination} أصبحت لك — راجع رحلاتك."),
+
         [NotificationTemplate.DriverVerified] = new(
             NotificationType.DriverVerified,
             "You are approved to drive",

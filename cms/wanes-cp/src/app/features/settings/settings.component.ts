@@ -278,6 +278,15 @@ export class SettingsComponent implements OnInit {
       this.global.errorMsg(this.translation.translate('cfg_invalid_email'));
       return;
     }
+    const shareUrl = (m.shareBaseUrl ?? '').trim();
+    if (shareUrl && !/^https?:\/\/\S+$/.test(shareUrl)) {
+      this.global.errorMsg(this.translation.translate('cfg_invalid_website'));
+      return;
+    }
+    if (!/^\+?[0-9]{2,15}$/.test((m.emergencyNumber ?? '').trim())) {
+      this.global.errorMsg(this.translation.translate('cfg_invalid_emergency'));
+      return;
+    }
     const website = (m.supportWebsite ?? '').trim();
     if (website && !/^https?:\/\/\S+$/.test(website)) {
       this.global.errorMsg(this.translation.translate('cfg_invalid_website'));
@@ -315,6 +324,16 @@ export class SettingsComponent implements OnInit {
         supportEmail: email,
         supportWebsite: website,
         supportHours: (m.supportHours ?? '').trim(),
+        scheduledSelectionWindowMinutes:
+          SELECTION_WINDOW_BOUNDS.clamp(Number(m.scheduledSelectionWindowMinutes)),
+        freeCancelGraceMinutes: Math.min(60, Math.max(0, Math.round(Number(m.freeCancelGraceMinutes) || 0))),
+        lateCancelLeadMinutes: Math.min(1440, Math.max(0, Math.round(Number(m.lateCancelLeadMinutes) || 0))),
+        reliabilityWarnPoints: Math.min(100, Math.max(1, Math.round(Number(m.reliabilityWarnPoints) || 1))),
+        reliabilitySuspendPoints: Math.min(100, Math.max(1, Math.round(Number(m.reliabilitySuspendPoints) || 1))),
+        reliabilityWindowDays: Math.min(365, Math.max(1, Math.round(Number(m.reliabilityWindowDays) || 1))),
+        suspensionDays: Math.min(90, Math.max(0, Math.round(Number(m.suspensionDays) || 0))),
+        emergencyNumber: (m.emergencyNumber ?? '').trim() || '911',
+        shareBaseUrl: (m.shareBaseUrl ?? '').trim(),
       });
       if (saved) {
         // The server normalises the hex, so mirror what it stored rather than

@@ -1,4 +1,4 @@
-using Wanes.Areas.Domain.Bookings;
+﻿using Wanes.Areas.Domain.Bookings;
 using Wanes.Areas.Domain.RideRequests;
 using Wanes.Areas.Domain.Trips;
 using Wanes.Areas.Domain.Users;
@@ -68,7 +68,7 @@ public class FarePricingTests
         var uow = Scene();
 
         var res = await Interests(uow, new FakeAppConfigurationService())
-            .ExpressInterest(30, new ExpressInterestInput { PricePerSeat = 7.25m });
+            .ExpressInterest(30, new ExpressInterestInput { AcceptSharedTrip = true, PricePerSeat = 7.25m });
 
         Assert.True(res.Success);
         Assert.Equal(7.25m, Assert.Single(uow.Store<Trip>()).PricePerSeat);
@@ -83,7 +83,7 @@ public class FarePricingTests
         var config = new FakeAppConfigurationService { FareBaseAmount = 50m, FarePerKm = 10m };
         var uow = Scene();
 
-        await Interests(uow, config).ExpressInterest(30, new ExpressInterestInput { PricePerSeat = 2m });
+        await Interests(uow, config).ExpressInterest(30, new ExpressInterestInput { AcceptSharedTrip = true, PricePerSeat = 2m });
 
         Assert.Equal(2m, Assert.Single(uow.Store<Trip>()).PricePerSeat);
     }
@@ -97,7 +97,7 @@ public class FarePricingTests
         var uow = Scene();
 
         await Interests(uow, new FakeAppConfigurationService())
-            .ExpressInterest(30, new ExpressInterestInput { PricePerSeat = 0m });
+            .ExpressInterest(30, new ExpressInterestInput { AcceptSharedTrip = true, PricePerSeat = 0m });
 
         Assert.Equal(0m, Assert.Single(uow.Store<Trip>()).PricePerSeat);
     }
@@ -108,7 +108,7 @@ public class FarePricingTests
         var uow = Scene();
 
         await Interests(uow, new FakeAppConfigurationService())
-            .ExpressInterest(30, new ExpressInterestInput { PricePerSeat = -5m });
+            .ExpressInterest(30, new ExpressInterestInput { AcceptSharedTrip = true, PricePerSeat = -5m });
 
         Assert.Equal(0m, Assert.Single(uow.Store<Trip>()).PricePerSeat);
     }
@@ -119,7 +119,7 @@ public class FarePricingTests
         var uow = Scene();
 
         await Interests(uow, new FakeAppConfigurationService())
-            .ExpressInterest(30, new ExpressInterestInput { PricePerSeat = 3.456m });
+            .ExpressInterest(30, new ExpressInterestInput { AcceptSharedTrip = true, PricePerSeat = 3.456m });
 
         Assert.Equal(3.46m, Assert.Single(uow.Store<Trip>()).PricePerSeat);
     }
@@ -132,7 +132,7 @@ public class FarePricingTests
         var config = new FakeAppConfigurationService { FareBaseAmount = 3m, FarePerKm = 0.5m };
         var uow = Scene();
 
-        var res = await Interests(uow, config).ExpressInterest(30);
+        var res = await Interests(uow, config).ExpressInterest(30, Offer.Shared());
 
         Assert.True(res.Success);
         var trip = Assert.Single(uow.Store<Trip>());
@@ -226,7 +226,7 @@ public class FarePricingTests
     private static async Task<decimal?> PriceWith(FakeAppConfigurationService config)
     {
         var uow = Scene();
-        var res = await Interests(uow, config).ExpressInterest(30);
+        var res = await Interests(uow, config).ExpressInterest(30, Offer.Shared());
         Assert.True(res.Success);
         return Assert.Single(uow.Store<Trip>()).PricePerSeat;
     }

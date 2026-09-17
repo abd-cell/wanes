@@ -141,8 +141,15 @@ class AppConfig {
     this.confirmDecisionLeadMinutes = 15,
     this.minimumPassengersDefault = 3,
     this.averageSpeedKmh = 35,
-    this.fareBaseAmount = 2.50,
-    this.farePerKm = 1.20,
+    this.fareBaseAmount = 0.50,
+    this.farePerKm = 0.10,
+    this.scheduledSelectionWindowMinutes = 20,
+    this.riderOfferChoice = true,
+    this.boardingCodeRequired = true,
+    this.lateCancelLeadMinutes = 120,
+    this.freeCancelGraceMinutes = 3,
+    this.emergencyNumber = '911',
+    this.shareBaseUrl = '',
     this.supportPhone = '',
     this.supportWhatsApp = '',
     this.supportEmail = '',
@@ -215,6 +222,27 @@ class AppConfig {
   final double fareBaseAmount;
   final double farePerKm;
 
+  // ── Shared marketplace, reliability, safety ──
+
+  /// How long a request leaving later than the hour collects offers.
+  final int scheduledSelectionWindowMinutes;
+
+  /// Riders may pick an offer themselves while the window is open.
+  final bool riderOfferChoice;
+
+  /// The driver must type the rider's code to mark them aboard.
+  final bool boardingCodeRequired;
+
+  /// A cancellation closer than this to departure is late.
+  final int lateCancelLeadMinutes;
+  final int freeCancelGraceMinutes;
+
+  /// The number the SOS button dials.
+  final String emergencyNumber;
+
+  /// Where trip links point (the public web host), or empty.
+  final String shareBaseUrl;
+
   // ── Support contact ──
   //
   // Empty means "the admin hasn't configured this channel". Null from the API
@@ -270,6 +298,18 @@ class AppConfig {
         fareBaseAmount:
             (json['fareBaseAmount'] as num?)?.toDouble() ?? fallback.fareBaseAmount,
         farePerKm: (json['farePerKm'] as num?)?.toDouble() ?? fallback.farePerKm,
+        scheduledSelectionWindowMinutes: (json['scheduledSelectionWindowMinutes'] as num?)?.toInt() ??
+            fallback.scheduledSelectionWindowMinutes,
+        riderOfferChoice: json['riderOfferChoice'] as bool? ?? fallback.riderOfferChoice,
+        boardingCodeRequired: json['boardingCodeRequired'] as bool? ?? fallback.boardingCodeRequired,
+        lateCancelLeadMinutes:
+            (json['lateCancelLeadMinutes'] as num?)?.toInt() ?? fallback.lateCancelLeadMinutes,
+        freeCancelGraceMinutes:
+            (json['freeCancelGraceMinutes'] as num?)?.toInt() ?? fallback.freeCancelGraceMinutes,
+        emergencyNumber: _text(json['emergencyNumber']).isEmpty
+            ? fallback.emergencyNumber
+            : _text(json['emergencyNumber']),
+        shareBaseUrl: _text(json['shareBaseUrl']),
         supportPhone: _text(json['supportPhone']),
         supportWhatsApp: _text(json['supportWhatsApp']),
         supportEmail: _text(json['supportEmail']),
@@ -287,8 +327,16 @@ class AppConfig {
         'confirmCutoffMinutes': confirmCutoffMinutes,
         'confirmDecisionLeadMinutes': confirmDecisionLeadMinutes,
         'averageSpeedKmh': averageSpeedKmh,
+        'minimumPassengersDefault': minimumPassengersDefault,
         'fareBaseAmount': fareBaseAmount,
         'farePerKm': farePerKm,
+        'scheduledSelectionWindowMinutes': scheduledSelectionWindowMinutes,
+        'riderOfferChoice': riderOfferChoice,
+        'boardingCodeRequired': boardingCodeRequired,
+        'lateCancelLeadMinutes': lateCancelLeadMinutes,
+        'freeCancelGraceMinutes': freeCancelGraceMinutes,
+        'emergencyNumber': emergencyNumber,
+        'shareBaseUrl': shareBaseUrl,
         'supportPhone': supportPhone,
         'supportWhatsApp': supportWhatsApp,
         'supportEmail': supportEmail,
@@ -330,7 +378,29 @@ class Profile {
     this.isRider = true,
     this.isDriver = false,
     this.theme = AppTheme.system,
+    this.emergencyContactName,
+    this.emergencyContactPhone,
+    this.tripsAsDriver = 0,
+    this.driverCancellations = 0,
+    this.driverCompletionRate,
+    this.suspendedUntil,
   });
+
+  /// Who the SOS button messages.
+  final String? emergencyContactName;
+  final String? emergencyContactPhone;
+
+  // The driver's own reliability figures.
+  final int tripsAsDriver;
+  final int driverCancellations;
+
+  /// 0–1, or null with no history yet.
+  final double? driverCompletionRate;
+
+  /// Instant requests are paused until this passes.
+  final DateTime? suspendedUntil;
+
+  bool get isSuspended => suspendedUntil != null && suspendedUntil!.isAfter(DateTime.now());
 
   final int id;
   final String phone;
@@ -377,9 +447,21 @@ class Profile {
         isRider: j['isRider'] as bool? ?? true,
         isDriver: j['isDriver'] as bool? ?? false,
         theme: AppTheme.fromValue(j['theme'] as int?),
+        emergencyContactName: j['emergencyContactName'] as String?,
+        emergencyContactPhone: j['emergencyContactPhone'] as String?,
+        tripsAsDriver: (j['tripsAsDriver'] as num?)?.toInt() ?? 0,
+        driverCancellations: (j['driverCancellations'] as num?)?.toInt() ?? 0,
+        driverCompletionRate: (j['driverCompletionRate'] as num?)?.toDouble(),
+        suspendedUntil: parseServerDate(j['suspendedUntil'] as String?),
       );
 
   Map<String, dynamic> toJson() => {
+        'emergencyContactName': emergencyContactName,
+        'emergencyContactPhone': emergencyContactPhone,
+        'tripsAsDriver': tripsAsDriver,
+        'driverCancellations': driverCancellations,
+        'driverCompletionRate': driverCompletionRate,
+        'suspendedUntil': suspendedUntil?.toUtc().toIso8601String(),
         'id': id,
         'phone': phone,
         'firstName': firstName,
@@ -449,11 +531,19 @@ class Trip {
     this.genderPolicy = GenderPolicy.any,
     this.minAge,
     this.maxAge,
+    this.driverTrips = 0,
+    this.driverCompletionRate,
   });
 
   final int id;
   final String driverName;
   final double driverRating;
+
+  /// Trips the driver completed, and the share of accepted trips they did not
+  /// cancel (0–1, null for a newcomer).
+  final int driverTrips;
+  final double? driverCompletionRate;
+
   final int vehicleId;
 
   /// "Toyota Prius" / "Silver" / "WNS-4021" — shown to the rider on the
@@ -557,6 +647,8 @@ class Trip {
         id: j['id'] as int,
         driverName: j['driverName'] as String? ?? 'Driver',
         driverRating: (j['driverRating'] as num?)?.toDouble() ?? 0,
+        driverTrips: (j['driverTrips'] as num?)?.toInt() ?? 0,
+        driverCompletionRate: (j['driverCompletionRate'] as num?)?.toDouble(),
         vehicleId: j['vehicleId'] as int? ?? 0,
         vehicleLabel: j['vehicleLabel'] as String? ?? '',
         vehicleColor: j['vehicleColor'] as String? ?? '',
@@ -708,7 +800,20 @@ class RiderTrip {
     this.iHaveOffered = false,
     this.distanceKm = 0,
     this.suggestedPricePerSeat = 0,
+    this.decideAt,
+    this.reopenedFromRequestId,
   });
+
+  /// When the collected offers are decided — in the future while a scheduled
+  /// request is still comparing drivers, null before the first offer.
+  final DateTime? decideAt;
+
+  /// The request this one replaced after its driver cancelled.
+  final int? reopenedFromRequestId;
+
+  /// Offers are in and the riders may still compare them.
+  bool get isComparingOffers =>
+      isOpen && interestCount > 0 && decideAt != null && decideAt!.isAfter(DateTime.now());
 
   final int id;
   final int riderId;
@@ -831,6 +936,8 @@ class RiderTrip {
         status: j['status'] as int? ?? 1,
         distanceKm: (j['distanceKm'] as num?)?.toDouble() ?? 0,
         suggestedPricePerSeat: (j['suggestedPricePerSeat'] as num?)?.toDouble() ?? 0,
+        decideAt: parseServerDate(j['decideAt'] as String?),
+        reopenedFromRequestId: (j['reopenedFromRequestId'] as num?)?.toInt(),
       );
 }
 
@@ -1074,12 +1181,21 @@ class Booking {
     this.pricePerSeat,
     this.minSeatsToConfirm = 1,
     this.seatsHeld = 0,
+    this.boardingCode,
+    this.hasShareLink = false,
   });
 
   final int id;
   final int tripId;
   final int riderId;
   final int seats;
+
+  /// The four digits the rider reads to the driver at pickup. Sent only while
+  /// it is useful: the seat is committed and the rider is not aboard yet.
+  final String? boardingCode;
+
+  /// The rider has a live "follow my trip" link out.
+  final bool hasShareLink;
 
   /// Mirrors the server's `BookingStatus`: 1 Pending · 2 Confirmed ·
   /// 3 InProgress · 4 Completed · 5 Cancelled · 6 Arrived · 7 NoShow.
@@ -1182,6 +1298,8 @@ class Booking {
         minSeatsToConfirm: j['minSeatsToConfirm'] as int? ?? 1,
         seatsHeld: j['seatsHeld'] as int? ?? 0,
         driverPhone: (j['driverPhone'] as String?)?.trim(),
+        boardingCode: (j['boardingCode'] as String?)?.trim(),
+        hasShareLink: j['hasShareLink'] as bool? ?? false,
       );
 }
 
@@ -1501,6 +1619,19 @@ enum NotificationKind {
   /// (`NotificationType.ConfirmDecision`).
   confirmDecision('ConfirmDecision'),
 
+  /// Something moved on a ride request — a rider joined, a driver offered
+  /// (`NotificationType.RideRequest`).
+  rideRequest('RideRequest'),
+
+  /// A driver's route alert or request watch reached their seat count.
+  demandAlert('DemandAlert'),
+
+  /// The user's reliability record changed — a warning, a pause.
+  reliability('Reliability'),
+
+  /// A safety report, for admins.
+  safetyIncident('SafetyIncident'),
+
   general('General');
 
   const NotificationKind(this.wire);
@@ -1561,6 +1692,12 @@ class AppNotification {
   int? get tripId => _int('tripId');
   int? get bookingId => _int('bookingId');
   int? get requestId => _int('requestId');
+
+  /// The demand the notification is about (`rideRequestId` in the payload).
+  int? get rideRequestId => _int('rideRequestId');
+
+  /// Present only on "a driver offered" — the request is comparing offers.
+  bool get carriesOfferWindow => data?['decideAt'] != null;
   int? get feedbackId => _int('feedbackId');
 
   int? _int(String key) {

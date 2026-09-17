@@ -1,9 +1,11 @@
 using Microsoft.EntityFrameworkCore;
 using Wanes.Areas.Domain.Bookings;
+using Wanes.Areas.Domain.Marketplace;
 using Wanes.Areas.Domain.Trips;
 using Wanes.Areas.Domain.Users;
 using Wanes.Areas.Services.Audit;
 using Wanes.Areas.Services.Bookings.Models;
+using Wanes.Areas.Services.Marketplace;
 using Wanes.Areas.Services.Notifications;
 using Wanes.Areas.Services.Trips;
 using Wanes.Areas.Services.Users.Availability;
@@ -25,6 +27,7 @@ public class BookingService : IBookingService
     private readonly INotificationService notificationService;
     private readonly ITripConfirmationService tripConfirmationService;
     private readonly IRiderAvailabilityService riderAvailabilityService;
+    private readonly IReliabilityService reliabilityService;
     private readonly IRepository<Booking> bookingRepository;
     private readonly IRepository<Trip> tripRepository;
     private readonly IRepository<User> userRepository;
@@ -36,6 +39,7 @@ public class BookingService : IBookingService
         INotificationService notificationService,
         ITripConfirmationService tripConfirmationService,
         IRiderAvailabilityService riderAvailabilityService,
+        IReliabilityService reliabilityService,
         IRepository<Booking> bookingRepository,
         IRepository<Trip> tripRepository,
         IRepository<User> userRepository)
@@ -46,6 +50,7 @@ public class BookingService : IBookingService
         this.notificationService = notificationService;
         this.tripConfirmationService = tripConfirmationService;
         this.riderAvailabilityService = riderAvailabilityService;
+        this.reliabilityService = reliabilityService;
         this.bookingRepository = bookingRepository;
         this.tripRepository = tripRepository;
         this.userRepository = userRepository;
@@ -180,6 +185,8 @@ public class BookingService : IBookingService
                 RiderId = riderId,
                 Seats = seats,
                 Status = meetsThreshold ? BookingStatus.Confirmed : BookingStatus.Pending,
+                BoardingCode = BoardingCodes.New(),
+                SharedTermsAcceptedAt = input.AcceptSharedRide == true ? DateTime.UtcNow : null,
             };
             bookingRepository.Create(booking);
 
@@ -291,6 +298,10 @@ public class BookingService : IBookingService
 
             await unitOfWork.CommitAsync();
             await auditService.LogAsync(AuditActions.BookingCancel, nameof(Booking), booking.Id);
+
+            // Giving a seat back late leaves a driver short with no time to
+            // refill it — recorded, as a driver's late cancellation is.
+            if (trip?.DriverId != null) await reliabilityService.RecordRiderCancel(booking, trip);
 
             // The driver is the one who needs to know a seat came back.
             // Nobody to tell when nobody is driving it yet: the rider simply

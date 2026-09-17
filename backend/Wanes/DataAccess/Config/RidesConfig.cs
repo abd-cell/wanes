@@ -84,6 +84,7 @@ public class RideRequestConfig : IEntityTypeConfiguration<RideRequest>
 
         // The selection sweep: open requests whose window is due.
         b.HasIndex(x => new { x.Status, x.FirstInterestAt });
+        b.HasIndex(x => new { x.Status, x.DecideAt });
 
         // Restrict, not Cascade: the trip a request became is the only thread
         // back to the ride, and deleting a trip must not quietly erase the
@@ -152,6 +153,12 @@ public class BookingConfig : IEntityTypeConfiguration<Booking>
             .OnDelete(DeleteBehavior.Restrict);
         b.HasOne(x => x.Rider).WithMany().HasForeignKey(x => x.RiderId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        b.Property(x => x.BoardingCode).HasMaxLength(8);
+        b.Property(x => x.ShareToken).HasMaxLength(64);
+
+        // The public trip link looks bookings up by token.
+        b.HasIndex(x => x.ShareToken).IsUnique().HasFilter("[ShareToken] IS NOT NULL");
 
         // One live seat per rider per trip. Filtered rather than absolute: a
         // rider who left and thought better of it may take a seat again, and the

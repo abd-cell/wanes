@@ -54,7 +54,7 @@ public class AdminBookingService : IAdminBookingService
 
     public async Task<BaseResponse<BookingRow>> Create(BookingInput input)
     {
-        var booking = new Booking();
+        var booking = new Booking { BoardingCode = Wanes.Areas.Domain.Marketplace.BoardingCodes.New() };
         Apply(booking, input);
         bookingRepository.Create(booking);
         await unitOfWork.SaveAsync();

@@ -10,6 +10,12 @@ export const routes: Routes = [
       import('./components/lang-wrapper.component').then((m) => m.LangWrapperComponent),
     children: [
       {
+        // Public: a rider's "follow my trip" link. No sign-in — the token is the access.
+        path: 'share/:token',
+        loadComponent: () =>
+          import('./features/share/shared-trip.component').then((m) => m.SharedTripComponent),
+      },
+      {
         path: 'login',
         canActivate: [loggedInGuard],
         loadComponent: () => import('./features/auth/login.component').then((m) => m.LoginComponent),

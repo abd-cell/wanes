@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../../core/departure_label.dart';
+import '../../core/driver_position.dart';
 import '../../core/fare.dart';
 import '../../core/geo.dart';
 import '../../core/l10n.dart';
@@ -12,10 +14,11 @@ import '../../core/theme.dart';
 import '../../models/models.dart';
 import '../../services/services.dart';
 import '../../widgets/map_backdrop.dart';
-import '../../widgets/accept_price_sheet.dart';
+import '../../widgets/safety_notes.dart';
 import '../../widgets/wanes_alerts.dart';
 import '../../widgets/wanes_ui.dart';
 import '../../widgets/wanes_motion.dart';
+import 'accept_flow.dart';
 
 /// Incoming ride request — prototype screen 10. The map fills the screen and
 /// the top hail sits in a bottom sheet with its countdown ring; declining
@@ -30,7 +33,7 @@ class RequestsScreen extends StatefulWidget {
 class _RequestsScreenState extends State<RequestsScreen> {
   final _service = RiderTripService();
   final _presence = PresenceService();
-  final Place _here = kPlaces.first;
+  Place _here = DriverPosition.last ?? kPlaces.first;
 
   List<RiderTrip> _list = [];
   final Set<int> _declined = {};
@@ -76,6 +79,8 @@ class _RequestsScreenState extends State<RequestsScreen> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
+    // Opening the board is an explicit act, so it may ask for location.
+    _here = await DriverPosition.resolve(prompt: true);
     await _presence.updateLocation(_here.lat, _here.lng, online: true);
     final res = await _service.nearby(_here.lat, _here.lng);
     if (!mounted) return;
@@ -92,34 +97,13 @@ class _RequestsScreenState extends State<RequestsScreen> {
       .toList();
 
   Future<void> _claim(RiderTrip r) async {
-    // A hail carries no price, so the driver names one before they commit. The
-    // sheet opens on the same distance estimate the card shows, so this is a
-    // figure they confirm rather than invent against the countdown.
-    final price = await showAcceptPriceSheet(
-      context,
-      suggestion: Fare.perSeat(Geo.distanceKm(
-          r.originLat, r.originLng, r.destinationLat, r.destinationLng)),
-      seats: r.seatsWanted,
-    );
-    // Backing out of the sheet is declining to accept, not accepting at the
-    // suggested figure.
-    if (price == null || !mounted) return;
-
-    setState(() => _accepting = true);
-    final res = await _service.offer(r.id, pricePerSeat: price);
-    if (!mounted) return;
-    setState(() {
-      _accepting = false;
-      if (res.success) _list.removeWhere((x) => x.id == r.id);
-    });
-    if (res.success) {
-      WanesAlerts.success(context, context.tr('driver.requestAccepted'),
-          message: context.tr('driver.requestAcceptedBody'));
-    } else {
-      WanesAlerts.failure(context, res,
-          title: context.tr('driver.acceptFailed'), onRetry: () => _claim(r));
-    }
-    if (res.success && _queue.isEmpty && mounted) Navigator.pop(context);
+    // A request carries no price, so the driver names one — and agrees the
+    // trip is shared — before they commit. See [acceptRideRequest].
+    final ok = await acceptRideRequest(context, r,
+        onBusy: (busy) => mounted ? setState(() => _accepting = busy) : null);
+    if (!ok || !mounted) return;
+    setState(() => _list.removeWhere((x) => x.id == r.id));
+    if (_queue.isEmpty) Navigator.pop(context);
   }
 
   void _decline(RiderTrip r) => setState(() => _declined.add(r.id));
@@ -257,8 +241,9 @@ class _RequestsScreenState extends State<RequestsScreen> {
                   style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: t.ink)),
               const SizedBox(height: 1),
               Text(
+                  '${context.trPlural('market.passengers', r.riderCount)} · '
                   '${context.trPlural('vehicle.seatCount', r.seatsWanted)} · '
-                  '${context.tr('driver.leavesIn', {'left': _ago(context, r.departAt)})}',
+                  '${context.tr('market.in', {'time': untilLabel(context, r.timeLeft)})}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: WanesTheme.mono(size: 11, weight: FontWeight.w500, color: t.ink2, spacing: 0)),
@@ -326,6 +311,8 @@ class _RequestsScreenState extends State<RequestsScreen> {
           ),
         ),
       ]),
+      const SizedBox(height: 4),
+      const SafetyReminder(audience: SafetyAudience.driver),
     ]);
   }
 
@@ -379,13 +366,7 @@ class _RequestsScreenState extends State<RequestsScreen> {
         ]),
       );
 
-  static String _countdownLabel(BuildContext context, Duration d) {
-    if (d.isNegative) return context.tr('units.secondsShort', {'value': 0});
-    if (d.inSeconds < 60) {
-      return context.tr('units.secondsShort', {'value': d.inSeconds});
-    }
-    return '${d.inMinutes}:${(d.inSeconds % 60).toString().padLeft(2, '0')}';
-  }
+  static String _countdownLabel(BuildContext context, Duration d) => untilLabel(context, d);
 
   static String _short(String address) => address.split(',').first.trim();
 
@@ -409,12 +390,4 @@ class _RequestsScreenState extends State<RequestsScreen> {
     return context.tr('driver.leavingAt', {'time': when});
   }
 
-  static String _ago(BuildContext context, DateTime at) {
-    final s = DateTime.now().difference(at.toLocal()).inSeconds;
-    if (s < 60) return context.tr('time.justNow');
-    final m = s ~/ 60;
-    return m < 60
-        ? context.tr('time.minutesAgo', {'value': m})
-        : context.tr('time.hoursAgo', {'value': m ~/ 60});
-  }
 }

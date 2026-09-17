@@ -118,6 +118,21 @@ public class RideRequest : AuditableEntity
     public DateTime? FirstInterestAt { get; set; }
 
     /// <summary>
+    /// When the collected offers are decided — stamped with the first offer
+    /// from <see cref="DriverSelectionRules.DecideAt"/>. Equal to
+    /// <see cref="FirstInterestAt"/> for instant work, where the first offer
+    /// wins on the spot; later for scheduled work, where riders may compare.
+    /// </summary>
+    public DateTime? DecideAt { get; set; }
+
+    /// <summary>
+    /// The matched request this one replaces, when the driver who took that one
+    /// cancelled. A terminal request never reopens; its riders are put back on
+    /// the market in a new one, and this is the thread between the two.
+    /// </summary>
+    public int? ReopenedFromRequestId { get; set; }
+
+    /// <summary>
     /// Concurrency token. Two drivers being selected for one request is the race
     /// that would give its riders two cars, and "only one may win" is not true if
     /// it is a read of <see cref="Status"/> followed by a write. Mapped as a row
@@ -172,6 +187,9 @@ public class RideRequestParticipant : AuditableEntity
     public int? MinAge { get; set; }
     public int? MaxAge { get; set; }
 
+    /// <summary>When this rider agreed the ride is shared. Null for older clients.</summary>
+    public DateTime? SharedTermsAcceptedAt { get; set; }
+
     public RideConditions Conditions => new(CoRiderGenderPolicy, MinAge, MaxAge);
 }
 
@@ -203,6 +221,21 @@ public class DriverInterest : AuditableEntity
     public string? Message { get; set; }
 
     public DriverInterestStatus Status { get; set; } = DriverInterestStatus.Interested;
+
+    /// <summary>
+    /// Seats the driver will put on the trip — at least the riders' own, at
+    /// most the car's. Null offers the whole car, as before.
+    /// </summary>
+    public int? SeatsOffered { get; set; }
+
+    /// <summary>
+    /// The conditional accept: the trip only runs once this many seats are
+    /// held. Null (or no more than the riders already on it) is unconditional.
+    /// </summary>
+    public int? MinPassengers { get; set; }
+
+    /// <summary>When the driver agreed the trip is shared and its free seats stay on sale.</summary>
+    public DateTime? SharedTermsAcceptedAt { get; set; }
 
     /// <summary>Still in the running.</summary>
     public bool IsLive => Status == DriverInterestStatus.Interested;

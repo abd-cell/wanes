@@ -46,5 +46,14 @@ public enum NotificationType
     /// </summary>
     RideRequest = 17,
 
+    /// <summary>A route alert or watched request reached the seats the driver asked for.</summary>
+    DemandAlert = 18,
+
+    /// <summary>Something on the user's reliability record changed — a warning, a pause.</summary>
+    Reliability = 19,
+
+    /// <summary>A safety report for the admin team.</summary>
+    SafetyIncident = 20,
+
     General = 100,
 }

@@ -11,6 +11,11 @@ public class TripOutput
     public int? DriverId { get; set; }
     public string? DriverName { get; set; }
     public double DriverRating { get; set; }
+
+    /// <summary>Trips the driver has completed, and the share of accepted trips they completed (0–1, null when new).</summary>
+    public int DriverTrips { get; set; }
+    public double? DriverCompletionRate { get; set; }
+
     public int? VehicleId { get; set; }
 
     /// <summary>"Toyota Prius" — shown to the rider on results/booking screens.</summary>
@@ -89,6 +94,10 @@ public class TripOutput
         DriverId = trip.DriverId;
         DriverName = driver?.DisplayName ?? driver?.FirstName;
         DriverRating = driver?.RatingAvg ?? 0;
+        DriverTrips = driver?.TripsAsDriver ?? 0;
+        DriverCompletionRate = driver == null
+            ? null
+            : Domain.Marketplace.ReliabilityRules.CompletionRate(driver.TripsAsDriver, driver.DriverCancellations);
         VehicleId = trip.VehicleId;
         if (vehicle != null)
         {

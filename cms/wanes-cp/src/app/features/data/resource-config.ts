@@ -1,7 +1,8 @@
 import {
-  ActiveRole, BookingStatus, DeviceType, DriverStatus, FaqCategory, FeedbackKind, FeedbackStatus,
-  Gender, GenderPolicy, Language, NotificationAudience, NotificationType, RatingDirection,
-  Recurrence, Roles, SavedPlaceLabel, TripStatus,
+  ActiveRole, BookingStatus, CancelReason, DeviceType, DriverStatus, FaqCategory, FeedbackKind,
+  FeedbackStatus, Gender, GenderPolicy, Language, NotificationAudience, NotificationType,
+  RatingDirection, Recurrence, ReliabilityEventKind, RideRequestStatus, Roles, SafetyIncidentKind,
+  SafetyIncidentStatus, SavedPlaceLabel, TripStatus,
 } from '../../core/api/models';
 
 export type FieldType =
@@ -83,6 +84,13 @@ export const ROLE_OPTIONS = opt(Roles, 'role');
 export const FAQ_CATEGORY = opt(FaqCategory, 'faqcategory');
 export const FEEDBACK_KIND = opt(FeedbackKind, 'feedbackkind');
 export const FEEDBACK_STATUS = opt(FeedbackStatus, 'feedbackstatus');
+export const REQUEST_STATUS = opt(RideRequestStatus, 'requeststatus');
+export const RELIABILITY_KIND = opt(ReliabilityEventKind, 'reliabilitykind');
+export const CANCEL_REASON = opt(CancelReason, 'cancelreason');
+export const SAFETY_KIND = opt(SafetyIncidentKind, 'safetykind');
+export const SAFETY_STATUS = opt(SafetyIncidentStatus, 'safetystatus');
+/** The reliability grid's review filter — the API takes 1 for "waiting on review". */
+export const NEEDS_REVIEW: EnumOption[] = [{ value: 1, labelKey: 'filter_needs_review' }];
 
 export const RESOURCES: ResourceConfig[] = [
   {
@@ -180,6 +188,29 @@ export const RESOURCES: ResourceConfig[] = [
       { name: 'maxAge', labelKey: 'col_max_age', type: 'number' },
       { name: 'status', labelKey: 'col_status', type: 'select', enum: TRIP_STATUS },
     ],
+  },
+  {
+    // Demand: journeys riders asked for that nobody is driving yet, and what
+    // became of them. Read-only but for closing one — "delete" here closes the
+    // request, and the row stays as the record.
+    key: 'ride-requests', route: 'ride-requests', titleKey: 'res_ride_requests',
+    searchable: true, canCreate: false, canEdit: false, canDelete: true,
+    columns: [
+      { field: 'id', labelKey: 'col_id' },
+      { field: 'authorName', labelKey: 'col_rider' },
+      { field: 'originAddress', labelKey: 'col_origin' },
+      { field: 'destinationAddress', labelKey: 'col_destination' },
+      { field: 'departAt', labelKey: 'col_depart', type: 'datetime' },
+      { field: 'seatsRequested', labelKey: 'col_seats' },
+      { field: 'riderCount', labelKey: 'col_riders' },
+      { field: 'interestCount', labelKey: 'col_offers' },
+      { field: 'decideAt', labelKey: 'col_decide_at', type: 'datetime' },
+      { field: 'status', labelKey: 'col_status', type: 'enum', enum: REQUEST_STATUS },
+      { field: 'matchedTripId', labelKey: 'col_matched_trip' },
+      { field: 'reopenedFromRequestId', labelKey: 'col_reopened_from' },
+    ],
+    filters: [{ name: 'status', labelKey: 'col_status', enum: REQUEST_STATUS }],
+    fields: [],
   },
   {
     key: 'bookings', route: 'bookings', titleKey: 'res_bookings',
@@ -333,6 +364,76 @@ export const RESOURCES: ResourceConfig[] = [
       { name: 'status', labelKey: 'col_status', type: 'select', enum: FEEDBACK_STATUS, required: true },
       { name: 'reply', labelKey: 'col_reply', type: 'textarea' },
     ],
+  },
+  {
+    // The safety queue. Open SOS calls come first. The team acknowledges and
+    // resolves them here, with a note; the report itself is read-only.
+    key: 'safety-incidents', route: 'safety-incidents', titleKey: 'res_safety',
+    searchable: true, canCreate: false, canEdit: true, canDelete: false,
+    columns: [
+      { field: 'id', labelKey: 'col_id' },
+      { field: 'kind', labelKey: 'col_kind', type: 'enum', enum: SAFETY_KIND },
+      { field: 'status', labelKey: 'col_status', type: 'enum', enum: SAFETY_STATUS },
+      { field: 'reporterName', labelKey: 'col_user' },
+      { field: 'reporterPhone', labelKey: 'col_phone' },
+      { field: 'tripId', labelKey: 'col_trip' },
+      { field: 'emergencyContactNotified', labelKey: 'col_contact_notified', type: 'bool' },
+      { field: 'createdAt', labelKey: 'col_created', type: 'datetime' },
+    ],
+    filters: [{ name: 'status', labelKey: 'col_status', enum: SAFETY_STATUS }],
+    fields: [
+      { name: 'reporterName', labelKey: 'col_user', type: 'readonly' },
+      { name: 'reporterPhone', labelKey: 'col_phone', type: 'readonly' },
+      { name: 'note', labelKey: 'col_message', type: 'readonly' },
+      { name: 'lat', labelKey: 'col_lat', type: 'readonly' },
+      { name: 'lng', labelKey: 'col_lng', type: 'readonly' },
+      { name: 'status', labelKey: 'col_status', type: 'select', enum: SAFETY_STATUS, required: true },
+      { name: 'adminNote', labelKey: 'col_admin_note', type: 'textarea' },
+    ],
+  },
+  {
+    // Cancellations and no-shows. Entries flagged for review — a breakdown, a
+    // safety call — are waived by saving the entry with a note; the record of
+    // what happened is never deleted.
+    key: 'reliability', route: 'reliability', titleKey: 'res_reliability',
+    searchable: true, canCreate: false, canEdit: true, canDelete: false,
+    columns: [
+      { field: 'id', labelKey: 'col_id' },
+      { field: 'userName', labelKey: 'col_user' },
+      { field: 'role', labelKey: 'col_role', type: 'enum', enum: ACTIVE_ROLE },
+      { field: 'kind', labelKey: 'col_kind', type: 'enum', enum: RELIABILITY_KIND },
+      { field: 'points', labelKey: 'col_points' },
+      { field: 'reason', labelKey: 'col_reason', type: 'enum', enum: CANCEL_REASON },
+      { field: 'ridersAffected', labelKey: 'col_riders' },
+      { field: 'minutesBeforeDeparture', labelKey: 'col_minutes_before' },
+      { field: 'needsReview', labelKey: 'col_needs_review', type: 'bool' },
+      { field: 'isWaived', labelKey: 'col_waived', type: 'bool' },
+      { field: 'createdAt', labelKey: 'col_created', type: 'datetime' },
+    ],
+    filters: [{ name: 'needsReview', labelKey: 'col_needs_review', enum: NEEDS_REVIEW }],
+    fields: [
+      { name: 'userName', labelKey: 'col_user', type: 'readonly' },
+      { name: 'note', labelKey: 'col_message', type: 'readonly' },
+      { name: 'waiveNote', labelKey: 'col_waive_note', type: 'textarea', required: true },
+    ],
+  },
+  {
+    // Drivers' route alerts and request watches — read-only, for support.
+    key: 'demand-alerts', route: 'demand-alerts', titleKey: 'res_alerts',
+    searchable: true, canCreate: false, canEdit: false, canDelete: false,
+    columns: [
+      { field: 'id', labelKey: 'col_id' },
+      { field: 'driverName', labelKey: 'col_driver' },
+      { field: 'originAddress', labelKey: 'col_origin' },
+      { field: 'destinationAddress', labelKey: 'col_destination' },
+      { field: 'minSeats', labelKey: 'col_min_seats' },
+      { field: 'radiusMeters', labelKey: 'col_radius' },
+      { field: 'rideRequestId', labelKey: 'col_watched_request' },
+      { field: 'isActive', labelKey: 'col_active', type: 'bool' },
+      { field: 'notifiedCount', labelKey: 'col_notified' },
+      { field: 'lastNotifiedAt', labelKey: 'col_last_notified', type: 'datetime' },
+    ],
+    fields: [],
   },
   {
     key: 'api-logs', route: 'api-logs', titleKey: 'res_api_logs',

@@ -1,16 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' hide TextDirection;
-import '../../core/fare.dart';
-import '../../core/geo.dart';
 import '../../core/l10n.dart';
 import '../../core/places.dart';
 import '../../core/theme.dart';
 import '../../models/models.dart';
-import '../../services/services.dart';
-import '../../widgets/wanes_alerts.dart';
 import '../../widgets/wanes_motion.dart';
 import '../../widgets/wanes_ui.dart';
-import '../../widgets/accept_price_sheet.dart';
+import 'accept_flow.dart';
 
 /// What a driver's search found — the mirror of the rider's results screen.
 ///
@@ -38,8 +34,6 @@ class RiderMatchesScreen extends StatefulWidget {
 }
 
 class _RiderMatchesScreenState extends State<RiderMatchesScreen> {
-  final _riderTrips = RiderTripService();
-
   /// A copy, not the widget's list: rows leave it as the driver takes them, and
   /// mutating what was handed in would edit the caller's own result.
   late final List<DemandMatch> _matches = [...widget.result.matches];
@@ -53,33 +47,11 @@ class _RiderMatchesScreenState extends State<RiderMatchesScreen> {
   /// so the figure is confirmed rather than invented.
   Future<void> _take(DemandMatch match) async {
     final trip = match.trip;
-    final price = await showAcceptPriceSheet(
-      context,
-      suggestion: trip.suggestedPricePerSeat > 0
-          ? trip.suggestedPricePerSeat
-          : Fare.perSeat(Geo.distanceKm(
-              trip.originLat, trip.originLng, trip.destinationLat, trip.destinationLng)),
-      seats: trip.seatsWanted,
-    );
-    // Backing out of the sheet is declining, not taking it at the suggestion.
-    if (price == null || !mounted) return;
-
-    setState(() => _busy = true);
-    final res = await _riderTrips.offer(trip.id, pricePerSeat: price);
-    if (!mounted) return;
-    setState(() {
-      _busy = false;
-      if (res.success) _matches.removeWhere((m) => m.trip.id == trip.id);
-    });
-
-    if (res.success) {
-      WanesAlerts.success(context, context.tr('driver.requestAccepted'),
-          message: context.tr('driver.requestAcceptedBody'));
-      if (_matches.isEmpty && mounted) Navigator.pop(context);
-    } else {
-      WanesAlerts.failure(context, res,
-          title: context.tr('driver.acceptFailed'), onRetry: () => _take(match));
-    }
+    final ok = await acceptRideRequest(context, trip,
+        onBusy: (busy) => mounted ? setState(() => _busy = busy) : null);
+    if (!ok || !mounted) return;
+    setState(() => _matches.removeWhere((m) => m.trip.id == trip.id));
+    if (_matches.isEmpty) Navigator.pop(context);
   }
 
   @override

@@ -1,3 +1,4 @@
+using Wanes.Areas.Domain.Marketplace;
 using Wanes.Areas.Domain.RideRequests;
 using Wanes.Areas.Domain.RiderTrips;
 using Wanes.Areas.Domain.Trips;
@@ -155,6 +156,34 @@ public class FakeAppConfigurationService : IAppConfigurationService
     public decimal FareBaseAmount { get; set; } = FareRules.DefaultBaseAmount;
     public decimal FarePerKm { get; set; } = FareRules.DefaultPerKm;
 
+    /// <summary>
+    /// Zero, where production collects offers for twenty minutes. The suite's
+    /// requests leave in two hours, so the shipped value would turn every
+    /// formation test into a test of the window; the window tests set it.
+    /// </summary>
+    public int ScheduledSelectionWindowMinutes { get; set; } = DriverSelectionRules.ImmediateSelection;
+
+    public bool RiderOfferChoice { get; set; } = true;
+
+    /// <summary>On, as shipped: offers in the suite say they accept a shared trip.</summary>
+    public bool RequireSharedTermsAcceptance { get; set; } = true;
+
+    public int FreeCancelGraceMinutes { get; set; } = ReliabilityRules.DefaultFreeCancelGraceMinutes;
+    public int LateCancelLeadMinutes { get; set; } = ReliabilityRules.DefaultLateCancelLeadMinutes;
+    public int ReliabilityWarnPoints { get; set; } = ReliabilityRules.DefaultWarnPoints;
+    public int ReliabilitySuspendPoints { get; set; } = ReliabilityRules.DefaultSuspendPoints;
+    public int ReliabilityWindowDays { get; set; } = ReliabilityRules.DefaultWindowDays;
+    public int SuspensionDays { get; set; } = ReliabilityRules.DefaultSuspensionDays;
+
+    /// <summary>
+    /// Off, where production has it on: the tracking tests are about the seat
+    /// ladder, not the code. The boarding-code tests turn it on.
+    /// </summary>
+    public bool BoardingCodeRequired { get; set; }
+
+    public string EmergencyNumber { get; set; } = "911";
+    public string? ShareBaseUrl { get; set; }
+
     public Task<BaseResponse<AppConfigurationOutput>> Get() =>
         Task.FromResult(new BaseResponse<AppConfigurationOutput>(Output()));
 
@@ -179,6 +208,18 @@ public class FakeAppConfigurationService : IAppConfigurationService
         AverageSpeedKmh = AverageSpeedKmh,
         FareBaseAmount = FareBaseAmount,
         FarePerKm = FarePerKm,
+        ScheduledSelectionWindowMinutes = ScheduledSelectionWindowMinutes,
+        RiderOfferChoice = RiderOfferChoice,
+        RequireSharedTermsAcceptance = RequireSharedTermsAcceptance,
+        FreeCancelGraceMinutes = FreeCancelGraceMinutes,
+        LateCancelLeadMinutes = LateCancelLeadMinutes,
+        ReliabilityWarnPoints = ReliabilityWarnPoints,
+        ReliabilitySuspendPoints = ReliabilitySuspendPoints,
+        ReliabilityWindowDays = ReliabilityWindowDays,
+        SuspensionDays = SuspensionDays,
+        BoardingCodeRequired = BoardingCodeRequired,
+        EmergencyNumber = EmergencyNumber,
+        ShareBaseUrl = ShareBaseUrl,
     };
 }
 

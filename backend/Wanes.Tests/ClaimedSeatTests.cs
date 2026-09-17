@@ -1,4 +1,4 @@
-using Wanes.Areas.Domain.Bookings;
+﻿using Wanes.Areas.Domain.Bookings;
 using Wanes.Areas.Domain.RideRequests;
 using Wanes.Areas.Domain.Trips;
 using Wanes.Areas.Domain.Users;
@@ -47,7 +47,7 @@ public class ClaimedSeatTests
         if (withJoiner) await Make.Requests(uow, JoinerId).Join(30, new JoinRideRequestInput());
 
         await Make.Interests(uow, DriverId, notifications)
-            .ExpressInterest(30, new ExpressInterestInput { PricePerSeat = 4m });
+            .ExpressInterest(30, new ExpressInterestInput { AcceptSharedTrip = true, PricePerSeat = 4m });
         return uow;
     }
 

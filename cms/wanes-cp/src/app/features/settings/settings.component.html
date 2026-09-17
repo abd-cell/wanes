@@ -185,6 +185,101 @@
       </div>
     </section>
 
+    <!-- ── Shared marketplace, reliability and safety ── -->
+    <section class="card section span-2">
+      <h2>{{ 'cfg_marketplace' | translate }}</h2>
+      <p class="hint">{{ 'cfg_marketplace_hint' | translate }}</p>
+
+      <div class="pair">
+        <div class="form-row">
+          <label for="cfg-scheduled-window">{{ 'cfg_scheduled_window' | translate }}</label>
+          <input id="cfg-scheduled-window" class="field" type="number" min="0" max="120" step="1"
+                 [ngModel]="model().scheduledSelectionWindowMinutes"
+                 (ngModelChange)="set('scheduledSelectionWindowMinutes', +$event)" />
+        </div>
+        <div class="form-row">
+          <label class="check">
+            <input type="checkbox" [ngModel]="model().riderOfferChoice"
+                   (ngModelChange)="set('riderOfferChoice', $event)" />
+            {{ 'cfg_rider_choice' | translate }}
+          </label>
+          <label class="check">
+            <input type="checkbox" [ngModel]="model().requireSharedTermsAcceptance"
+                   (ngModelChange)="set('requireSharedTermsAcceptance', $event)" />
+            {{ 'cfg_shared_terms' | translate }}
+          </label>
+        </div>
+      </div>
+      <p class="hint">{{ 'cfg_scheduled_window_hint' | translate }}</p>
+
+      <h3>{{ 'cfg_reliability' | translate }}</h3>
+      <div class="pair">
+        <div class="form-row">
+          <label for="cfg-grace">{{ 'cfg_free_grace' | translate }}</label>
+          <input id="cfg-grace" class="field" type="number" min="0" max="60" step="1"
+                 [ngModel]="model().freeCancelGraceMinutes"
+                 (ngModelChange)="set('freeCancelGraceMinutes', +$event)" />
+        </div>
+        <div class="form-row">
+          <label for="cfg-late-lead">{{ 'cfg_late_lead' | translate }}</label>
+          <input id="cfg-late-lead" class="field" type="number" min="0" max="1440" step="15"
+                 [ngModel]="model().lateCancelLeadMinutes"
+                 (ngModelChange)="set('lateCancelLeadMinutes', +$event)" />
+        </div>
+      </div>
+      <div class="pair">
+        <div class="form-row">
+          <label for="cfg-warn">{{ 'cfg_warn_points' | translate }}</label>
+          <input id="cfg-warn" class="field" type="number" min="1" max="100" step="1"
+                 [ngModel]="model().reliabilityWarnPoints"
+                 (ngModelChange)="set('reliabilityWarnPoints', +$event)" />
+        </div>
+        <div class="form-row">
+          <label for="cfg-suspend">{{ 'cfg_suspend_points' | translate }}</label>
+          <input id="cfg-suspend" class="field" type="number" min="1" max="100" step="1"
+                 [ngModel]="model().reliabilitySuspendPoints"
+                 (ngModelChange)="set('reliabilitySuspendPoints', +$event)" />
+        </div>
+      </div>
+      <div class="pair">
+        <div class="form-row">
+          <label for="cfg-window-days">{{ 'cfg_window_days' | translate }}</label>
+          <input id="cfg-window-days" class="field" type="number" min="1" max="365" step="1"
+                 [ngModel]="model().reliabilityWindowDays"
+                 (ngModelChange)="set('reliabilityWindowDays', +$event)" />
+        </div>
+        <div class="form-row">
+          <label for="cfg-suspension-days">{{ 'cfg_suspension_days' | translate }}</label>
+          <input id="cfg-suspension-days" class="field" type="number" min="0" max="90" step="1"
+                 [ngModel]="model().suspensionDays"
+                 (ngModelChange)="set('suspensionDays', +$event)" />
+        </div>
+      </div>
+      <p class="hint">{{ 'cfg_reliability_hint' | translate }}</p>
+
+      <h3>{{ 'cfg_safety' | translate }}</h3>
+      <div class="pair">
+        <div class="form-row">
+          <label for="cfg-emergency">{{ 'cfg_emergency_number' | translate }}</label>
+          <input id="cfg-emergency" class="field mono" dir="ltr" maxlength="16"
+                 [ngModel]="model().emergencyNumber"
+                 (ngModelChange)="set('emergencyNumber', $event)" />
+        </div>
+        <div class="form-row">
+          <label for="cfg-share-url">{{ 'cfg_share_url' | translate }}</label>
+          <input id="cfg-share-url" class="field" dir="ltr" maxlength="512" placeholder="https://wanes.app"
+                 [ngModel]="model().shareBaseUrl"
+                 (ngModelChange)="set('shareBaseUrl', $event)" />
+        </div>
+      </div>
+      <label class="check">
+        <input type="checkbox" [ngModel]="model().boardingCodeRequired"
+               (ngModelChange)="set('boardingCodeRequired', $event)" />
+        {{ 'cfg_boarding_code' | translate }}
+      </label>
+      <p class="hint foot">{{ 'cfg_safety_hint' | translate }}</p>
+    </section>
+
     <!-- ── Fare display ── -->
     <section class="card section span-2">
       <h2>{{ 'cfg_fare' | translate }}</h2>

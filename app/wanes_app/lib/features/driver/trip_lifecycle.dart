@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import '../../core/app_config.dart';
 import '../../core/app_response.dart';
 import '../../core/l10n.dart';
 import '../../core/theme.dart';
 import '../../models/models.dart';
 import '../../services/services.dart';
+import '../../widgets/trip_safety.dart';
 import '../../widgets/wanes_alerts.dart';
 import '../../widgets/wanes_motion.dart';
 
@@ -33,6 +35,9 @@ class DriverTripStep {
             Icons.navigation_outlined, trips.depart),
         7 => DriverTripStep('driver.arriveTrip', 'driver.tripArrived',
             Icons.location_on_outlined, trips.arrive),
+        // Boarding everyone at once would skip the riders' codes, so with codes
+        // on the driver boards each rider from their own card instead.
+        6 when AppConfigController.value.boardingCodeRequired => null,
         6 => DriverTripStep(
             'driver.startTrip', 'driver.tripStarted', Icons.play_arrow_rounded, trips.start),
         3 => DriverTripStep(
@@ -185,8 +190,16 @@ class _SeatStepButtonsState extends State<SeatStepButtons> {
     if (step.confirm && !await _confirm(step)) return;
     if (!mounted) return;
 
+    // Boarding: the rider reads their code, the driver types it.
+    String? code;
+    if (step == SeatStep.pickUp && AppConfigController.value.boardingCodeRequired) {
+      code = await showBoardingCodeEntry(context, widget.seat.riderName);
+      if (code == null || !mounted) return;
+    }
+
     setState(() => _busy = true);
-    final res = await _trips.setBookingStatus(widget.tripId, widget.seat.id, step.status);
+    final res = await _trips.setBookingStatus(widget.tripId, widget.seat.id, step.status,
+        boardingCode: code);
     if (!mounted) return;
     setState(() => _busy = false);
 

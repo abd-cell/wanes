@@ -41,6 +41,42 @@ public static class DriverSelectionRules
     public static int WindowFor(int minutes) =>
         Math.Clamp(minutes, ImmediateSelection, MaxSelectionWindowMinutes);
 
+    /// <summary>
+    /// A request leaving within this of its first offer is instant work: the
+    /// riders cannot wait for a comparison, so it follows the instant window
+    /// (first offer wins, as shipped). Anything later is planned work and
+    /// follows the scheduled window.
+    /// </summary>
+    public static readonly TimeSpan InstantHorizon = TimeSpan.FromHours(1);
+
+    /// <summary>How long a scheduled request collects offers by default.</summary>
+    public const int DefaultScheduledWindowMinutes = 20;
+
+    /// <summary>
+    /// The latest a scheduled decision may land before departure: the riders
+    /// need time to meet the driver, and a request with no driver needs time to
+    /// find one.
+    /// </summary>
+    public static readonly TimeSpan DecisionMargin = TimeSpan.FromMinutes(30);
+
+    /// <summary>
+    /// When a request whose first offer arrived at <paramref name="firstInterestAt"/>
+    /// is decided — immediately for instant work, after the scheduled window
+    /// for planned work, and never later than <see cref="DecisionMargin"/>
+    /// before departure.
+    /// </summary>
+    public static DateTime DecideAt(
+        DateTime firstInterestAt, DateTime departAt, int instantWindowMinutes, int scheduledWindowMinutes)
+    {
+        var instant = departAt - firstInterestAt <= InstantHorizon;
+        var window = WindowFor(instant ? instantWindowMinutes : scheduledWindowMinutes);
+        var at = firstInterestAt.AddMinutes(window);
+
+        var latest = departAt - DecisionMargin;
+        if (at > latest) at = latest < firstInterestAt ? firstInterestAt : latest;
+        return at;
+    }
+
     /// <summary>Whether selection happens the instant a driver expresses interest.</summary>
     public static bool IsImmediate(int windowMinutes) =>
         WindowFor(windowMinutes) == ImmediateSelection;
@@ -76,6 +112,7 @@ public static class DriverSelectionRules
             .Where(i => i.IsLive)
             .OrderByDescending(i => Fits(i, seatsRequested))
             .ThenByDescending(i => Rating(i, drivers))
+            .ThenByDescending(i => Reliability(i, drivers))
             .ThenByDescending(i => Completed(i, drivers))
             .ThenBy(i => i.PricePerSeat)
             .ThenBy(i => i.CreationDate)
@@ -94,6 +131,15 @@ public static class DriverSelectionRules
 
     private static double Rating(DriverInterest interest, IReadOnlyDictionary<int, User> drivers) =>
         drivers.TryGetValue(interest.DriverId, out var driver) ? driver.RatingAvg : 0;
+
+    /// <summary>
+    /// Completion rate, with a driver who has no history ranked as reliable: a
+    /// newcomer has not let anybody down yet.
+    /// </summary>
+    private static double Reliability(DriverInterest interest, IReadOnlyDictionary<int, User> drivers) =>
+        drivers.TryGetValue(interest.DriverId, out var driver)
+            ? Marketplace.ReliabilityRules.CompletionRate(driver.TripsAsDriver, driver.DriverCancellations) ?? 1
+            : 0;
 
     private static int Completed(DriverInterest interest, IReadOnlyDictionary<int, User> drivers) =>
         drivers.TryGetValue(interest.DriverId, out var driver) ? driver.TripsAsDriver : 0;

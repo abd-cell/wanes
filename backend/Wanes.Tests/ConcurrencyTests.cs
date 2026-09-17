@@ -1,4 +1,4 @@
-using Wanes.Areas.Domain.Bookings;
+﻿using Wanes.Areas.Domain.Bookings;
 using Wanes.Areas.Domain.RideRequests;
 using Wanes.Areas.Domain.Trips;
 using Wanes.Areas.Domain.Users;
@@ -178,8 +178,8 @@ public class ConcurrencyTests
     {
         var uow = PostingScene();
 
-        var first = await Interests(uow, DriverId).ExpressInterest(PostingId);
-        var second = await Interests(uow, DriverId + 1).ExpressInterest(PostingId);
+        var first = await Interests(uow, DriverId).ExpressInterest(PostingId, Offer.Shared());
+        var second = await Interests(uow, DriverId + 1).ExpressInterest(PostingId, Offer.Shared());
 
         Assert.True(first.Success);
         Assert.False(second.Success);
@@ -205,7 +205,7 @@ public class ConcurrencyTests
             request.MatchedTripId = 999;
         };
 
-        var res = await Interests(uow, DriverId).ExpressInterest(PostingId);
+        var res = await Interests(uow, DriverId).ExpressInterest(PostingId, Offer.Shared());
 
         Assert.False(res.Success);
         Assert.Equal(ErrorCode.RideRequestNotOpen, res.ErrorCode);
@@ -220,8 +220,8 @@ public class ConcurrencyTests
         var uow = PostingScene();
         var service = Interests(uow, DriverId);
 
-        var first = await service.ExpressInterest(PostingId);
-        var second = await service.ExpressInterest(PostingId);
+        var first = await service.ExpressInterest(PostingId, Offer.Shared());
+        var second = await service.ExpressInterest(PostingId, Offer.Shared());
 
         Assert.True(first.Success);
         Assert.True(second.Success);
@@ -237,9 +237,9 @@ public class ConcurrencyTests
         // trip. Widening it would hand the loser a success and a trip id that
         // is not theirs.
         var uow = PostingScene();
-        await Interests(uow, DriverId).ExpressInterest(PostingId);
+        await Interests(uow, DriverId).ExpressInterest(PostingId, Offer.Shared());
 
-        var other = await Interests(uow, DriverId + 1).ExpressInterest(PostingId);
+        var other = await Interests(uow, DriverId + 1).ExpressInterest(PostingId, Offer.Shared());
 
         Assert.False(other.Success);
         Assert.Equal(ErrorCode.RideRequestNotOpen, other.ErrorCode);

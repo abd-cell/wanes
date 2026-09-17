@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Wanes.Areas.Services.Marketplace.Models;
 using Wanes.Areas.Services.RideRequests;
 using Wanes.Areas.Services.RideRequests.Models;
 using Wanes.Areas.Services.Search;
@@ -93,4 +94,14 @@ public class RideRequestsController : BaseApiController
     [HttpDelete("{id:int}/interest")]
     public async Task<BaseResponse> WithdrawInterest(int id)
         => await driverInterestService.WithdrawInterest(id);
+
+    /// <summary>The drivers who offered, for the request's riders to compare.</summary>
+    [HttpGet("{id:int}/offers")]
+    public async Task<BaseResponse<List<OfferRow>>> Offers(int id)
+        => await driverInterestService.GetOffers(id);
+
+    /// <summary>A rider picks a driver from the offers; the trip forms with them.</summary>
+    [HttpPost("{id:int}/offers/{interestId:int}/choose")]
+    public async Task<BaseResponse<RideRequestRow>> ChooseOffer(int id, int interestId)
+        => await driverInterestService.ChooseOffer(id, interestId);
 }

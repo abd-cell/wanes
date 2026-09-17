@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' hide TextDirection;
+import '../core/acknowledgements.dart';
 import '../core/app_config.dart';
 import '../core/fare.dart';
 import '../core/geo.dart';
@@ -10,6 +11,7 @@ import '../models/models.dart';
 import '../services/services.dart';
 import '../widgets/conditions_card.dart';
 import '../widgets/place_picker.dart';
+import '../widgets/safety_notes.dart';
 import '../widgets/wanes_alerts.dart';
 import '../widgets/wanes_ui.dart';
 import '../widgets/when_picker.dart';
@@ -70,11 +72,18 @@ class _PostRiderTripScreenState extends State<PostRiderTripScreen> {
 
   bool _busy = false;
 
+  /// The rider has agreed this is a shared ride. Pre-ticked for a rider who has
+  /// agreed before — the notice is still on screen — and required to post.
+  bool _sharedAgreed = false;
+
   @override
   void initState() {
     super.initState();
     _from = widget.from;
     _to = widget.to;
+    Acknowledgements.has(Acknowledgement.riderSharedRide).then((agreed) {
+      if (agreed && mounted) setState(() => _sharedAgreed = true);
+    });
 
     // Who may drive comes in from the search; who else may be aboard starts
     // open. Both used to be read from account defaults, which meant a rider
@@ -158,6 +167,13 @@ class _PostRiderTripScreenState extends State<PostRiderTripScreen> {
       WanesAlerts.warning(context, context.tr('home.pickTwoPlaces'));
       return;
     }
+    if (!_sharedAgreed) {
+      WanesAlerts.warning(context, context.tr('shared.ackRequired'));
+      return;
+    }
+    if (!await ensureSafetyAcknowledged(context, SafetyAudience.rider) || !mounted) return;
+    await Acknowledgements.record(Acknowledgement.riderSharedRide);
+    if (!mounted) return;
 
     setState(() => _busy = true);
     final res = await _riderTrips.create(
@@ -260,6 +276,14 @@ class _PostRiderTripScreenState extends State<PostRiderTripScreen> {
                   const SizedBox(height: 16),
                   _estimateNote(t, estimate),
                 ],
+                const SizedBox(height: 16),
+                SharedRideNotice(
+                  body: context.tr('shared.riderRequest'),
+                  value: _sharedAgreed,
+                  onChanged: (v) => setState(() => _sharedAgreed = v),
+                ),
+                const SizedBox(height: 4),
+                const SafetyReminder(audience: SafetyAudience.rider),
               ],
             ),
           ),
@@ -413,6 +437,8 @@ class _PostRiderTripScreenState extends State<PostRiderTripScreen> {
         child: PrimaryButton(
           label: context.tr('riderTrip.postCta'),
           busy: _busy,
+          // Left armed without the agreement, so the tap can say what is
+          // missing instead of the button just not answering.
           onPressed: _busy ? null : _post,
         ),
       );

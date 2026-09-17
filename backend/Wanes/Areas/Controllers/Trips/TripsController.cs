@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using Wanes.Areas.Services.Marketplace.Models;
 using Wanes.Areas.Services.Trips;
 using Wanes.Areas.Services.Trips.Models;
 using Wanes.Shareds.Attributes;
@@ -63,22 +64,31 @@ public class TripsController : BaseApiController
     [HttpPut("{id:int}/bookings/{bookingId:int}/status")]
     public async Task<BaseResponse<TripBookingRow>> SetBookingStatus(
         int id, int bookingId, [FromBody] SetBookingStatusInput input)
-        => await tripService.SetBookingStatus(id, bookingId, input.Status);
+        => await tripService.SetBookingStatus(id, bookingId, input.Status, input.BoardingCode);
 
     [AppAuthorize]
     [HttpGet("{id:int}/driver-location")]
     public async Task<BaseResponse<DriverLocationOutput>> DriverLocation(int id)
         => await tripService.GetDriverLocation(id);
 
+    /// <summary>What cancelling now would cost — read before the driver confirms.</summary>
+    [AppAuthorize]
+    [HttpGet("{id:int}/cancel-preview")]
+    public async Task<BaseResponse<CancelPreviewOutput>> CancelPreview(int id)
+        => await tripService.CancelPreview(id);
+
+    /// <summary>Cancels the trip. A reason is required once riders depend on it.</summary>
     [AppAuthorize]
     [HttpPost("{id:int}/cancel")]
-    public async Task<BaseResponse> Cancel(int id) => await tripService.Cancel(id);
+    public async Task<BaseResponse> Cancel(int id, [FromBody] CancelTripInput? input = null)
+        => await tripService.Cancel(id, input);
 
-    [AppAuthorize]
     /// <summary>The driver has set off for the first pickup.</summary>
+    [AppAuthorize]
     [HttpPost("{id:int}/depart")]
     public async Task<BaseResponse<TripOutput>> Depart(int id) => await tripService.Depart(id);
 
+    [AppAuthorize]
     [HttpPost("{id:int}/start")]
     public async Task<BaseResponse<TripOutput>> Start(int id) => await tripService.Start(id);
 

@@ -8,6 +8,7 @@ import '../core/theme.dart';
 import '../models/models.dart';
 import '../services/services.dart';
 import '../widgets/language_picker.dart';
+import '../widgets/safety_notes.dart';
 import '../widgets/wanes_alerts.dart';
 import '../widgets/wanes_ui.dart';
 import 'driver/driver_home_screen.dart';
@@ -263,6 +264,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
         trailing: _unreadBadge(),
         onTap: () => Navigator.push(
             context, MaterialPageRoute(builder: (_) => const NotificationsScreen())),
+      ),
+      GroupedRow(
+        icon: Icons.shield_outlined,
+        title: context.tr('safety.tipsRow'),
+        subtitle: context.tr('safety.tipsRowSubtitle'),
+        onTap: () => showSafetyNotes(context, SafetyAudience.rider),
       ),
       GroupedRow(
         icon: Icons.help_outline_rounded,

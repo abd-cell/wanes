@@ -183,6 +183,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       NotificationKind.tripConfirmed => 'notifType.tripConfirmed',
       NotificationKind.tripNotEnoughRiders => 'notifType.tripNotEnoughRiders',
       NotificationKind.confirmDecision => 'notifType.confirmDecision',
+      NotificationKind.rideRequest => 'notifType.rideRequest',
+      NotificationKind.demandAlert => 'notifType.demandAlert',
+      NotificationKind.reliability => 'notifType.reliability',
+      NotificationKind.safetyIncident => 'notifType.safetyIncident',
       // Admin-composed — there is no key for it, so show what was sent.
       NotificationKind.general => '',
     };
@@ -273,6 +277,27 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         // event the platform generated.
         NotificationKind.feedbackReplied =>
           (icon: Icons.forum_rounded, fg: t.tealInk, tile: t.tealTint, card: null),
+        NotificationKind.rideRequest =>
+          (icon: Icons.groups_2_outlined, fg: t.tealInk, tile: t.tealTint, card: null),
+        // Demand worth planning a run around: good news for a driver.
+        NotificationKind.demandAlert => (
+            icon: Icons.notifications_active_outlined,
+            fg: t.onTeal,
+            tile: t.teal,
+            card: t.tealTint
+          ),
+        NotificationKind.reliability => (
+            icon: Icons.verified_user_outlined,
+            fg: t.amberInk,
+            tile: t.amberTint,
+            card: t.amberTint
+          ),
+        NotificationKind.safetyIncident => (
+            icon: Icons.sos_rounded,
+            fg: const Color(0xFFE05F9A),
+            tile: const Color(0x29E05F9A),
+            card: null
+          ),
         NotificationKind.general =>
           (icon: Icons.info_outline_rounded, fg: t.ink2, tile: t.surface2, card: null),
       };

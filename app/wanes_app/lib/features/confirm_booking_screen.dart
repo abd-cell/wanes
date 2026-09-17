@@ -7,6 +7,7 @@ import '../core/theme.dart';
 import '../models/models.dart';
 import '../services/services.dart';
 import '../widgets/map_backdrop.dart';
+import '../widgets/safety_notes.dart';
 import '../widgets/wanes_alerts.dart';
 import '../widgets/wanes_ui.dart';
 import 'booking_confirmed_screen.dart';
@@ -59,6 +60,7 @@ class _ConfirmBookingScreenState extends State<ConfirmBookingScreen> {
   }
 
   Future<void> _confirm() async {
+    if (!await ensureSafetyAcknowledged(context, SafetyAudience.rider) || !mounted) return;
     setState(() => _busy = true);
     final res = await _bookings.book(trip.id, seats: widget.seats);
     if (!mounted) return;
@@ -104,6 +106,12 @@ class _ConfirmBookingScreenState extends State<ConfirmBookingScreen> {
                 _pickupCard(t),
                 const SizedBox(height: 12),
                 _fareCard(t),
+                const SizedBox(height: 12),
+                // Booked from search, the seat is on a trip the driver is
+                // sharing — say so before the tap rather than at pickup.
+                SharedRideNotice(body: context.tr('shared.riderBooking')),
+                const SizedBox(height: 4),
+                const SafetyReminder(audience: SafetyAudience.rider),
               ],
             ),
           ),
