@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Wanes.Areas.Services.Bookings;
 using Wanes.Areas.Services.Bookings.Models;
+using Wanes.Areas.Services.Series;
 using Wanes.Shareds.Attributes;
 using Wanes.Shareds.Models;
 
@@ -10,8 +11,13 @@ namespace Wanes.Areas.Controllers.Bookings;
 public class BookingsController : BaseApiController
 {
     private readonly IBookingService bookingService;
+    private readonly ISeriesInfoService seriesInfo;
 
-    public BookingsController(IBookingService bookingService) => this.bookingService = bookingService;
+    public BookingsController(IBookingService bookingService, ISeriesInfoService seriesInfo)
+    {
+        this.bookingService = bookingService;
+        this.seriesInfo = seriesInfo;
+    }
 
     [HttpPost]
     public async Task<BaseResponse<BookingOutput>> Create([FromBody] CreateBookingInput input)
@@ -24,5 +30,5 @@ public class BookingsController : BaseApiController
 
     [HttpGet("mine")]
     public async Task<BaseResponse<List<BookingOutput>>> Mine()
-        => await bookingService.GetUserBookings();
+        => await seriesInfo.With(await bookingService.GetUserBookings());
 }

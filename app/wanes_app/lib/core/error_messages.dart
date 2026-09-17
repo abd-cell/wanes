@@ -126,6 +126,14 @@ const Map<int, String> _keys = {
   550: 'errors.scheduleNotFound',
   551: 'errors.scheduleHasNoOccurrences',
 
+  // Series commitments
+  560: 'errors.seriesNotFound',
+  561: 'errors.notRecurring',
+  562: 'errors.seriesAlreadyTaken',
+  563: 'errors.seriesAlreadyCommitted',
+  564: 'errors.seriesNotAllowed',
+  565: 'errors.seriesDisabled',
+
   // Ratings
   600: 'errors.rateAfterCompletion',
   601: 'errors.alreadyRated',

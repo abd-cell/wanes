@@ -54,6 +54,16 @@ public class BookingOutput
     /// <summary>The rider has a live "follow my trip" link.</summary>
     public bool HasShareLink { get; set; }
 
+    /// <summary>The recurring schedule the trip is one day of, and the rider's series booking, if any.</summary>
+    public int? ScheduleId { get; set; }
+    public DateOnly? OccurrenceDate { get; set; }
+    public int? SeriesCommitmentId { get; set; }
+
+    /// <summary>The driver's series commitment the trip was formed under.</summary>
+    public int? TripSeriesCommitmentId { get; set; }
+
+    public Series.Models.SeriesInfo? Series { get; set; }
+
     public BookingOutput() { }
 
     public BookingOutput(Booking booking, Trip? trip)
@@ -83,6 +93,10 @@ public class BookingOutput
         if (committed) DriverPhone = trip?.Driver?.Phone;
         if (booking.Status is BookingStatus.Confirmed or BookingStatus.Arrived)
             BoardingCode = booking.BoardingCode;
+        ScheduleId = trip?.ScheduleId;
+        OccurrenceDate = trip?.OccurrenceDate;
+        SeriesCommitmentId = booking.SeriesCommitmentId;
+        TripSeriesCommitmentId = trip?.SeriesCommitmentId;
         HasShareLink = !string.IsNullOrEmpty(booking.ShareToken);
     }
 }

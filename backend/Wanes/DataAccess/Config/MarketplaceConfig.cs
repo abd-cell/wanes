@@ -78,3 +78,26 @@ public class SafetyIncidentConfig : IEntityTypeConfiguration<SafetyIncident>
         b.HasIndex(x => new { x.Status, x.CreationDate });
     }
 }
+
+public class SeriesCommitmentConfig : IEntityTypeConfiguration<Wanes.Areas.Domain.Series.SeriesCommitment>
+{
+    public void Configure(EntityTypeBuilder<Wanes.Areas.Domain.Series.SeriesCommitment> b)
+    {
+        b.Property(x => x.PricePerSeat).HasPrecision(10, 2);
+        b.Property(x => x.Message).HasMaxLength(300);
+        b.Property(x => x.EndNote).HasMaxLength(500);
+
+        b.HasOne(x => x.Schedule).WithMany().HasForeignKey(x => x.ScheduleId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne(x => x.Driver).WithMany().HasForeignKey(x => x.DriverId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne(x => x.Rider).WithMany().HasForeignKey(x => x.RiderId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne(x => x.Vehicle).WithMany().HasForeignKey(x => x.VehicleId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // What the materialiser asks as it writes a day, and the clocks sweep.
+        b.HasIndex(x => new { x.ScheduleId, x.Side, x.Status });
+        b.HasIndex(x => new { x.Status, x.DecideAt });
+        b.HasIndex(x => x.DriverId);
+        b.HasIndex(x => x.RiderId);
+    }
+}

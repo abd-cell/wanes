@@ -4,6 +4,7 @@ import 'dart:convert';
 
 import '../core/l10n.dart';
 import '../core/places.dart';
+import 'series_models.dart';
 
 /// The API serialises `DateTime` values that are UTC but carry no offset
 /// (EF materialises them with `DateTimeKind.Unspecified`), e.g.
@@ -150,6 +151,10 @@ class AppConfig {
     this.freeCancelGraceMinutes = 3,
     this.emergencyNumber = '911',
     this.shareBaseUrl = '',
+    this.seriesEnabled = true,
+    this.seriesSkipNoticeHours = 24,
+    this.seriesEndNoticeDays = 7,
+    this.seriesDecisionHours = 12,
     this.supportPhone = '',
     this.supportWhatsApp = '',
     this.supportEmail = '',
@@ -243,6 +248,12 @@ class AppConfig {
   /// Where trip links point (the public web host), or empty.
   final String shareBaseUrl;
 
+  /// Whole-series commitments are on, and the notice their rules ask for.
+  final bool seriesEnabled;
+  final int seriesSkipNoticeHours;
+  final int seriesEndNoticeDays;
+  final int seriesDecisionHours;
+
   // ── Support contact ──
   //
   // Empty means "the admin hasn't configured this channel". Null from the API
@@ -310,6 +321,13 @@ class AppConfig {
             ? fallback.emergencyNumber
             : _text(json['emergencyNumber']),
         shareBaseUrl: _text(json['shareBaseUrl']),
+        seriesEnabled: json['seriesCommitmentsEnabled'] as bool? ?? fallback.seriesEnabled,
+        seriesSkipNoticeHours:
+            (json['seriesSkipNoticeHours'] as num?)?.toInt() ?? fallback.seriesSkipNoticeHours,
+        seriesEndNoticeDays:
+            (json['seriesEndNoticeDays'] as num?)?.toInt() ?? fallback.seriesEndNoticeDays,
+        seriesDecisionHours:
+            (json['seriesDecisionHours'] as num?)?.toInt() ?? fallback.seriesDecisionHours,
         supportPhone: _text(json['supportPhone']),
         supportWhatsApp: _text(json['supportWhatsApp']),
         supportEmail: _text(json['supportEmail']),
@@ -337,6 +355,10 @@ class AppConfig {
         'freeCancelGraceMinutes': freeCancelGraceMinutes,
         'emergencyNumber': emergencyNumber,
         'shareBaseUrl': shareBaseUrl,
+        'seriesCommitmentsEnabled': seriesEnabled,
+        'seriesSkipNoticeHours': seriesSkipNoticeHours,
+        'seriesEndNoticeDays': seriesEndNoticeDays,
+        'seriesDecisionHours': seriesDecisionHours,
         'supportPhone': supportPhone,
         'supportWhatsApp': supportWhatsApp,
         'supportEmail': supportEmail,
@@ -533,7 +555,21 @@ class Trip {
     this.maxAge,
     this.driverTrips = 0,
     this.driverCompletionRate,
+    this.scheduleId,
+    this.occurrenceDate,
+    this.seriesCommitmentId,
+    this.series,
   });
+
+  /// The driver's recurring schedule this trip is a day of, and that day.
+  final int? scheduleId;
+  final DateTime? occurrenceDate;
+
+  /// The series commitment the seat (booking) or the day (trip) was made under.
+  final int? seriesCommitmentId;
+
+  /// The recurrence behind it — what the repeat badge and "whole series" read.
+  final SeriesInfo? series;
 
   final int id;
   final String driverName;
@@ -643,6 +679,9 @@ class Trip {
   /// (server rule; see `DriverAvailabilityRules.IsEngaged`, which this mirrors).
   bool get isUnderway => status == 3 || status == 6 || status == 7;
 
+  /// One day of a series: the driver's own schedule, or a rider's they took.
+  bool get isRecurring => scheduleId != null || seriesCommitmentId != null;
+
   factory Trip.fromJson(Map<String, dynamic> j) => Trip(
         id: j['id'] as int,
         driverName: j['driverName'] as String? ?? 'Driver',
@@ -673,6 +712,10 @@ class Trip {
         maxAge: (j['maxAge'] as num?)?.toInt(),
         pricePerSeat: (j['pricePerSeat'] as num?)?.toDouble(),
         startedAt: parseServerDate(j['startedAt'] as String?),
+        scheduleId: (j['scheduleId'] as num?)?.toInt(),
+        occurrenceDate: parseDateOnly(j['occurrenceDate'] as String?),
+        seriesCommitmentId: (j['seriesCommitmentId'] as num?)?.toInt(),
+        series: SeriesInfo.tryParse(j['series']),
       );
 }
 
@@ -802,6 +845,9 @@ class RiderTrip {
     this.suggestedPricePerSeat = 0,
     this.decideAt,
     this.reopenedFromRequestId,
+    this.scheduleId,
+    this.occurrenceDate,
+    this.series,
   });
 
   /// When the collected offers are decided — in the future while a scheduled
@@ -814,6 +860,15 @@ class RiderTrip {
   /// Offers are in and the riders may still compare them.
   bool get isComparingOffers =>
       isOpen && interestCount > 0 && decideAt != null && decideAt!.isAfter(DateTime.now());
+
+  /// The rider's recurring schedule this request is a day of, and that day.
+  final int? scheduleId;
+  final DateTime? occurrenceDate;
+
+  /// The recurrence behind the card — the repeat badge and "take the whole series".
+  final SeriesInfo? series;
+
+  bool get isRecurring => scheduleId != null;
 
   final int id;
   final int riderId;
@@ -938,6 +993,9 @@ class RiderTrip {
         suggestedPricePerSeat: (j['suggestedPricePerSeat'] as num?)?.toDouble() ?? 0,
         decideAt: parseServerDate(j['decideAt'] as String?),
         reopenedFromRequestId: (j['reopenedFromRequestId'] as num?)?.toInt(),
+        scheduleId: (j['scheduleId'] as num?)?.toInt(),
+        occurrenceDate: parseDateOnly(j['occurrenceDate'] as String?),
+        series: SeriesInfo.tryParse(j['series']),
       );
 }
 
@@ -1073,6 +1131,7 @@ class TripSchedule {
     this.maxAge,
     this.isPaused = false,
     this.nextDepartures = const [],
+    this.generated = 0,
   });
 
   final int id;
@@ -1109,6 +1168,9 @@ class TripSchedule {
   /// Generation is stopped; what already exists still runs.
   final bool isPaused;
 
+  /// On create: how many days the server wrote straight away.
+  final int generated;
+
   /// The next few departures it will produce.
   final List<DateTime> nextDepartures;
 
@@ -1134,6 +1196,7 @@ class TripSchedule {
         minAge: (j['minAge'] as num?)?.toInt(),
         maxAge: (j['maxAge'] as num?)?.toInt(),
         isPaused: j['isPaused'] as bool? ?? false,
+        generated: (j['generated'] as num?)?.toInt() ?? 0,
         nextDepartures: (j['nextDepartures'] as List<dynamic>? ?? [])
             .map((e) => parseServerDate(e as String?)?.toLocal())
             .whereType<DateTime>()
@@ -1183,7 +1246,25 @@ class Booking {
     this.seatsHeld = 0,
     this.boardingCode,
     this.hasShareLink = false,
+    this.scheduleId,
+    this.occurrenceDate,
+    this.seriesCommitmentId,
+    this.tripSeriesCommitmentId,
+    this.series,
   });
+
+  /// The driver's recurring schedule this trip is a day of, and that day.
+  final int? scheduleId;
+  final DateTime? occurrenceDate;
+
+  /// The series commitment the seat (booking) or the day (trip) was made under.
+  final int? seriesCommitmentId;
+
+  /// The driver's series the trip itself was formed under.
+  final int? tripSeriesCommitmentId;
+
+  /// The recurrence behind it — what the repeat badge and "whole series" read.
+  final SeriesInfo? series;
 
   final int id;
   final int tripId;
@@ -1300,6 +1381,11 @@ class Booking {
         driverPhone: (j['driverPhone'] as String?)?.trim(),
         boardingCode: (j['boardingCode'] as String?)?.trim(),
         hasShareLink: j['hasShareLink'] as bool? ?? false,
+        scheduleId: (j['scheduleId'] as num?)?.toInt(),
+        occurrenceDate: parseDateOnly(j['occurrenceDate'] as String?),
+        seriesCommitmentId: (j['seriesCommitmentId'] as num?)?.toInt(),
+        tripSeriesCommitmentId: (j['tripSeriesCommitmentId'] as num?)?.toInt(),
+        series: SeriesInfo.tryParse(j['series']),
       );
 }
 
@@ -1632,6 +1718,9 @@ enum NotificationKind {
   /// A safety report, for admins.
   safetyIncident('SafetyIncident'),
 
+  /// A series moved — an offer, an acceptance, a skipped day, the week ahead.
+  series('Series'),
+
   general('General');
 
   const NotificationKind(this.wire);
@@ -1695,6 +1784,12 @@ class AppNotification {
 
   /// The demand the notification is about (`rideRequestId` in the payload).
   int? get rideRequestId => _int('rideRequestId');
+
+  /// The series commitment a notification is about (`seriesId`).
+  int? get seriesId => _int('seriesId');
+
+  /// The recurring schedule it names (`scheduleId`).
+  int? get scheduleId => _int('scheduleId');
 
   /// Present only on "a driver offered" — the request is comparing offers.
   bool get carriesOfferWindow => data?['decideAt'] != null;

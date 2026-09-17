@@ -72,13 +72,21 @@ public class BookingService : IBookingService
     /// a seat, and the loser only has to read again. The refusal, when there is
     /// one, comes out of the ordinary checks on the fresh read.
     /// </summary>
-    public async Task<BaseResponse<BookingOutput>> Create(CreateBookingInput input)
+    public Task<BaseResponse<BookingOutput>> Create(CreateBookingInput input) =>
+        CreateWithRetry(securityManager.RequireUserId(), input, null);
+
+    public Task<BaseResponse<BookingOutput>> CreateForSeries(int riderId, CreateBookingInput input,
+        int seriesCommitmentId) =>
+        CreateWithRetry(riderId, input, seriesCommitmentId);
+
+    private async Task<BaseResponse<BookingOutput>> CreateWithRetry(int riderId, CreateBookingInput input,
+        int? seriesCommitmentId)
     {
         for (var attempt = 1; ; attempt++)
         {
             try
             {
-                return await CreateOnce(input);
+                return await CreateOnce(riderId, input, seriesCommitmentId);
             }
             catch (DbUpdateConcurrencyException)
             {
@@ -91,9 +99,10 @@ public class BookingService : IBookingService
         }
     }
 
-    private async Task<BaseResponse<BookingOutput>> CreateOnce(CreateBookingInput input)
+    private async Task<BaseResponse<BookingOutput>> CreateOnce(int riderId, CreateBookingInput input,
+        int? seriesCommitmentId)
     {
-        var riderId = securityManager.RequireUserId();
+        var quiet = seriesCommitmentId != null;
         var seats = input.Seats < 1 ? 1 : input.Seats;
 
         var rider = await userRepository.GetByIdAsync(riderId);
@@ -187,6 +196,7 @@ public class BookingService : IBookingService
                 Status = meetsThreshold ? BookingStatus.Confirmed : BookingStatus.Pending,
                 BoardingCode = BoardingCodes.New(),
                 SharedTermsAcceptedAt = input.AcceptSharedRide == true ? DateTime.UtcNow : null,
+                SeriesCommitmentId = seriesCommitmentId,
             };
             bookingRepository.Create(booking);
 
@@ -202,18 +212,22 @@ public class BookingService : IBookingService
 
             // Both sides care: the rider gets their receipt, the driver learns a
             // seat just went. Sent after the commit so a push can't outrun the row.
-            await notificationService.Notify(riderId, NotificationTemplate.BookingConfirmedRider,
-                args: new { origin = trip.OriginAddress, destination = trip.DestinationAddress },
-                data:
-                new { bookingId = booking.Id, tripId = trip.Id });
+            // A series seat is announced once for the series, not once a day.
+            if (!quiet)
+            {
+                await notificationService.Notify(riderId, NotificationTemplate.BookingConfirmedRider,
+                    args: new { origin = trip.OriginAddress, destination = trip.DestinationAddress },
+                    data:
+                    new { bookingId = booking.Id, tripId = trip.Id });
 
-            // Status Posted was checked above, and only a trip somebody is
-            // driving can be Posted — a driverless one is AwaitingDriver.
-            await notificationService.Notify(trip.DriverId!.Value,
-                NotificationTemplate.BookingConfirmedDriver,
-                args: new { seats, seatsLeft = trip.SeatsLeft },
-                data:
-                new { bookingId = booking.Id, tripId = trip.Id });
+                // Status Posted was checked above, and only a trip somebody is
+                // driving can be Posted — a driverless one is AwaitingDriver.
+                await notificationService.Notify(trip.DriverId!.Value,
+                    NotificationTemplate.BookingConfirmedDriver,
+                    args: new { seats, seatsLeft = trip.SeatsLeft },
+                    data:
+                    new { bookingId = booking.Id, tripId = trip.Id });
+            }
 
             // The threshold being met is news to everybody who was waiting on
             // it, this rider included: their seat went from held to theirs

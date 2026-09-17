@@ -9,6 +9,7 @@ using Wanes.Areas.Domain.Vehicles;
 using Wanes.Areas.Services.Audit;
 using Wanes.Areas.Services.Configuration;
 using Wanes.Areas.Services.Schedules.Models;
+using Wanes.Areas.Services.Series;
 using Wanes.DataAccess.Repositories;
 using Wanes.DataAccess.UnitOfWorks;
 using Wanes.Shareds.Constants;
@@ -28,6 +29,7 @@ public class TripScheduleService : ITripScheduleService
     private readonly ISecurityManager securityManager;
     private readonly IAuditService auditService;
     private readonly IAppConfigurationService appConfigurationService;
+    private readonly ISeriesService seriesService;
     private readonly IRepository<TripSchedule> scheduleRepository;
     private readonly IRepository<Trip> tripRepository;
     private readonly IRepository<RideRequest> requestRepository;
@@ -41,6 +43,7 @@ public class TripScheduleService : ITripScheduleService
         ISecurityManager securityManager,
         IAuditService auditService,
         IAppConfigurationService appConfigurationService,
+        ISeriesService seriesService,
         IRepository<TripSchedule> scheduleRepository,
         IRepository<Trip> tripRepository,
         IRepository<RideRequest> requestRepository,
@@ -53,6 +56,7 @@ public class TripScheduleService : ITripScheduleService
         this.securityManager = securityManager;
         this.auditService = auditService;
         this.appConfigurationService = appConfigurationService;
+        this.seriesService = seriesService;
         this.scheduleRepository = scheduleRepository;
         this.tripRepository = tripRepository;
         this.requestRepository = requestRepository;
@@ -78,7 +82,19 @@ public class TripScheduleService : ITripScheduleService
         await unitOfWork.SaveAsync();
         await auditService.LogAsync(AuditActions.ScheduleCreate, nameof(TripSchedule), schedule.Id);
 
-        return new BaseResponse<TripScheduleRow>(Row(schedule));
+        // The first fortnight is written now rather than on the worker's next
+        // tick: somebody who just chose "Repeat" expects to see their days.
+        var generated = 0;
+        if (!schedule.IsPaused)
+        {
+            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+            generated = await MaterialiseSchedule(schedule, today, today.AddDays(RecurrenceRules.HorizonDays),
+                (await appConfigurationService.Get()).Data);
+        }
+
+        var row = Row(schedule);
+        row.Generated = generated;
+        return new BaseResponse<TripScheduleRow>(row);
     }
 
     public async Task<BaseResponse<TripScheduleRow>> Update(int id, TripScheduleInput input)
@@ -168,6 +184,9 @@ public class TripScheduleService : ITripScheduleService
         await unitOfWork.SaveAsync();
         await auditService.LogAsync(AuditActions.ScheduleDelete, nameof(TripSchedule), schedule.Id);
 
+        // Whoever committed to the series is released, at nobody's cost.
+        await seriesService.OnScheduleDeleted(schedule);
+
         return new BaseResponse();
     }
 
@@ -216,24 +235,31 @@ public class TripScheduleService : ITripScheduleService
         var written = 0;
 
         foreach (var schedule in schedules)
-        {
-            var from = Later(schedule.StartDate, today);
-            if (schedule.MaterialisedThrough is { } through) from = Later(from, through.AddDays(1));
+            written += await MaterialiseSchedule(schedule, today, horizonEnd, settings);
 
-            var to = schedule.EndDate is { } end && end < horizonEnd ? end : horizonEnd;
-            if (from > to) continue;
+        return written;
+    }
 
-            var dates = RecurrenceRules.Occurrences(
-                schedule.Recurrence, schedule.DaysOfWeek, schedule.DayOfMonth, from, to);
+    /// <summary>One schedule's pass, from where it last got to up to the horizon.</summary>
+    private async Task<int> MaterialiseSchedule(TripSchedule schedule, DateOnly today, DateOnly horizonEnd,
+        Configuration.Models.AppConfigurationOutput? settings)
+    {
+        var from = Later(schedule.StartDate, today);
+        if (schedule.MaterialisedThrough is { } through) from = Later(from, through.AddDays(1));
 
-            foreach (var date in dates)
-                written += await Materialise(schedule, date, settings);
+        var to = schedule.EndDate is { } end && end < horizonEnd ? end : horizonEnd;
+        if (from > to) return 0;
 
-            schedule.MaterialisedThrough = to;
-            scheduleRepository.Update(schedule);
-            await unitOfWork.SaveAsync();
-        }
+        var written = 0;
+        var dates = RecurrenceRules.Occurrences(
+            schedule.Recurrence, schedule.DaysOfWeek, schedule.DayOfMonth, from, to);
 
+        foreach (var date in dates)
+            written += await Materialise(schedule, date, settings);
+
+        schedule.MaterialisedThrough = to;
+        scheduleRepository.Update(schedule);
+        await unitOfWork.SaveAsync();
         return written;
     }
 
@@ -252,20 +278,27 @@ public class TripScheduleService : ITripScheduleService
         // a restart at noon on a schedule that leaves at eight.
         if (departAt <= DateTime.UtcNow) return 0;
 
-        // One question now, not two: both sides generate a Trip, so the
-        // idempotency key is the same key.
-        var exists = await tripRepository.AnyAsync(
-            t => t.ScheduleId == schedule.Id && t.OccurrenceDate == date);
+        // A driver's schedule writes trips and a rider's writes requests, so the
+        // idempotency key is asked of the table this schedule writes to.
+        var isDriver = schedule.OwnerRole == ActiveRole.Driver;
+        var exists = isDriver
+            ? await tripRepository.AnyAsync(t => t.ScheduleId == schedule.Id && t.OccurrenceDate == date)
+            : await requestRepository.AnyAsync(r => r.ScheduleId == schedule.Id && r.OccurrenceDate == date);
         if (exists) return 0;
 
-        var written = schedule.OwnerRole == ActiveRole.Driver
-            ? await MaterialiseTrip(schedule, date, departAt)
-            : await MaterialisePosting(schedule, date, departAt, settings);
-        if (!written) return 0;
+        Trip? trip = null;
+        RideRequest? request = null;
+        if (isDriver) trip = await MaterialiseTrip(schedule, date, departAt);
+        else request = await MaterialisePosting(schedule, date, departAt, settings);
+        if (trip == null && request == null) return 0;
 
         await unitOfWork.SaveAsync();
         await auditService.LogAsync(AuditActions.ScheduleMaterialise, nameof(TripSchedule), schedule.Id,
             after: new { occurrenceDate = date, departAt });
+
+        // The day is written; whoever committed to the whole series gets it.
+        if (trip != null) await seriesService.OnTripGenerated(trip, schedule);
+        if (request != null) await seriesService.OnRequestGenerated(request, schedule);
 
         return 1;
     }
@@ -279,14 +312,14 @@ public class TripScheduleService : ITripScheduleService
     /// that date only. The rest of the series is unaffected, which is the
     /// behaviour a driver expects after moving one trip.
     /// </summary>
-    private async Task<bool> MaterialiseTrip(TripSchedule schedule, DateOnly date, DateTime departAt)
+    private async Task<Trip?> MaterialiseTrip(TripSchedule schedule, DateOnly date, DateTime departAt)
     {
         var vehicle = schedule.VehicleId is { } vehicleId
             ? vehicleRepository.FirstOrDefault(v => v.Id == vehicleId && v.UserId == schedule.OwnerId)
             : vehicleRepository.Where(v => v.UserId == schedule.OwnerId)
                 .OrderByDescending(v => v.IsDefault)
                 .FirstOrDefault();
-        if (vehicle == null) return false;
+        if (vehicle == null) return null;
 
         // The same 30-minute envelope posting a trip by hand is held to. Read
         // straight from the rows rather than through IDriverAvailabilityService:
@@ -298,11 +331,11 @@ public class TripScheduleService : ITripScheduleService
                         && t.Status != TripStatus.Completed)
             .Select(t => t.DepartAt)
             .ToListAsync();
-        if (clash.Any(d => DriverAvailabilityRules.Clashes(d, departAt))) return false;
+        if (clash.Any(d => DriverAvailabilityRules.Clashes(d, departAt))) return null;
 
         var seats = Math.Clamp(schedule.Seats, 1, vehicle.SeatCapacity);
 
-        tripRepository.Create(new Trip
+        var trip = new Trip
         {
             DriverId = schedule.OwnerId,
             VehicleId = vehicle.Id,
@@ -322,20 +355,21 @@ public class TripScheduleService : ITripScheduleService
             Status = TripStatus.Posted,
             ScheduleId = schedule.Id,
             OccurrenceDate = date,
-        });
+        };
+        tripRepository.Create(trip);
 
-        return true;
+        return trip;
     }
 
     /// <summary>
     /// A rider's occurrence — the same posting they would have written by hand,
     /// with the owner holding its seats.
     /// </summary>
-    private async Task<bool> MaterialisePosting(TripSchedule schedule, DateOnly date, DateTime departAt,
+    private async Task<RideRequest?> MaterialisePosting(TripSchedule schedule, DateOnly date, DateTime departAt,
         Configuration.Models.AppConfigurationOutput? settings)
     {
         var owner = await userRepository.GetByIdAsync(schedule.OwnerId);
-        if (owner == null) return false;
+        if (owner == null) return null;
 
         // The lead-time rule holds for a generated posting exactly as for a
         // typed one: a driver still has to gather these riders. Only today's
@@ -344,7 +378,7 @@ public class TripScheduleService : ITripScheduleService
         var km = GeoDistance.Km(schedule.Origin, schedule.Destination);
         var speed = settings?.AverageSpeedKmh ?? RiderTripRules.DefaultAverageSpeedKmh;
         var seats = Math.Clamp(schedule.Seats, 1, RiderTripRules.MaxSeats);
-        if (departAt < RiderTripRules.EarliestDeparture(DateTime.UtcNow, km, seats, speed)) return false;
+        if (departAt < RiderTripRules.EarliestDeparture(DateTime.UtcNow, km, seats, speed)) return null;
 
         // The same shape RideRequestService.Create writes: demand with the owner
         // as its first participant. Generated or typed, it is one kind of row —
@@ -383,7 +417,7 @@ public class TripScheduleService : ITripScheduleService
             MinAge = schedule.MinAge,
             MaxAge = schedule.MaxAge,
         });
-        return true;
+        return request;
     }
 
     /// <summary>

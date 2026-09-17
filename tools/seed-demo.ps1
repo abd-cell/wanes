@@ -215,6 +215,80 @@ if ($trips.t5) {
     if ($s.success) { Write-Host "   tariq reported a safety concern on trip #$($trips.t5.id)" }
 }
 
+Write-Host "== Repeating commutes, and commitments to the whole of them"
+# The device's own zone, as the app sends it: an offset the server can read.
+$Zone = "UTC{0}{1:hh\:mm}" -f $(if ([TimeZoneInfo]::Local.BaseUtcOffset -lt [TimeSpan]::Zero) { "-" } else { "+" }), [TimeZoneInfo]::Local.BaseUtcOffset.Duration()
+$Today = (Get-Date).ToString("yyyy-MM-dd")
+$SunToThu = 31   # WeekDays flags: Sunday..Thursday
+
+function New-Schedule($owner, $asDriver, $from, $to, $time, $seats, $price = $null, $vehicle = $null) {
+    $body = @{
+        ownerRole = $(if ($asDriver) { 2 } else { 1 })
+        origin = $from; destination = $to
+        recurrence = 2; daysOfWeek = $SunToThu; timeOfDay = $time; timeZoneId = $Zone
+        startDate = $Today; seats = $seats
+    }
+    if ($asDriver) { $body.pricePerSeat = $price; $body.vehicleId = $vehicle; $body.minSeatsToConfirm = 1 }
+    $res = Invoke-Api POST "schedules" $body -Token $T[$owner]
+    if ($res.success) {
+        Write-Host ("   #{0,-3} {1}: {2} -> {3} Sun-Thu {4} ({5} days generated)" -f `
+            $res.data.id, $owner, $from.address, $to.address, $time, $res.data.generated)
+    }
+    return $res.data
+}
+
+# A rider's commute, and a driver who takes every day of it.
+$riderSeries = New-Schedule "noor" $false $P.Khalda $P.Abdali "07:30:00" 2
+if ($riderSeries) {
+    $days = (Invoke-Api GET "ride-requests/mine" -Token $T["noor"]).data |
+        Where-Object { $_.scheduleId -eq $riderSeries.id } | Sort-Object departAt
+    $firstDay = @($days)[0]
+    if ($firstDay) {
+        $offer = Invoke-Api POST "series/ride-requests/$($firstDay.id)" @{
+            vehicleId = $V["omar"]; pricePerSeat = 1.75; seatsOffered = 4
+            acceptSharedTrip = $true; message = "I drive this every morning"
+        } -Token $T["omar"]
+        if ($offer.success) { Write-Host "   omar offered for the whole series (decides $($offer.data.decideAt))" }
+
+        # A second driver, so the console and the app show a choice.
+        $offer2 = Invoke-Api POST "series/ride-requests/$($firstDay.id)" @{
+            vehicleId = $V["yousef"]; pricePerSeat = 2.00; acceptSharedTrip = $true
+        } -Token $T["yousef"]
+        if ($offer2.success) { Write-Host "   yousef offered for it too" }
+
+        if ($offer.success) {
+            $taken = Invoke-Api POST "series/$($offer.data.id)/accept" @{} -Token $T["noor"]
+            if ($taken.success) {
+                $got = @($taken.data.days | Where-Object { $_.tripId }).Count
+                Write-Host "   noor chose omar - $got days are now trips, one per morning"
+            }
+        }
+    }
+}
+
+# A driver's standing run, and a rider who books every day of it.
+$driverSeries = New-Schedule "lina" $true $P.UJ $P.Sweifieh "08:15:00" 3 1.25 $V["lina"]
+if ($driverSeries) {
+    $runs = (Invoke-Api GET "trips/mine" -Token $T["lina"]).data |
+        Where-Object { $_.scheduleId -eq $driverSeries.id } | Sort-Object departAt
+    $firstRun = @($runs)[0]
+    if ($firstRun) {
+        $joined = Invoke-Api POST "series/trips/$($firstRun.id)" @{
+            seats = 1; daysOfWeek = 0; acceptSharedRide = $true
+        } -Token $T["hala"]
+        if ($joined.success) {
+            $booked = @($joined.data.days | Where-Object { $_.bookingId }).Count
+            Write-Host "   hala booked $booked mornings on lina's run"
+        }
+    }
+}
+
+# A driver who only wants to hear about commutes that repeat.
+$repeatAlert = Invoke-Api POST "me/demand-alerts" @{
+    origin = $P.Khalda; destination = $P.Abdali; radiusMeters = 5000; minSeats = 1; recurringOnly = $true
+} -Token $T["khaled"]
+if ($repeatAlert.success) { Write-Host "   khaled alerts on repeating Khalda -> Abdali commutes only" }
+
 Write-Host ""
 Write-Host "Done. Every demo account signs in with OTP $OtpCode."
 Write-Host "Drivers: $(($drivers | ForEach-Object { "$($_.first) $($_.phone)" }) -join ', ')"

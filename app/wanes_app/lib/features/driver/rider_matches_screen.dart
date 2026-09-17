@@ -6,7 +6,7 @@ import '../../core/theme.dart';
 import '../../models/models.dart';
 import '../../widgets/wanes_motion.dart';
 import '../../widgets/wanes_ui.dart';
-import 'accept_flow.dart';
+import '../series/series_flow.dart';
 
 /// What a driver's search found — the mirror of the rider's results screen.
 ///
@@ -47,7 +47,7 @@ class _RiderMatchesScreenState extends State<RiderMatchesScreen> {
   /// so the figure is confirmed rather than invented.
   Future<void> _take(DemandMatch match) async {
     final trip = match.trip;
-    final ok = await acceptRideRequest(context, trip,
+    final ok = await takeRideRequest(context, trip,
         onBusy: (busy) => mounted ? setState(() => _busy = busy) : null);
     if (!ok || !mounted) return;
     setState(() => _matches.removeWhere((m) => m.trip.id == trip.id));

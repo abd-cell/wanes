@@ -96,6 +96,9 @@ public class DemandAlert : AuditableEntity
     public int? RideRequestId { get; set; }
     public RideRequest? RideRequest { get; set; }
 
+    /// <summary>Only recurring requests fire it — for drivers after a regular commute, not one-offs.</summary>
+    public bool RecurringOnly { get; set; }
+
     public bool IsActive { get; set; } = true;
 
     public DateTime? LastNotifiedAt { get; set; }

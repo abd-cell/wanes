@@ -132,7 +132,30 @@ public static class RecurrenceRules
         }
         catch (Exception e) when (e is TimeZoneNotFoundException or InvalidTimeZoneException)
         {
-            return TimeZoneInfo.Utc;
+            // Phones report a zone as an offset ("+03", "GMT+03:00", "UTC+3")
+            // far more often than as an id. Read as a fixed offset it is right
+            // wherever the clocks do not change — which beats UTC everywhere.
+            return OffsetZone(id) ?? TimeZoneInfo.Utc;
         }
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex OffsetPattern =
+        new(@"^(?:UTC|GMT)?\s*([+-])(\d{1,2})(?::?(\d{2}))?$",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+    /// <summary>A fixed-offset zone for "+03", "GMT+03:00", "UTC-5"; null for anything else.</summary>
+    public static TimeZoneInfo? OffsetZone(string id)
+    {
+        var match = OffsetPattern.Match(id.Trim());
+        if (!match.Success) return null;
+
+        var hours = int.Parse(match.Groups[2].Value);
+        var minutes = match.Groups[3].Success ? int.Parse(match.Groups[3].Value) : 0;
+        if (hours > 14 || minutes > 59) return null;
+
+        var offset = new TimeSpan(hours, minutes, 0);
+        if (match.Groups[1].Value == "-") offset = offset.Negate();
+        var name = $"UTC{(offset < TimeSpan.Zero ? "-" : "+")}{offset:hh\\:mm}";
+        return TimeZoneInfo.CreateCustomTimeZone(name, offset, name, name);
     }
 }

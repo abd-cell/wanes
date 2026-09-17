@@ -156,6 +156,9 @@ class _NewAlertSheetState extends State<_NewAlertSheet> {
   Place? _to;
   int _minSeats = 3;
   int _radiusKm = 3;
+
+  /// Only commutes that repeat — the runs worth planning a week around.
+  bool _recurringOnly = false;
   bool _busy = false;
 
   Future<void> _pick(bool from) async {
@@ -176,7 +179,11 @@ class _NewAlertSheetState extends State<_NewAlertSheet> {
     }
     setState(() => _busy = true);
     final res = await _service.addRouteAlert(
-        from: from, to: to, minSeats: _minSeats, radiusMeters: _radiusKm * 1000);
+        from: from,
+        to: to,
+        minSeats: _minSeats,
+        radiusMeters: _radiusKm * 1000,
+        recurringOnly: _recurringOnly);
     if (!mounted) return;
     setState(() => _busy = false);
     if (!res.success) {
@@ -229,6 +236,15 @@ class _NewAlertSheetState extends State<_NewAlertSheet> {
                 title: context.tr('alerts.radius'),
                 subtitle: context.tr('units.km', {'value': _radiusKm}),
                 trailing: SeatStepper(value: _radiusKm, onChanged: (v) => setState(() => _radiusKm = v), max: 20),
+              ),
+              GroupedRow(
+                icon: Icons.repeat_rounded,
+                title: context.tr('alerts.recurringOnly'),
+                subtitle: context.tr('alerts.recurringOnlyHint'),
+                trailing: WanesPillSwitch(
+                  value: _recurringOnly,
+                  onChanged: (v) => setState(() => _recurringOnly = v),
+                ),
               ),
             ]),
             const SizedBox(height: 14),

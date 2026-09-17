@@ -13,7 +13,8 @@ import '../../widgets/wanes_alerts.dart';
 import '../../widgets/wanes_ui.dart';
 import '../../widgets/when_picker.dart';
 import '../../widgets/conditions_card.dart';
-import '../schedule_form_screen.dart';
+import '../../widgets/repeat_picker.dart';
+import '../schedules_screen.dart';
 import 'vehicles_screen.dart';
 import '../../widgets/wanes_motion.dart';
 
@@ -62,6 +63,10 @@ class _PostTripScreenState extends State<PostTripScreen> {
   int? _maxAge;
   bool _loading = true;
   bool _busy = false;
+
+  /// Once, or every week. Asked first, because it decides what this form
+  /// makes: one trip, or a schedule that posts one for every chosen day.
+  RepeatChoice _repeat = const RepeatChoice();
 
   static DateTime _defaultDeparture() {
     final n = DateTime.now().add(const Duration(hours: 1));
@@ -159,6 +164,15 @@ class _PostTripScreenState extends State<PostTripScreen> {
           message: context.tr('driver.samePointsBody'));
       return;
     }
+    if (!_repeat.isValid) {
+      WanesAlerts.warning(context, context.tr('schedule.pickDays'));
+      return;
+    }
+    // A repeating run is a schedule: the server posts one trip per chosen day,
+    // a fortnight ahead, and each is an ordinary trip riders book one day — or
+    // every day — of.
+    if (_repeat.repeat && _editing == null) return _postRepeating(from, to);
+
     final trip = _editing;
     setState(() => _busy = true);
     final res = trip == null
@@ -202,23 +216,50 @@ class _PostTripScreenState extends State<PostTripScreen> {
   }
 
 
-  /// Turns what is on this form into a repeating trip. The route, the hour, the
-  /// seats and the price come across, so "make this weekly" is one screen and
-  /// not a second bout of typing.
-  Future<void> _openSchedule() async {
+  /// The repeating version of this form: one schedule, which writes the next
+  /// fortnight of trips at once.
+  Future<void> _postRepeating(Place from, Place to) async {
+    setState(() => _busy = true);
+    final res = await ScheduleService().save(
+      asDriver: true,
+      originLat: from.lat,
+      originLng: from.lng,
+      originAddress: from.name,
+      destLat: to.lat,
+      destLng: to.lng,
+      destAddress: to.name,
+      recurrence: _repeat.recurrence,
+      timeOfDay: TimeOfDayValue(_departAt.hour, _departAt.minute),
+      startDate: _departAt,
+      daysOfWeek: _repeat.effectiveDays,
+      dayOfMonth: _repeat.recurrence == Recurrence.monthly ? _departAt.day : null,
+      timeZoneId: deviceZoneId(),
+      endDate: _repeat.until,
+      seats: _seats,
+      pricePerSeat: _price,
+      vehicleId: _vehicle?.id,
+      minSeatsToConfirm: _minSeats,
+      genderPolicy: _genderPolicy,
+      minAge: _minAge,
+      maxAge: _maxAge,
+    );
+    if (!mounted) return;
+    setState(() => _busy = false);
+
+    if (!res.success) {
+      WanesAlerts.failure(context, res, title: context.tr('schedule.saveFailed'));
+      return;
+    }
+    WanesAlerts.success(context, context.tr('repeat.posted'),
+        message: context.trPlural('repeat.postedBody', res.data?.generated ?? 0));
+    Navigator.pop(context, true);
+  }
+
+  /// The repeats already running — paused or dropped from there.
+  Future<void> _openSchedules() async {
     await Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => ScheduleFormScreen(
-          asDriver: true,
-          from: _from,
-          to: _to,
-          seats: _seats,
-          pricePerSeat: _price,
-          vehicleId: _vehicle?.id,
-          timeOfDay: TimeOfDayValue(_departAt.hour, _departAt.minute),
-        ),
-      ),
+      MaterialPageRoute(builder: (_) => const SchedulesScreen(asDriver: true)),
     );
   }
 
@@ -257,6 +298,15 @@ class _PostTripScreenState extends State<PostTripScreen> {
                     : ListView(
                         padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
                         children: [
+                          if (_editing == null) ...[
+                            RepeatPicker(
+                              value: _repeat,
+                              onChanged: (v) => setState(() => _repeat = v),
+                              firstDate: _departAt,
+                              onOpenMine: _openSchedules,
+                            ),
+                            const SizedBox(height: 12),
+                          ],
                           _vehicleCard(t),
                           const SizedBox(height: 12),
                           _routeCard(t),
@@ -283,10 +333,6 @@ class _PostTripScreenState extends State<PostTripScreen> {
                               _maxAge = max;
                             }),
                           ),
-                          if (_editing == null) ...[
-                            const SizedBox(height: 12),
-                            _repeatRow(t),
-                          ],
                           const SizedBox(height: 14),
                           _earnLine(t),
                         ],
@@ -307,8 +353,11 @@ class _PostTripScreenState extends State<PostTripScreen> {
         child: SafeArea(
           top: false,
           child: PrimaryButton(
-            label: context.tr(
-                _editing == null ? 'driver.reviewPublish' : 'common.saveChanges'),
+            label: context.tr(_editing != null
+                ? 'common.saveChanges'
+                : _repeat.repeat
+                    ? 'repeat.postCta'
+                    : 'driver.reviewPublish'),
             arrow: false,
             busy: _busy,
             onPressed: _busy ? null : _post,
@@ -510,35 +559,6 @@ class _PostTripScreenState extends State<PostTripScreen> {
                 context.tr('driver.suggestedPrice', {'price': Fare.format(suggestion)})),
           ),
         ]),
-      ]),
-    );
-  }
-
-  Widget _repeatRow(WanesTokens t) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
-      decoration: BoxDecoration(
-        color: t.surface2,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: t.border),
-      ),
-      child: Row(children: [
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(context.tr('driver.repeatWeekdays'),
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: t.ink)),
-            const SizedBox(height: 1),
-            Text(context.tr('driver.repeatWeekdaysBody'),
-                style: TextStyle(fontSize: 12, color: t.ink2)),
-          ]),
-        ),
-        // Not a switch any more: a repeat is a schedule of its own, with days
-        // and a window, and this trip is the obvious thing to seed it from.
-        TextButton(
-          onPressed: _openSchedule,
-          child: Text(context.tr('schedule.add'),
-              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5, color: t.tealInk)),
-        ),
       ]),
     );
   }

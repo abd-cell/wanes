@@ -54,6 +54,9 @@ public interface IReliabilityService
 
     Task RecordRiderNoShow(Booking booking, Trip trip);
 
+    /// <summary>A day dropped by ending a series inside its notice period — a point each.</summary>
+    Task RecordSeriesEnd(int driverId, Trip trip, int ridersAffected, CancelReason? reason, string? note);
+
     /// <summary>Null when the driver may take work leaving at <paramref name="departAt"/>.</summary>
     ErrorCode? CheckCanTake(User driver, DateTime departAt, DateTime now);
 

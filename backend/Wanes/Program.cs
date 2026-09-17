@@ -67,6 +67,7 @@ builder.Services.RegisterTypes();
 builder.Services.AddHostedService<Wanes.Areas.Services.RideRequests.RideRequestSweepWorker>();
 builder.Services.AddHostedService<Wanes.Areas.Services.Trips.TripConfirmationWorker>();
 builder.Services.AddHostedService<Wanes.Areas.Services.Schedules.ScheduleMaterialiserWorker>();
+builder.Services.AddHostedService<Wanes.Areas.Services.Series.SeriesWorker>();
 
 // ── Authentication (JWT; session validated against UserLogin) ──
 builder.Services

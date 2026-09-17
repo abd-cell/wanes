@@ -139,6 +139,9 @@ public class TripScheduleRow
     /// </summary>
     public List<DateTime> NextDepartures { get; set; } = [];
 
+    /// <summary>On create: how many days were written straight away.</summary>
+    public int Generated { get; set; }
+
     public TripScheduleRow() { }
 
     public TripScheduleRow(TripSchedule schedule, IEnumerable<DateTime>? nextDepartures = null)

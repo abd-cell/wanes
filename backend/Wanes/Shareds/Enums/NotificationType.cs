@@ -55,5 +55,8 @@ public enum NotificationType
     /// <summary>A safety report for the admin team.</summary>
     SafetyIncident = 20,
 
+    /// <summary>A recurring commitment moved — an offer, an acceptance, a skipped day, the week ahead.</summary>
+    Series = 21,
+
     General = 100,
 }

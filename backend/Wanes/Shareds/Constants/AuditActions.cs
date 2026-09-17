@@ -131,6 +131,15 @@ public static class AuditActions
     /// </summary>
     public const string ScheduleMaterialise = "schedule.materialise";
 
+    // series commitments
+    public const string SeriesPropose = "series.propose";
+    public const string SeriesWithdraw = "series.withdraw";
+    public const string SeriesAccept = "series.accept";
+    public const string SeriesDecline = "series.decline";
+    public const string SeriesJoin = "series.join";
+    public const string SeriesEnd = "series.end";
+    public const string AdminSeriesEnd = "admin.series_end";
+
     // notifications
     /// <summary>A user cleared one notification off their own inbox (soft delete).</summary>
     public const string NotificationDelete = "notification.delete";

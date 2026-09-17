@@ -104,6 +104,13 @@ public class RideRequestRow
     /// <summary>The request this one replaced after its driver cancelled.</summary>
     public int? ReopenedFromRequestId { get; set; }
 
+    /// <summary>The rider's recurring schedule this request is one day of, if any.</summary>
+    public int? ScheduleId { get; set; }
+    public DateOnly? OccurrenceDate { get; set; }
+
+    /// <summary>The recurrence behind the card, filled by the series decorator.</summary>
+    public Series.Models.SeriesInfo? Series { get; set; }
+
     public RideRequestRow() { }
 
     public RideRequestRow(
@@ -154,6 +161,8 @@ public class RideRequestRow
         SuggestedPricePerSeat = suggestedPricePerSeat;
         DecideAt = request.DecideAt;
         ReopenedFromRequestId = request.ReopenedFromRequestId;
+        ScheduleId = request.ScheduleId;
+        OccurrenceDate = request.OccurrenceDate;
     }
 }
 

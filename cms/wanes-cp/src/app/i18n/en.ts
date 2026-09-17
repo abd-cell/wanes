@@ -632,4 +632,31 @@ export const en: Record<string, string> = {
   share_open_map: 'Open in maps',
   share_updated: 'Updated {time} · refreshes every 30 s',
   share_emergency: 'If you think they are in danger, call 911.',
+
+  // ── Series commitments ──
+  res_series: 'Series',
+  col_side: 'Side',
+  col_upcoming_days: 'Days ahead',
+  col_next_departure: 'Next departure',
+  col_until: 'Until',
+  seriesside_1: 'Driver drives a rider’s series',
+  seriesside_2: 'Rider books a driver’s series',
+  seriesstatus_1: 'Waiting',
+  seriesstatus_2: 'Running',
+  seriesstatus_3: 'Declined',
+  seriesstatus_4: 'Withdrawn',
+  seriesstatus_5: 'Ended',
+  reliabilitykind_6: 'Series day skipped',
+  reliabilitykind_7: 'Series ended at short notice',
+  notiftype_21: 'Repeating ride',
+  cfg_series: 'Whole-series commitments',
+  cfg_series_enabled: 'Let drivers take, and riders book, a whole repeating series',
+  cfg_series_decision: 'Hours to answer a series offer',
+  cfg_series_skip: 'Notice to skip one day (hours)',
+  cfg_series_free_skips: 'Free skips per window',
+  cfg_series_end_notice: 'Notice to end a series (days)',
+  cfg_series_summary_day: 'Week-ahead summary day (0 = Sunday)',
+  cfg_series_hint:
+    'A driver may take every day of a rider’s repeating request, and a rider may book every day of a driver’s. ' +
+    'Skipping one day with enough notice is free; ending a series inside its notice period costs a point for each day dropped.',
 };

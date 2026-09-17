@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Wanes.Areas.Services.Marketplace.Models;
+using Wanes.Areas.Services.Series;
 using Wanes.Areas.Services.Trips;
 using Wanes.Areas.Services.Trips.Models;
 using Wanes.Shareds.Attributes;
@@ -11,11 +12,14 @@ public class TripsController : BaseApiController
 {
     private readonly ITripService tripService;
     private readonly ITripConfirmationService tripConfirmationService;
+    private readonly ISeriesInfoService seriesInfo;
 
-    public TripsController(ITripService tripService, ITripConfirmationService tripConfirmationService)
+    public TripsController(ITripService tripService, ITripConfirmationService tripConfirmationService,
+        ISeriesInfoService seriesInfo)
     {
         this.tripService = tripService;
         this.tripConfirmationService = tripConfirmationService;
+        this.seriesInfo = seriesInfo;
     }
 
     [AppAuthorize]
@@ -29,11 +33,11 @@ public class TripsController : BaseApiController
         => await tripService.Update(id, input);
 
     [HttpGet("{id:int}")]
-    public async Task<BaseResponse<TripOutput>> Get(int id) => await tripService.Get(id);
+    public async Task<BaseResponse<TripOutput>> Get(int id) => await seriesInfo.With(await tripService.Get(id));
 
     [AppAuthorize]
     [HttpGet("mine")]
-    public async Task<BaseResponse<List<TripOutput>>> Mine() => await tripService.GetUserTrips();
+    public async Task<BaseResponse<List<TripOutput>>> Mine() => await seriesInfo.With(await tripService.GetUserTrips());
 
     /// <summary>
     /// The driver running a trip that never reached the seats they asked for.

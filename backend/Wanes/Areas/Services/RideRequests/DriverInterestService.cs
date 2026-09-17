@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Wanes.Areas.Domain.Bookings;
 using Wanes.Areas.Domain.Marketplace;
 using Wanes.Areas.Domain.RideRequests;
+using Wanes.Areas.Domain.Series;
 using Wanes.Areas.Domain.Trips;
 using Wanes.Areas.Domain.Users;
 using Wanes.Areas.Domain.Vehicles;
@@ -362,6 +363,119 @@ public class DriverInterestService : IDriverInterestService
         return matched;
     }
 
+    public async Task<SeriesDayOutcome> FormForSeries(int requestId, SeriesCommitment commitment)
+    {
+        var now = DateTime.UtcNow;
+        var settings = await Settings();
+
+        var driver = await userRepository.GetByIdAsync(commitment.DriverId);
+        if (driver is not { DriverStatus: DriverStatus.Verified } || driver.IsDisabled)
+            return new SeriesDayOutcome(null, ErrorCode.DriverNotVerified);
+
+        var vehicle = commitment.VehicleId is { } vehicleId
+            ? vehicleRepository.FirstOrDefault(v => v.Id == vehicleId && v.UserId == driver.Id)
+            : null;
+        vehicle ??= vehicleRepository.Where(v => v.UserId == driver.Id)
+            .OrderByDescending(v => v.IsDefault)
+            .FirstOrDefault();
+        if (vehicle == null) return new SeriesDayOutcome(null, ErrorCode.VehicleNotFound);
+
+        await unitOfWork.BeginTransactionAsync();
+        try
+        {
+            var request = requestRepository.FirstOrDefault(r => r.Id == requestId);
+            if (request == null || !request.IsOpenAt(now))
+                return await Refuse(ErrorCode.RideRequestNotOpen);
+
+            var participants = await ActiveParticipants(requestId);
+            if (participants.Count == 0) return await Refuse(ErrorCode.RideRequestNotOpen);
+            if (participants.Any(p => p.RiderId == driver.Id)) return await Refuse(ErrorCode.CannotServeOwnRequest);
+            if (RiderEligibilityRules.CheckDriver(driver, request.DriverGenderPolicy) is { } notForYou)
+                return await Refuse(notForYou);
+
+            var wanted = participants.Sum(p => p.Seats);
+            if (wanted > vehicle.SeatCapacity) return await Refuse(ErrorCode.SeatsExceedCapacity);
+
+            // A future day asks only about that day: whatever the driver is
+            // doing right now has finished long before it.
+            var departAt = MatchRules.DepartureFor(request.DepartAt, now);
+            var promised = await driverAvailabilityService.CommittedDepartures(driver.Id);
+            if (promised.Any(d => DriverAvailabilityRules.Clashes(d, departAt)))
+                return await Refuse(ErrorCode.DriverTripTimeConflict);
+
+            // The series driver takes the day outright. Anyone who offered for
+            // this one day is answered, as on any other decision.
+            var live = await interestRepository
+                .Where(i => i.RideRequestId == request.Id && i.Status == DriverInterestStatus.Interested)
+                .ToListAsync();
+            var mine = live.FirstOrDefault(i => i.DriverId == driver.Id);
+
+            var seats = Math.Clamp(commitment.Seats ?? vehicle.SeatCapacity, wanted, vehicle.SeatCapacity);
+            var interest = mine ?? new DriverInterest
+            {
+                RideRequestId = request.Id,
+                DriverId = driver.Id,
+                Status = DriverInterestStatus.Interested,
+            };
+            interest.Driver = driver;
+            interest.VehicleId = vehicle.Id;
+            interest.Vehicle = vehicle;
+            interest.SeatsOffered = seats;
+            interest.MinPassengers = null;
+            interest.Message = commitment.Message;
+            interest.SharedTermsAcceptedAt = commitment.SharedTermsAcceptedAt;
+            interest.PricePerSeat = commitment.PricePerSeat is { } price
+                ? FareRules.PriceFor(price)
+                : FareRules.PerSeat(GeoDistance.Km(request.Origin, request.Destination),
+                    settings.FareBaseAmount, settings.FarePerKm);
+            if (mine == null) interestRepository.Create(interest);
+            else interestRepository.Update(interest);
+
+            request.FirstInterestAt ??= now;
+            request.DecideAt ??= now;
+
+            var trip = await Form(request, interest, participants, driver, vehicle, now);
+            // The day it is, so every message about it can name it. No
+            // ScheduleId: the schedule is the rider's, and the trip is not one
+            // of its generated rows.
+            trip.SeriesCommitmentId = commitment.Id;
+            trip.OccurrenceDate = request.OccurrenceDate;
+            tripRepository.Update(trip);
+
+            var losers = live.Where(i => i.Id != interest.Id).ToList();
+            foreach (var loser in losers)
+            {
+                loser.Status = DriverSelectionRules.LosingStatus;
+                interestRepository.Update(loser);
+            }
+
+            await unitOfWork.CommitAsync();
+
+            // One push a day per rider would be noise on a series they already
+            // agreed to; the week-ahead summary carries the good news.
+            await AfterFormation(request, trip, driver, interest, participants, quiet: true);
+            await NotifyLosers(request, losers);
+            return new SeriesDayOutcome(trip.Id, null);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            await unitOfWork.RollBackAsync();
+            unitOfWork.Detach();
+            return new SeriesDayOutcome(null, ErrorCode.RideRequestNotOpen);
+        }
+        catch
+        {
+            await unitOfWork.RollBackAsync();
+            throw;
+        }
+
+        async Task<SeriesDayOutcome> Refuse(ErrorCode code)
+        {
+            await unitOfWork.RollBackAsync();
+            return new SeriesDayOutcome(null, code);
+        }
+    }
+
     // ── Selection and formation ──────────────────────────────────────────────
 
     /// <summary>
@@ -567,7 +681,8 @@ public class DriverInterestService : IDriverInterestService
         Trip trip,
         User driver,
         DriverInterest winner,
-        IReadOnlyCollection<RideRequestParticipant> participants)
+        IReadOnlyCollection<RideRequestParticipant> participants,
+        bool quiet = false)
     {
         await auditService.LogAsync(AuditActions.DriverSelect, nameof(RideRequest), request.Id);
         await auditService.LogAsync(AuditActions.TripForm, nameof(Trip), trip.Id);
@@ -576,7 +691,8 @@ public class DriverInterestService : IDriverInterestService
         // now has an id of its own. The trip id is what their screens follow from
         // here — the request has done its job.
         var gathering = !trip.IsConfirmed;
-        await notificationService.NotifyMany(
+        if (!quiet)
+            await notificationService.NotifyMany(
             participants.Select(p => p.RiderId).Distinct().ToList(),
             gathering ? NotificationTemplate.RideRequestMatchedGatheringRider : NotificationTemplate.RideRequestMatchedRider,
             args: new { name = driver.FirstName, min = trip.MinSeatsToConfirm },

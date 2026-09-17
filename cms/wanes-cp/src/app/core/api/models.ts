@@ -125,6 +125,20 @@ export interface AppConfiguration {
   /** Public address trip links are built on — this console's own host. */
   shareBaseUrl?: string;
 
+  // ── Series (whole recurring schedules) ──
+  /** Drivers may take, and riders may book, a whole recurring series at once. */
+  seriesCommitmentsEnabled: boolean;
+  /** Hours a rider has to answer a series offer before the best one is taken. */
+  seriesDecisionHours: number;
+  /** Notice needed to skip one day of a series for free. */
+  seriesSkipNoticeHours: number;
+  /** Free skips a driver gets inside the reliability window. */
+  seriesFreeSkipsPerWindow: number;
+  /** Days of notice for ending a series for free. */
+  seriesEndNoticeDays: number;
+  /** Day of the week (0 = Sunday) the week-ahead summary goes out. */
+  seriesSummaryDay: number;
+
   updatedAt?: string;
 }
 
@@ -135,6 +149,10 @@ export enum ReliabilityEventKind {
   LateCancel = 3,
   RiderLateCancel = 4,
   RiderNoShow = 5,
+  /** One day of a series skipped with enough notice — recorded, costs nothing. */
+  SeriesSkip = 6,
+  /** A series ended without notice — one per day dropped inside it. */
+  SeriesEndShortNotice = 7,
 }
 
 /** Why a driver cancelled (`CancelReason`). */
@@ -366,6 +384,22 @@ export enum WeekDays {
   Saturday = 64,
 }
 
+/** Which side of a schedule a commitment is on (`SeriesSide`). */
+export enum SeriesSide {
+  /** A driver drives a rider's recurring request. */
+  DriverServes = 1,
+  /** A rider books every day of a driver's recurring trip. */
+  RiderJoins = 2,
+}
+
+export enum SeriesStatus {
+  Proposed = 1,
+  Active = 2,
+  Declined = 3,
+  Withdrawn = 4,
+  Ended = 5,
+}
+
 export enum RatingDirection {
   RiderToDriver = 1,
   DriverToRider = 2,
@@ -399,6 +433,8 @@ export enum NotificationType {
   Reliability = 19,
   /** A safety report for the admin team. */
   SafetyIncident = 20,
+  /** A recurring commitment moved — an offer, an acceptance, a skipped day. */
+  Series = 21,
   General = 100,
 }
 

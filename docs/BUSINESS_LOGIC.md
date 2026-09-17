@@ -892,8 +892,9 @@ the schedule states: not a subscription, not a per-series total.
 
 ### 11.4 Joining and cancelling occurrences
 
-- **V1: a rider chooses the specific occurrences they want.** "Join all upcoming"
-  is a later addition; the domain must never make the schedule itself the booking.
+- **A rider may choose the specific occurrences they want, or book every one**
+  (§27). Either way the domain never makes the schedule itself the booking: "every
+  day" is a commitment that produces one ordinary booking per day.
 - A rider may cancel **one** occurrence without affecting their participation in
   the others.
 - A driver may cancel **one** occurrence without deleting the schedule.
@@ -923,9 +924,11 @@ not
 
 > Your recurring trip is confirmed.
 
-A driver serving demand takes occurrences **one at a time**. Claiming a whole
-series would pre-book their calendar and needs break and cancel rules of its own —
-explicitly out of scope (§19).
+A driver serving demand may take occurrences **one at a time** — and, since §27,
+may also take the whole series at once. The one-at-a-time path is unchanged and
+is still what every other rule is written against: a series commitment decides
+*who is given* each day as it is generated, and the day it produces is an
+ordinary trip with ordinary seats.
 
 ---
 
@@ -1220,6 +1223,11 @@ in application code, and never repeat a "±30 minutes" rule at a call site.**
 | `ReliabilityWarnPoints` / `ReliabilitySuspendPoints` / `ReliabilityWindowDays` / `SuspensionDays` | when a record warns, and pauses instant work (§26.4) |
 | `BoardingCodeRequired` | boarding needs the rider's code (§26.6) |
 | `EmergencyNumber` / `ShareBaseUrl` | the SOS button and trip links (§26.6) |
+| `SeriesCommitmentsEnabled` | whole-series commitments are on (§27) |
+| `SeriesDecisionHours` | how long a rider has to answer a series offer (§27.1) |
+| `SeriesSkipNoticeHours` / `SeriesFreeSkipsPerWindow` | what skipping one day of a series costs (§27.3) |
+| `SeriesEndNoticeDays` | the notice that ends a series for free (§27.3) |
+| `SeriesSummaryDay` | the day the week-ahead summary goes out (§27.4) |
 
 Every value is clamped to a sane range on write, and the ones the clients draw
 clocks from are on the wire to the app and the CMS.
@@ -1618,6 +1626,108 @@ when this reaches 3"); it retires after it fires.
   contact on their profile, it is messaged with the location and a trip link. The
   admin team works the queue (open → acknowledged → resolved). Only somebody on the
   trip can attach a report to it.
+
+---
+
+## 27. Committing to a whole series
+
+A commute is not fourteen decisions. A rider who needs the 07:30 every weekday
+wants **one driver**, and a driver filling their car wants **the week**, not
+Tuesday. So either side may commit to a whole recurring schedule — while
+everything below it stays exactly as §11 has it: the schedule is still only a
+generator, and every day it writes is still an ordinary trip with ordinary seats,
+its own passengers, its own confirmation and its own result.
+
+```
+SeriesCommitment
+  ScheduleId          the recurrence it rides on
+  Side                DriverServes (a driver drives a rider's series)
+                      RiderJoins   (a rider books a driver's series)
+  Status              Proposed · Active · Declined · Withdrawn · Ended
+  DriverId / RiderId  the two people; CommitterId is the one who promised
+  VehicleId, PricePerSeat, Seats
+  DaysOfWeek          a subset of the schedule's; None = every day it runs
+  Until               last date covered; null runs with the schedule
+  DecideAt            when an unanswered offer is decided
+```
+
+**It is a promise about who gets each day, never a booking.** Nothing in search,
+formation, confirmation or the seat rules reads it; it is consulted at exactly two
+moments — when a day is generated, and when somebody gives days up.
+
+### 27.1 A driver takes a rider's series
+
+1. The driver offers from any day of it (`POST series/ride-requests/{id}`): car,
+   price per seat, seats opened, an optional subset of days, an optional end date,
+   and the same shared-trip agreement an ordinary offer carries
+   (`SharedTermsNotAccepted` without it). Offering twice replaces the terms.
+2. The schedule's owner sees the offers (`GET series/schedules/{id}`) with each
+   driver's rating, completion rate and price, and **accepts** or **declines** one.
+   Whatever they leave is decided at `DecideAt` (`SeriesDecisionHours`, 12) for the
+   most reliable driver, then the best rated, then the cheapest — the series
+   twin of §8.3. `SeriesAlreadyTaken` once one is active: a series has one driver.
+3. Accepting forms **every upcoming day it covers at once**: each open request
+   becomes a trip with that driver, at that price, carrying its riders' bookings.
+   A day the driver cannot have — busy, ineligible, a pool bigger than the car —
+   is **left on the board** for anyone, and both sides are told which day and why.
+4. From then on the materialiser hands each new day to the committed driver as it
+   writes it. A day it cannot give them stays ordinary demand and says so.
+
+### 27.2 A rider books a driver's series
+
+`POST series/trips/{id}` books a seat on every upcoming day of the driver's
+schedule — same seats each day, an optional subset of days and end date. A day
+that is full, clashes with another ride, or refuses the rider is reported back
+with the rest booked; new days are booked as they are generated. One live
+commitment per rider per schedule (`SeriesAlreadyCommitted`).
+
+### 27.3 Giving days up
+
+Because a series is a promise about many days, its rules are about **notice**
+rather than about the one day. Every number is an admin setting (§20).
+
+| Act | Notice | Cost |
+|---|---|---|
+| skip one day | ≥ `SeriesSkipNoticeHours` (24) | free — up to `SeriesFreeSkipsPerWindow` (4) in the reliability window, then counted (1) |
+| skip one day | < 24 h, or under way | late (2) |
+| end the series | ≥ `SeriesEndNoticeDays` (7) | free: the days inside the notice still run, nothing after |
+| end the series now | — | 1 point for every day dropped **inside** the notice period |
+
+- Skipping a day is the ordinary trip cancellation (§26.4) — same sheet, same
+  preview, same re-queue of its riders — classified by the series rules and
+  recorded as `SeriesSkip` or, at short notice, `LateCancel`. **The rest of the
+  series stands**, and the rider is told which day went, by name.
+- `GET series/{id}/end-preview` says what both ways would cost before the button.
+- A **rider** ending their own booking gives the seats back on the same terms; the
+  near ones count as late cancels only inside `SeriesSkipNoticeHours`.
+- The **schedule owner may release the other side for free**: a rider may drop the
+  driver of their commute, and deleting a schedule ends every commitment on it at
+  nobody's cost. A driver cannot end a rider's seat on their own schedule — a seat
+  is the rider's to give back.
+- Riders who lose a day go back on the market exactly as in §26.4.
+
+### 27.4 What people are told
+
+Per-day notifications name the day — "No ride on Tue 15 Sep" — never "your
+recurring trip" (§11.6). The good path is deliberately quiet: taking or booking a
+series sends **one** message, not one a day, and a **week-ahead summary** goes out
+on `SeriesSummaryDay` (Saturday) to everyone on a live commitment. The messages
+that do interrupt are the ones that need an answer: an offer, its acceptance, a
+day nobody could take, a day skipped, a series ended.
+
+### 27.5 Where it shows
+
+- Marketplace cards carry a **repeat badge** ("Repeats Sun–Thu · until 31 Dec")
+  and a **Repeating** filter; taking a recurring card asks "just this day, or the
+  whole series?".
+- Both posting forms open on **Once / Repeat** with presets (Sun–Thu, every day,
+  pick days, monthly) and an optional end date. Choosing Repeat writes a schedule
+  and generates its first fortnight straight away, so the days appear at once.
+- "My repeating rides" (both profiles) lists commitments and offers, with accept,
+  decline, withdraw and end; the schedules list says who drives each series.
+- Drivers may set a route alert that fires **for repeating requests only**.
+- Admins see every commitment in the console (`admin/series`) and can end one at
+  nobody's cost.
 
 ---
 

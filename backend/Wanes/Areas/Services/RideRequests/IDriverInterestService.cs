@@ -1,3 +1,4 @@
+using Wanes.Areas.Domain.Series;
 using Wanes.Areas.Services.Marketplace.Models;
 using Wanes.Areas.Services.RideRequests.Models;
 using Wanes.Shareds.Attributes;
@@ -54,4 +55,14 @@ public interface IDriverInterestService
     /// driver at once, if they are still free to take it.
     /// </summary>
     Task<BaseResponse<RideRequestRow>> ChooseOffer(int requestId, int interestId);
+
+    /// <summary>
+    /// One day of a series the driver committed to: forms the trip with that
+    /// driver outright, answering any one-day offers. No caller identity — the
+    /// commitment is the authority, and the materialiser has nobody signed in.
+    /// </summary>
+    Task<SeriesDayOutcome> FormForSeries(int requestId, SeriesCommitment commitment);
 }
+
+/// <summary>What happened to one day of a series: the trip it became, or why not.</summary>
+public record SeriesDayOutcome(int? TripId, ErrorCode? Refusal);

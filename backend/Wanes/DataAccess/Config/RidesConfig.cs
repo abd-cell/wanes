@@ -49,6 +49,9 @@ public class TripConfig : IEntityTypeConfiguration<Trip>
 
         // The driver's board reads trips with no driver by origin and radius.
         b.HasIndex(x => new { x.Status, x.NotifiedAt });
+        // Ending a driver's series finds its days.
+        b.HasIndex(x => x.SeriesCommitmentId).HasFilter("[SeriesCommitmentId] IS NOT NULL");
+
         b.HasMany(x => x.History).WithOne(h => h.Trip)
             .HasForeignKey(h => h.TripId).OnDelete(DeleteBehavior.Cascade);
 
@@ -159,6 +162,9 @@ public class BookingConfig : IEntityTypeConfiguration<Booking>
 
         // The public trip link looks bookings up by token.
         b.HasIndex(x => x.ShareToken).IsUnique().HasFilter("[ShareToken] IS NOT NULL");
+
+        // Ending a rider's series finds its seats.
+        b.HasIndex(x => x.SeriesCommitmentId).HasFilter("[SeriesCommitmentId] IS NOT NULL");
 
         // One live seat per rider per trip. Filtered rather than absolute: a
         // rider who left and thought better of it may take a seat again, and the

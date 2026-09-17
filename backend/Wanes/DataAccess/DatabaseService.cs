@@ -8,6 +8,7 @@ using Wanes.Areas.Domain.Notifications;
 using Wanes.Areas.Domain.Ratings;
 using Wanes.Areas.Domain.RideRequests;
 using Wanes.Areas.Domain.Schedules;
+using Wanes.Areas.Domain.Series;
 using Wanes.Areas.Domain.Support;
 using Wanes.Areas.Domain.Trips;
 using Wanes.Areas.Domain.Users;
@@ -52,6 +53,9 @@ public class DatabaseService : DbContext
     public DbSet<DemandAlert> DemandAlerts => Set<DemandAlert>();
     public DbSet<DemandAlertHit> DemandAlertHits => Set<DemandAlertHit>();
     public DbSet<SafetyIncident> SafetyIncidents => Set<SafetyIncident>();
+
+    // Whole-series commitments on recurring schedules.
+    public DbSet<SeriesCommitment> SeriesCommitments => Set<SeriesCommitment>();
 
     public DbSet<FaqItem> FaqItems => Set<FaqItem>();
     public DbSet<Feedback> Feedbacks => Set<Feedback>();

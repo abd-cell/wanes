@@ -15,7 +15,7 @@ import '../../services/services.dart';
 import '../../widgets/wanes_alerts.dart';
 import '../../widgets/wanes_ui.dart';
 import '../notifications_screen.dart';
-import 'accept_flow.dart';
+import '../series/series_flow.dart';
 import 'driver_profile_screen.dart';
 import 'marketplace_screen.dart';
 import 'my_trips_screen.dart';
@@ -387,7 +387,7 @@ class _DriverDashboardState extends State<DriverDashboard> {
     // One driver drives one car: a double tap, or a tap on a second card while
     // the first is still in flight, is an accept the server is bound to refuse.
     if (_accepting) return;
-    final ok = await acceptRideRequest(context, r,
+    final ok = await takeRideRequest(context, r,
         onBusy: (busy) => mounted ? setState(() => _accepting = busy) : null);
     if (!ok || !mounted) return;
     setState(() => _incoming.removeWhere((x) => x.id == r.id));

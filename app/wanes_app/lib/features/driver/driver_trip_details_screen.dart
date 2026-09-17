@@ -10,6 +10,7 @@ import '../../widgets/safety_notes.dart';
 import '../../widgets/trip_safety.dart';
 import '../../widgets/wanes_alerts.dart';
 import '../../widgets/wanes_motion.dart';
+import '../../widgets/repeat_picker.dart';
 import '../../widgets/wanes_ui.dart';
 import 'cancel_trip_sheet.dart';
 import 'post_trip_screen.dart';
@@ -337,6 +338,13 @@ class _DriverTripDetailsScreenState extends State<DriverTripDetailsScreen> {
               ),
             ),
         ]),
+        // One morning of a standing run. Worth saying on the trip itself: what
+        // cancelling it costs, and what it means for the rest, both follow from
+        // this being a series day rather than a one-off.
+        if (_trip.series case final series?) ...[
+          const SizedBox(height: 10),
+          Align(alignment: AlignmentDirectional.centerStart, child: RepeatBadge(series: series)),
+        ],
         const SizedBox(height: 14),
         Divider(height: 1, thickness: 1, color: t.border),
         const SizedBox(height: 14),

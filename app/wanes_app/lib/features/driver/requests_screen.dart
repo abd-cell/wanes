@@ -18,7 +18,7 @@ import '../../widgets/safety_notes.dart';
 import '../../widgets/wanes_alerts.dart';
 import '../../widgets/wanes_ui.dart';
 import '../../widgets/wanes_motion.dart';
-import 'accept_flow.dart';
+import '../series/series_flow.dart';
 
 /// Incoming ride request — prototype screen 10. The map fills the screen and
 /// the top hail sits in a bottom sheet with its countdown ring; declining
@@ -99,7 +99,7 @@ class _RequestsScreenState extends State<RequestsScreen> {
   Future<void> _claim(RiderTrip r) async {
     // A request carries no price, so the driver names one — and agrees the
     // trip is shared — before they commit. See [acceptRideRequest].
-    final ok = await acceptRideRequest(context, r,
+    final ok = await takeRideRequest(context, r,
         onBusy: (busy) => mounted ? setState(() => _accepting = busy) : null);
     if (!ok || !mounted) return;
     setState(() => _list.removeWhere((x) => x.id == r.id));

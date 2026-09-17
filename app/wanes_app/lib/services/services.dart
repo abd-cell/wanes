@@ -10,8 +10,10 @@ import '../core/saved_places.dart';
 import '../core/session.dart';
 import '../models/marketplace_models.dart';
 import '../models/models.dart';
+import '../models/series_models.dart';
 
 export '../models/marketplace_models.dart';
+export '../models/series_models.dart';
 
 /// The admin-controlled platform settings (currency + brand colour).
 class ConfigService {
@@ -918,6 +920,7 @@ class MarketplaceService {
     required Place to,
     required int minSeats,
     int radiusMeters = 3000,
+    bool recurringOnly = false,
   }) =>
       _api.post<DemandAlert>(
         'me/demand-alerts',
@@ -926,6 +929,7 @@ class MarketplaceService {
           'destination': {'lat': to.lat, 'lng': to.lng, 'address': to.name},
           'minSeats': minSeats,
           'radiusMeters': radiusMeters,
+          'recurringOnly': recurringOnly,
         },
         parse: (d) => DemandAlert.fromJson(d as Map<String, dynamic>),
       );
@@ -979,4 +983,107 @@ class SafetyApi {
       );
 
   Future<AppResponse> stopSharing(int bookingId) => _api.delete('safety/bookings/$bookingId/share');
+}
+
+/// The device's zone as the server reads it: a fixed offset such as
+/// `UTC+03:00`. A phone's zone *name* ("+03", "EEST") is not an id the server
+/// can look up, and read as UTC a 07:30 commute would leave at 10:30.
+String deviceZoneId([DateTime? at]) {
+  final offset = (at ?? DateTime.now()).timeZoneOffset;
+  final sign = offset.isNegative ? '-' : '+';
+  final minutes = offset.inMinutes.abs();
+  final hh = (minutes ~/ 60).toString().padLeft(2, '0');
+  final mm = (minutes % 60).toString().padLeft(2, '0');
+  return 'UTC$sign$hh:$mm';
+}
+
+/// Whole-series commitments (`api/v1/series`).
+///
+/// A driver offers to drive every day of a rider's recurring request; a rider
+/// books every day of a driver's recurring trip. Each day stays its own trip.
+class SeriesApi {
+  final _api = ApiClient.instance;
+
+  static SeriesCommitment _one(Object? d) => SeriesCommitment.fromJson(d as Map<String, dynamic>);
+  static List<SeriesCommitment> _many(Object? d) =>
+      (d as List).map((e) => SeriesCommitment.fromJson(e as Map<String, dynamic>)).toList();
+  static SeriesResult _result(Object? d) => SeriesResult.fromJson(d as Map<String, dynamic>);
+
+  static String? _date(DateTime? d) => d == null ? null : formatDateOnly(d);
+
+  /// A driver offers for the whole series the request [rideRequestId] is a day of.
+  Future<AppResponse<SeriesCommitment>> propose(
+    int rideRequestId, {
+    required int vehicleId,
+    required double pricePerSeat,
+    int? seatsOffered,
+    WeekDaySet days = WeekDaySet.none,
+    DateTime? until,
+    String? message,
+  }) =>
+      _api.post<SeriesCommitment>(
+        'series/ride-requests/$rideRequestId',
+        body: {
+          'vehicleId': vehicleId,
+          'pricePerSeat': pricePerSeat,
+          'seatsOffered': seatsOffered,
+          'daysOfWeek': days.mask,
+          'until': _date(until),
+          if (message != null && message.trim().isNotEmpty) 'message': message.trim(),
+          'acceptSharedTrip': true,
+        },
+        parse: _one,
+      );
+
+  /// A rider books every upcoming day of the recurring trip [tripId] is a day of.
+  Future<AppResponse<SeriesResult>> join(
+    int tripId, {
+    int seats = 1,
+    WeekDaySet days = WeekDaySet.none,
+    DateTime? until,
+  }) =>
+      _api.post<SeriesResult>(
+        'series/trips/$tripId',
+        body: {
+          'seats': seats,
+          'daysOfWeek': days.mask,
+          'until': _date(until),
+          'acceptSharedRide': true,
+        },
+        parse: _result,
+      );
+
+  /// The offers on the rider's own schedule, and the driver it already has.
+  Future<AppResponse<List<SeriesCommitment>>> offersFor(int scheduleId) =>
+      _api.get<List<SeriesCommitment>>('series/schedules/$scheduleId', parse: _many);
+
+  Future<AppResponse<List<SeriesCommitment>>> mine() =>
+      _api.get<List<SeriesCommitment>>('series/mine', parse: _many);
+
+  Future<AppResponse<SeriesCommitment>> get(int id) =>
+      _api.get<SeriesCommitment>('series/$id', parse: _one);
+
+  Future<AppResponse<SeriesResult>> accept(int id) =>
+      _api.post<SeriesResult>('series/$id/accept', parse: _result);
+
+  Future<AppResponse> decline(int id) => _api.post('series/$id/decline');
+
+  Future<AppResponse> withdraw(int id) => _api.delete('series/$id');
+
+  Future<AppResponse<SeriesEndPreview>> endPreview(int id) => _api.get<SeriesEndPreview>(
+        'series/$id/end-preview',
+        parse: (d) => SeriesEndPreview.fromJson(d as Map<String, dynamic>),
+      );
+
+  Future<AppResponse<SeriesCommitment>> end(int id,
+          {bool immediately = false, CancelReason? reason, String? note}) =>
+      _api.post<SeriesCommitment>(
+        'series/$id/end',
+        body: {
+          'immediately': immediately,
+          if (reason != null) 'reason': reason.value,
+          if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
+        },
+        parse: _one,
+      );
 }

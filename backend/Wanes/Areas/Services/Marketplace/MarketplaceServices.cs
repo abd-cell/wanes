@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Wanes.Areas.Domain.Bookings;
 using Wanes.Areas.Domain.Marketplace;
+using Wanes.Areas.Domain.Series;
 using Wanes.Areas.Domain.RideRequests;
 using Wanes.Areas.Domain.RiderTrips;
 using Wanes.Areas.Domain.Trips;
@@ -186,6 +187,7 @@ public class DemandAlertService : IDemandAlertService
                 Destination = GeoFactory.Point(input.Destination.Lat, input.Destination.Lng),
                 RadiusMeters = input.RadiusMeters,
                 MinSeats = minSeats,
+                RecurringOnly = input.RecurringOnly,
             };
         }
 
@@ -231,7 +233,8 @@ public class DemandAlertService : IDemandAlertService
             // the same arithmetic runs identically over the test doubles.
             var matching = candidates.Where(a =>
                     a.RideRequestId == request.Id
-                    || (GeoDistance.Km(a.Origin, request.Origin) * 1000 <= a.RadiusMeters
+                    || ((!a.RecurringOnly || request.ScheduleId != null)
+                        && GeoDistance.Km(a.Origin, request.Origin) * 1000 <= a.RadiusMeters
                         && GeoDistance.Km(a.Destination, request.Destination) * 1000 <= a.RadiusMeters))
                 .ToList();
             if (matching.Count == 0) return 0;
@@ -349,7 +352,7 @@ public class ReliabilityService : IReliabilityService
     {
         var settings = await Settings();
         var now = DateTime.UtcNow;
-        var kind = Classify(trip, ridersAffected, now, settings);
+        var kind = await Classify(trip, ridersAffected, now, settings);
         var points = ReliabilityRules.PointsFor(kind);
         var current = trip.DriverId is { } driverId
             ? await PointsInWindow(driverId, ActiveRole.Driver, now, settings)
@@ -375,7 +378,7 @@ public class ReliabilityService : IReliabilityService
     {
         var settings = await Settings();
         var now = DateTime.UtcNow;
-        var kind = Classify(trip, ridersAffected, now, settings, statusAtCancel);
+        var kind = await Classify(trip, ridersAffected, now, settings, statusAtCancel);
 
         var entry = new ReliabilityEvent
         {
@@ -410,9 +413,47 @@ public class ReliabilityService : IReliabilityService
     {
         var settings = await Settings();
         var now = DateTime.UtcNow;
-        if (!ReliabilityRules.IsLateRiderCancel(now, trip.DepartAt, settings.LateCancelLeadMinutes)) return;
+        // A seat booked with a series is a standing promise: the driver planned
+        // the week around it, so giving it back needs the series notice.
+        var late = booking.SeriesCommitmentId != null
+            ? SeriesRules.IsShortNotice(now, trip.DepartAt, settings.SeriesSkipNoticeHours)
+            : ReliabilityRules.IsLateRiderCancel(now, trip.DepartAt, settings.LateCancelLeadMinutes);
+        if (!late) return;
         await RecordRider(booking, trip, ReliabilityEventKind.RiderLateCancel, now,
             u => u.RiderLateCancels++);
+    }
+
+    public async Task RecordSeriesEnd(int driverId, Trip trip, int ridersAffected, CancelReason? reason, string? note)
+    {
+        var settings = await Settings();
+        var now = DateTime.UtcNow;
+        const ReliabilityEventKind kind = ReliabilityEventKind.SeriesEndShortNotice;
+
+        eventRepository.Create(new ReliabilityEvent
+        {
+            UserId = driverId,
+            Role = ActiveRole.Driver,
+            Kind = kind,
+            Points = ReliabilityRules.PointsFor(kind),
+            TripId = trip.Id,
+            Reason = reason,
+            Note = string.IsNullOrWhiteSpace(note) ? null : note.Trim(),
+            RidersAffected = ridersAffected,
+            MinutesBeforeDeparture = (int)Math.Round((trip.DepartAt - now).TotalMinutes),
+            NeedsReview = ReliabilityRules.NeedsReview(reason),
+            CreatedBy = driverId,
+        });
+
+        var driver = await userRepository.GetByIdAsync(driverId);
+        if (driver != null)
+        {
+            driver.DriverCancellations++;
+            userRepository.Update(driver);
+        }
+        await unitOfWork.SaveAsync();
+        await auditService.LogAsync(AuditActions.ReliabilityRecord, nameof(Trip), trip.Id);
+
+        if (driver != null) await ApplyStanding(driver, now, settings);
     }
 
     public Task RecordRiderNoShow(Booking booking, Trip trip) =>
@@ -505,7 +546,8 @@ public class ReliabilityService : IReliabilityService
         {
             switch (entry.Kind)
             {
-                case ReliabilityEventKind.Cancel or ReliabilityEventKind.LateCancel:
+                case ReliabilityEventKind.Cancel or ReliabilityEventKind.LateCancel
+                    or ReliabilityEventKind.SeriesEndShortNotice:
                     user.DriverCancellations = Math.Max(0, user.DriverCancellations - 1);
                     break;
                 case ReliabilityEventKind.RiderLateCancel:
@@ -538,9 +580,22 @@ public class ReliabilityService : IReliabilityService
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    private static ReliabilityEventKind Classify(Trip trip, int ridersAffected, DateTime now,
-        AppConfigurationOutput settings, TripStatus? statusAtCancel = null) =>
-        ReliabilityRules.ClassifyDriverCancel(
+    private async Task<ReliabilityEventKind> Classify(Trip trip, int ridersAffected, DateTime now,
+        AppConfigurationOutput settings, TripStatus? statusAtCancel = null)
+    {
+        // A day of a series is skipped, not cancelled: its own notice, and a
+        // number of free skips in the window.
+        if ((trip.SeriesCommitmentId != null || trip.ScheduleId != null) && trip.DriverId is { } driverId)
+        {
+            var since = now.AddDays(-settings.ReliabilityWindowDays);
+            var used = await eventRepository.CountAsync(e => e.UserId == driverId
+                && e.Kind == ReliabilityEventKind.SeriesSkip
+                && e.CreationDate >= since);
+            return SeriesRules.ClassifySkip(now, trip.DepartAt, statusAtCancel ?? trip.Status, ridersAffected,
+                settings.SeriesSkipNoticeHours, used, settings.SeriesFreeSkipsPerWindow);
+        }
+
+        return ReliabilityRules.ClassifyDriverCancel(
             now,
             acceptedAt: trip.CreationDate,
             departAt: trip.DepartAt,
@@ -548,6 +603,7 @@ public class ReliabilityService : IReliabilityService
             ridersAffected: ridersAffected,
             graceMinutes: settings.FreeCancelGraceMinutes,
             lateLeadMinutes: settings.LateCancelLeadMinutes);
+    }
 
     private async Task RecordRider(Booking booking, Trip trip, ReliabilityEventKind kind, DateTime now,
         Action<User> bump)

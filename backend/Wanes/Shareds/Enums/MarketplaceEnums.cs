@@ -47,6 +47,39 @@ public enum ReliabilityEventKind
 
     /// <summary>A rider the driver waited for and who never came.</summary>
     RiderNoShow = 5,
+
+    /// <summary>One day of a series skipped with enough notice. Recorded, costs nothing.</summary>
+    SeriesSkip = 6,
+
+    /// <summary>A series ended without the notice period — one per day dropped inside it.</summary>
+    SeriesEndShortNotice = 7,
+}
+
+/// <summary>Which side of a recurring schedule a commitment is on.</summary>
+public enum SeriesSide
+{
+    /// <summary>A driver drives a rider's recurring request, every day it runs.</summary>
+    DriverServes = 1,
+
+    /// <summary>A rider takes a seat on every day of a driver's recurring trip.</summary>
+    RiderJoins = 2,
+}
+
+public enum SeriesStatus
+{
+    /// <summary>A driver's offer on a rider's series, waiting for the rider (or the clock).</summary>
+    Proposed = 1,
+
+    /// <summary>Running: new days are taken or booked as they are generated.</summary>
+    Active = 2,
+
+    /// <summary>The rider picked someone else, or said no.</summary>
+    Declined = 3,
+
+    /// <summary>The driver took back the offer before it was decided.</summary>
+    Withdrawn = 4,
+
+    Ended = 5,
 }
 
 /// <summary>A safety report, and how far the team has got with it.</summary>

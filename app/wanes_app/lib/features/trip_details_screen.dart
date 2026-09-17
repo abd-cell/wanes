@@ -8,7 +8,9 @@ import '../services/services.dart';
 import '../widgets/map_backdrop.dart';
 import '../widgets/wanes_alerts.dart';
 import '../widgets/wanes_ui.dart';
+import '../widgets/repeat_picker.dart';
 import 'confirm_booking_screen.dart';
+import 'series/series_flow.dart';
 import '../widgets/wanes_motion.dart';
 
 /// Trip details — the journey behind a search result or a booking, in full.
@@ -149,6 +151,10 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                         _driverCard(t, trip),
                         const SizedBox(height: 12),
                         _factsCard(t, trip),
+                        if (_bookable && canJoinSeries(trip)) ...[
+                          const SizedBox(height: 12),
+                          _seriesCard(t, trip),
+                        ],
                         if (!_bookable && widget.canBook) ...[
                           const SizedBox(height: 12),
                           _notBookableNote(t, trip),
@@ -168,6 +174,39 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
             ),
         ]),
       ),
+    );
+  }
+
+  /// This trip is one morning of a driver's standing run, so the rider is
+  /// offered the whole of it rather than being left to book fourteen days by
+  /// hand. Booking one day stays exactly where it was.
+  Widget _seriesCard(WanesTokens t, Trip trip) {
+    final series = trip.series!;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: t.surface2,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: t.border),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        RepeatBadge(series: series),
+        const SizedBox(height: 8),
+        Text(context.trPlural('series.bookAllBody', series.upcomingDays),
+            style: TextStyle(fontSize: 12.5, height: 1.45, color: t.ink2)),
+        const SizedBox(height: 8),
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: FilledButton.icon(
+            onPressed: () async {
+              if (await joinWholeSeries(context, trip) && mounted) await _load();
+            },
+            icon: const Icon(Icons.repeat_rounded, size: 18),
+            style: FilledButton.styleFrom(backgroundColor: t.tealInk, foregroundColor: Colors.white),
+            label: Text(context.tr('series.bookAllCta')),
+          ),
+        ),
+      ]),
     );
   }
 

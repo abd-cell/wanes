@@ -50,6 +50,18 @@ double deliberately ships `ScheduledSelectionWindowMinutes = 0` and
 `BoardingCodeRequired = false` (production: 20 and true) so formation and tracking
 tests are not about those features — the tests for them turn them on.
 
+**Whole-series commitments (§27) sit on top of recurrence.** A driver may take every
+day of a rider's schedule, and a rider may book every day of a driver's, through one
+`SeriesCommitment` — which is read at exactly two moments: when the materialiser
+writes a day (`ISeriesService.OnTripGenerated` / `OnRequestGenerated`) and when
+somebody gives days up. Everything else still sees ordinary trips, requests and
+bookings, so do not teach search, formation or the seat rules about it. Skipping one
+day and ending a series are priced on *notice* (`SeriesSkipNoticeHours`,
+`SeriesEndNoticeDays`), which is why `ReliabilityService` classifies a series day
+through `SeriesRules.ClassifySkip` rather than the one-off rule. Writing a schedule
+now generates its first fortnight in the same call, so "Repeat" on either posting
+form shows its days at once.
+
 ## Toolchain
 
 - **Flutter is not on PATH** — always call `C:\flutter\bin\flutter.bat`.

@@ -632,4 +632,31 @@ export const ar: Record<string, string> = {
   share_open_map: 'افتح في الخرائط',
   share_updated: 'آخر تحديث {time} · يتحدّث كل 30 ثانية',
   share_emergency: 'إذا كنت تعتقد أنهم في خطر، اتصل بالرقم 911.',
+
+  // ── الالتزام بالسلاسل ──
+  res_series: 'السلاسل',
+  col_side: 'الطرف',
+  col_upcoming_days: 'أيام قادمة',
+  col_next_departure: 'الانطلاق التالي',
+  col_until: 'حتى',
+  seriesside_1: 'سائق يقود سلسلة راكب',
+  seriesside_2: 'راكب يحجز سلسلة سائق',
+  seriesstatus_1: 'بانتظار الرد',
+  seriesstatus_2: 'قائمة',
+  seriesstatus_3: 'مرفوضة',
+  seriesstatus_4: 'مسحوبة',
+  seriesstatus_5: 'منتهية',
+  reliabilitykind_6: 'تخطي يوم من سلسلة',
+  reliabilitykind_7: 'إنهاء سلسلة بإشعار قصير',
+  notiftype_21: 'رحلة متكررة',
+  cfg_series: 'الالتزام بالسلاسل الكاملة',
+  cfg_series_enabled: 'السماح للسائقين بأخذ سلسلة كاملة وللركاب بحجزها',
+  cfg_series_decision: 'ساعات الرد على عرض السلسلة',
+  cfg_series_skip: 'إشعار تخطي يوم واحد (ساعات)',
+  cfg_series_free_skips: 'التخطيات المجانية في النافذة',
+  cfg_series_end_notice: 'إشعار إنهاء السلسلة (أيام)',
+  cfg_series_summary_day: 'يوم ملخص الأسبوع (0 = الأحد)',
+  cfg_series_hint:
+    'يمكن للسائق أخذ كل أيام طلب راكب متكرر، وللراكب حجز كل أيام رحلة سائق متكررة. ' +
+    'تخطي يوم واحد بإشعار كافٍ مجاني؛ وإنهاء السلسلة داخل مدة الإشعار يكلف نقطة عن كل يوم يسقط.',
 };

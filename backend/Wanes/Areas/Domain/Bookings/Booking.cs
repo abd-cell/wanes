@@ -75,6 +75,13 @@ public class Booking : AuditableEntity
     /// <summary>When the rider agreed the ride is shared. Null for older clients.</summary>
     public DateTime? SharedTermsAcceptedAt { get; set; }
 
+    /// <summary>
+    /// The rider's series booking this seat was made under, if any. Decides the
+    /// notice a cancellation needs (<c>SeriesSkipNoticeHours</c>) and which
+    /// seats ending the series gives back.
+    /// </summary>
+    public int? SeriesCommitmentId { get; set; }
+
     /// <summary>What this rider requires of the others, as one value.</summary>
     public RideConditions Conditions => new(CoRiderGenderPolicy, MinAge, MaxAge);
 }

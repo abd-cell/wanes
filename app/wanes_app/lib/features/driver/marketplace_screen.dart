@@ -12,11 +12,12 @@ import '../../core/push_service.dart';
 import '../../core/theme.dart';
 import '../../models/models.dart';
 import '../../services/services.dart';
+import '../../widgets/repeat_picker.dart';
 import '../../widgets/safety_notes.dart';
 import '../../widgets/wanes_alerts.dart';
 import '../../widgets/wanes_motion.dart';
 import '../../widgets/wanes_ui.dart';
-import 'accept_flow.dart';
+import '../series/series_flow.dart';
 
 /// Which part of the marketplace a driver is looking at.
 enum MarketSegment { now, scheduled }
@@ -66,6 +67,8 @@ class MarketplaceScreenState extends State<MarketplaceScreen> {
 
   late MarketSegment _segment = widget.initialSegment;
   int _radiusKm = 25;
+  /// Repeating commutes only — the runs worth planning a week around.
+  bool _recurringOnly = false;
   Place? _here;
   List<RiderTrip> _rows = [];
   final Set<int> _passed = {};
@@ -117,15 +120,21 @@ class MarketplaceScreenState extends State<MarketplaceScreen> {
 
   void selectSegment(MarketSegment segment) => setState(() => _segment = segment);
 
-  List<RiderTrip> get _visible =>
-      marketSegment(_rows, _segment).where((r) => !_passed.contains(r.id)).toList();
+  List<RiderTrip> get _visible => marketSegment(_rows, _segment)
+      .where((r) => !_passed.contains(r.id))
+      .where((r) => !_recurringOnly || r.isRecurring)
+      .toList();
+  /// Repeating requests in the segment on screen — the filter only appears
+  /// when there is something to filter to.
+  int get _recurringCount =>
+      marketSegment(_rows, _segment).where((r) => !_passed.contains(r.id) && r.isRecurring).length;
 
   int _count(MarketSegment s) =>
       marketSegment(_rows, s).where((r) => !_passed.contains(r.id)).length;
 
   Future<void> _accept(RiderTrip r) async {
     if (_busy) return;
-    final ok = await acceptRideRequest(context, r,
+    final ok = await takeRideRequest(context, r,
         onBusy: (busy) => mounted ? setState(() => _busy = busy) : null);
     if (ok && mounted) {
       setState(() => _rows.removeWhere((x) => x.id == r.id));
@@ -184,6 +193,10 @@ class MarketplaceScreenState extends State<MarketplaceScreen> {
             _segments(t),
             const SizedBox(height: 10),
             _radiusRow(t),
+            if (_recurringCount > 0) ...[
+              const SizedBox(height: 8),
+              _recurringFilter(t),
+            ],
             if (_here != null && !DriverPosition.isLive) ...[
               const SizedBox(height: 10),
               _approxBanner(t),
@@ -280,6 +293,21 @@ class MarketplaceScreenState extends State<MarketplaceScreen> {
       ]),
     );
   }
+
+  /// "Repeating (4)" — one chip, because a driver after a commute wants the
+  /// runs they can plan a week around and nothing else.
+  Widget _recurringFilter(WanesTokens t) => Row(children: [
+        Icon(Icons.repeat_rounded, size: 16, color: t.ink2),
+        const SizedBox(width: 6),
+        Text(context.tr('series.recurringFilter'), style: TextStyle(fontSize: 12.5, color: t.ink2)),
+        const Spacer(),
+        ChoiceChip(
+          label: Text('$_recurringCount'),
+          selected: _recurringOnly,
+          visualDensity: VisualDensity.compact,
+          onSelected: (v) => setState(() => _recurringOnly = v),
+        ),
+      ]);
 
   Widget _radiusRow(WanesTokens t) => Row(children: [
         Icon(Icons.radar_rounded, size: 16, color: t.ink2),
@@ -431,6 +459,14 @@ class MarketRequestCard extends StatelessWidget {
               if (r.driverGenderPolicy != GenderPolicy.any)
                 _chip(t, Icons.shield_outlined, context.tr(r.driverGenderPolicy.labelKey)),
               if (r.iHaveOffered) _chip(t, Icons.check_rounded, context.tr('market.offerSent'), highlight: true),
+              // One day of a commute. The badge is what turns a Tuesday
+              // morning into "every Tuesday morning" on the card itself.
+              if (r.series != null) RepeatBadge(series: r.series!, compact: true),
+              if (r.series?.hasDriver == true)
+                _chip(t, Icons.person_outline_rounded,
+                    context.tr('series.hasDriver', {'name': r.series!.driverName ?? ''})),
+              if (r.series?.mySeriesStatus == SeriesStatus.proposed)
+                _chip(t, Icons.repeat_rounded, context.tr('series.offerSentTitle'), highlight: true),
             ]),
           ),
           const SizedBox(width: 10),

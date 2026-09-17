@@ -52,6 +52,9 @@ public class DemandAlertInput
     public int MinSeats { get; set; } = 3;
 
     public int? RideRequestId { get; set; }
+
+    /// <summary>A route alert that fires only for recurring requests.</summary>
+    public bool RecurringOnly { get; set; }
 }
 
 public class DemandAlertOutput
@@ -68,6 +71,7 @@ public class DemandAlertOutput
     public int RadiusMeters { get; set; }
     public int MinSeats { get; set; }
     public int? RideRequestId { get; set; }
+    public bool RecurringOnly { get; set; }
     public bool IsActive { get; set; }
     public DateTime? LastNotifiedAt { get; set; }
     public int NotifiedCount { get; set; }
@@ -89,6 +93,7 @@ public class DemandAlertOutput
         RadiusMeters = a.RadiusMeters;
         MinSeats = a.MinSeats;
         RideRequestId = a.RideRequestId;
+        RecurringOnly = a.RecurringOnly;
         IsActive = a.IsActive;
         LastNotifiedAt = a.LastNotifiedAt;
         NotifiedCount = a.NotifiedCount;

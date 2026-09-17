@@ -15,6 +15,13 @@ public interface IBookingService
     Task<BaseResponse<BookingOutput>> Create(CreateBookingInput input);
 
     /// <summary>
+    /// The same seat, taken for a rider under their series booking — by the
+    /// series service or the materialiser, with nobody signed in as the rider.
+    /// Quiet: the rider hears once for the series, not once a day.
+    /// </summary>
+    Task<BaseResponse<BookingOutput>> CreateForSeries(int riderId, CreateBookingInput input, int seriesCommitmentId);
+
+    /// <summary>
     /// Gives the seat back. The rider's one escape hatch, and the same one
     /// whatever put them on the trip — a seat they booked, or a seat a driver
     /// created by claiming the trip they posted at a price they would rather

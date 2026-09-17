@@ -126,6 +126,9 @@ namespace Wanes.Migrations
                     b.Property<int>("Seats")
                         .HasColumnType("int");
 
+                    b.Property<int?>("SeriesCommitmentId")
+                        .HasColumnType("int");
+
                     b.Property<string>("ShareToken")
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
@@ -145,6 +148,9 @@ namespace Wanes.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("RiderId");
+
+                    b.HasIndex("SeriesCommitmentId")
+                        .HasFilter("[SeriesCommitmentId] IS NOT NULL");
 
                     b.HasIndex("ShareToken")
                         .IsUnique()
@@ -258,6 +264,24 @@ namespace Wanes.Migrations
                         .HasColumnType("bit");
 
                     b.Property<int>("ScheduledSelectionWindowMinutes")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("SeriesCommitmentsEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("SeriesDecisionHours")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SeriesEndNoticeDays")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SeriesFreeSkipsPerWindow")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SeriesSkipNoticeHours")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SeriesSummaryDay")
                         .HasColumnType("int");
 
                     b.Property<string>("ShareBaseUrl")
@@ -413,6 +437,9 @@ namespace Wanes.Migrations
 
                     b.Property<int>("RadiusMeters")
                         .HasColumnType("int");
+
+                    b.Property<bool>("RecurringOnly")
+                        .HasColumnType("bit");
 
                     b.Property<int?>("RideRequestId")
                         .HasColumnType("int");
@@ -1127,6 +1154,110 @@ namespace Wanes.Migrations
                     b.ToTable("TripSchedules");
                 });
 
+            modelBuilder.Entity("Wanes.Areas.Domain.Series.SeriesCommitment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime?>("AcceptedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreationDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("DaysOfWeek")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("DecideAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DeletionDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("DriverId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("EndNote")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int?>("EndReason")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("EndRequestedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("EndedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("EndedBy")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("LastSummaryAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Message")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<DateTime?>("ModificationDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
+
+                    b.Property<decimal?>("PricePerSeat")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<int>("RiderId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ScheduleId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("Seats")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("SharedTermsAcceptedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("Side")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<DateOnly?>("Until")
+                        .HasColumnType("date");
+
+                    b.Property<int?>("VehicleId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DriverId");
+
+                    b.HasIndex("RiderId");
+
+                    b.HasIndex("VehicleId");
+
+                    b.HasIndex("Status", "DecideAt");
+
+                    b.HasIndex("ScheduleId", "Side", "Status");
+
+                    b.ToTable("SeriesCommitments");
+                });
+
             modelBuilder.Entity("Wanes.Areas.Domain.Support.FaqItem", b =>
                 {
                     b.Property<int>("Id")
@@ -1352,6 +1483,9 @@ namespace Wanes.Migrations
                     b.Property<int>("SeatsTotal")
                         .HasColumnType("int");
 
+                    b.Property<int?>("SeriesCommitmentId")
+                        .HasColumnType("int");
+
                     b.Property<int>("Status")
                         .HasColumnType("int");
 
@@ -1361,6 +1495,9 @@ namespace Wanes.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("DriverId");
+
+                    b.HasIndex("SeriesCommitmentId")
+                        .HasFilter("[SeriesCommitmentId] IS NOT NULL");
 
                     b.HasIndex("VehicleId");
 
@@ -2095,6 +2232,40 @@ namespace Wanes.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Owner");
+
+                    b.Navigation("Vehicle");
+                });
+
+            modelBuilder.Entity("Wanes.Areas.Domain.Series.SeriesCommitment", b =>
+                {
+                    b.HasOne("Wanes.Areas.Domain.Users.User", "Driver")
+                        .WithMany()
+                        .HasForeignKey("DriverId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Wanes.Areas.Domain.Users.User", "Rider")
+                        .WithMany()
+                        .HasForeignKey("RiderId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Wanes.Areas.Domain.Schedules.TripSchedule", "Schedule")
+                        .WithMany()
+                        .HasForeignKey("ScheduleId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Wanes.Areas.Domain.Vehicles.Vehicle", "Vehicle")
+                        .WithMany()
+                        .HasForeignKey("VehicleId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Driver");
+
+                    b.Navigation("Rider");
+
+                    b.Navigation("Schedule");
 
                     b.Navigation("Vehicle");
                 });

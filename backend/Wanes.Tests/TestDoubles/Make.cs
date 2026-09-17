@@ -12,6 +12,8 @@ using Wanes.Areas.Services.Bookings;
 using Wanes.Areas.Services.RideRequests;
 using Wanes.Areas.Services.Schedules;
 using Wanes.Areas.Services.Search;
+using Wanes.Areas.Services.Series;
+using Wanes.Areas.Domain.Series;
 using Wanes.Areas.Services.Trips;
 using Wanes.Areas.Services.Users.Availability;
 
@@ -153,10 +155,33 @@ public static class Make
             uow.Repository<RideRequest>(), uow.Repository<RideRequestParticipant>());
 
     public static TripScheduleService Schedules(FakeUnitOfWork uow, int ownerId,
-        FakeAppConfigurationService? config = null) =>
+        FakeAppConfigurationService? config = null, FakeNotificationService? notifications = null) =>
         new(uow, new FakeSecurityManager(ownerId), new FakeAuditService(),
             config ?? new FakeAppConfigurationService(),
+            Series(uow, ownerId, notifications, config),
             uow.Repository<TripSchedule>(), uow.Repository<Trip>(),
             uow.Repository<RideRequest>(), uow.Repository<RideRequestParticipant>(),
             uow.Repository<Booking>(), uow.Repository<Vehicle>(), uow.Repository<User>());
+
+    /// <summary>Whole-series commitments, wired over the real interest and booking services.</summary>
+    public static SeriesService Series(FakeUnitOfWork uow, int userId,
+        FakeNotificationService? notifications = null, FakeAppConfigurationService? config = null)
+    {
+        notifications ??= new FakeNotificationService();
+        config ??= new FakeAppConfigurationService();
+        return new(uow, new FakeSecurityManager(userId), new FakeAuditService(), notifications, config,
+            Interests(uow, userId, notifications, config),
+            Bookings(uow, userId, notifications, config),
+            Reliability(uow, userId, notifications, config),
+            Recovery(uow, userId, notifications),
+            uow.Repository<SeriesCommitment>(), uow.Repository<TripSchedule>(),
+            uow.Repository<RideRequest>(), uow.Repository<RideRequestParticipant>(),
+            uow.Repository<Trip>(), uow.Repository<TripStatusHistory>(),
+            uow.Repository<Booking>(), uow.Repository<User>(), uow.Repository<Vehicle>());
+    }
+
+    public static SeriesInfoService SeriesInfo(FakeUnitOfWork uow, int userId) =>
+        new(new FakeSecurityManager(userId),
+            uow.Repository<TripSchedule>(), uow.Repository<SeriesCommitment>(),
+            uow.Repository<RideRequest>(), uow.Repository<Trip>(), uow.Repository<User>());
 }

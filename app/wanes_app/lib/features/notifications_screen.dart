@@ -187,6 +187,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       NotificationKind.demandAlert => 'notifType.demandAlert',
       NotificationKind.reliability => 'notifType.reliability',
       NotificationKind.safetyIncident => 'notifType.safetyIncident',
+      NotificationKind.series => 'notifType.series',
       // Admin-composed — there is no key for it, so show what was sent.
       NotificationKind.general => '',
     };
@@ -291,6 +292,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             fg: t.amberInk,
             tile: t.amberTint,
             card: t.amberTint
+          ),
+        NotificationKind.series => (
+            icon: Icons.repeat_rounded,
+            fg: t.amberInk,
+            tile: t.amberTint,
+            card: null
           ),
         NotificationKind.safetyIncident => (
             icon: Icons.sos_rounded,

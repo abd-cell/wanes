@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using Wanes.Areas.Domain.Marketplace;
+using Wanes.Areas.Domain.Series;
 using Wanes.Areas.Domain.RiderTrips;
 using Wanes.Areas.Domain.RideRequests;
 using Wanes.Areas.Domain.Trips;
@@ -87,6 +88,12 @@ public class AppConfigurationOutput
     public bool BoardingCodeRequired { get; set; }
     public string EmergencyNumber { get; set; } = string.Empty;
     public string? ShareBaseUrl { get; set; }
+    public bool SeriesCommitmentsEnabled { get; set; }
+    public int SeriesDecisionHours { get; set; }
+    public int SeriesSkipNoticeHours { get; set; }
+    public int SeriesFreeSkipsPerWindow { get; set; }
+    public int SeriesEndNoticeDays { get; set; }
+    public int SeriesSummaryDay { get; set; }
 
     // ── Support contact ──
     //
@@ -134,6 +141,12 @@ public class AppConfigurationOutput
         BoardingCodeRequired = e.BoardingCodeRequired;
         EmergencyNumber = e.EmergencyNumber;
         ShareBaseUrl = e.ShareBaseUrl;
+        SeriesCommitmentsEnabled = e.SeriesCommitmentsEnabled;
+        SeriesDecisionHours = e.SeriesDecisionHours;
+        SeriesSkipNoticeHours = e.SeriesSkipNoticeHours;
+        SeriesFreeSkipsPerWindow = e.SeriesFreeSkipsPerWindow;
+        SeriesEndNoticeDays = e.SeriesEndNoticeDays;
+        SeriesSummaryDay = e.SeriesSummaryDay;
         SupportPhone = e.SupportPhone;
         SupportWhatsApp = e.SupportWhatsApp;
         SupportEmail = e.SupportEmail;
@@ -253,6 +266,25 @@ public class AppConfigurationInput
 
     [Range(0, ReliabilityRules.MaxSuspensionDays)]
     public int SuspensionDays { get; set; } = ReliabilityRules.DefaultSuspensionDays;
+
+    // ── Series ──
+
+    public bool SeriesCommitmentsEnabled { get; set; } = true;
+
+    [Range(0, SeriesRules.MaxDecisionHours)]
+    public int SeriesDecisionHours { get; set; } = SeriesRules.DefaultDecisionHours;
+
+    [Range(0, SeriesRules.MaxSkipNoticeHours)]
+    public int SeriesSkipNoticeHours { get; set; } = SeriesRules.DefaultSkipNoticeHours;
+
+    [Range(0, SeriesRules.MaxFreeSkips)]
+    public int SeriesFreeSkipsPerWindow { get; set; } = SeriesRules.DefaultFreeSkipsPerWindow;
+
+    [Range(0, SeriesRules.MaxEndNoticeDays)]
+    public int SeriesEndNoticeDays { get; set; } = SeriesRules.DefaultEndNoticeDays;
+
+    [Range(0, 6)]
+    public int SeriesSummaryDay { get; set; } = SeriesRules.DefaultSummaryDay;
 
     // ── Safety ──
 

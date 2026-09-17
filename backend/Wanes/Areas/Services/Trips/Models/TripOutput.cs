@@ -82,6 +82,16 @@ public class TripOutput
     /// </summary>
     public DateTime? StartedAt { get; set; }
 
+    /// <summary>The driver's recurring schedule this trip is one day of.</summary>
+    public int? ScheduleId { get; set; }
+    public DateOnly? OccurrenceDate { get; set; }
+
+    /// <summary>The driver's series commitment this trip was formed under (a day of a rider's series).</summary>
+    public int? SeriesCommitmentId { get; set; }
+
+    /// <summary>The recurrence behind the trip, filled by the series decorator.</summary>
+    public Series.Models.SeriesInfo? Series { get; set; }
+
     public TripOutput() { }
 
     public TripOutput(Trip trip, User? driver) : this(trip, driver, trip?.Vehicle) { }
@@ -125,6 +135,9 @@ public class TripOutput
         GenderPolicy = trip.GenderPolicy;
         MinAge = trip.MinAge;
         MaxAge = trip.MaxAge;
+        ScheduleId = trip.ScheduleId;
+        OccurrenceDate = trip.OccurrenceDate;
+        SeriesCommitmentId = trip.SeriesCommitmentId;
         StartedAt = trip.History?
             .Where(h => h.Status == TripStatus.Active)
             .OrderByDescending(h => h.Id)

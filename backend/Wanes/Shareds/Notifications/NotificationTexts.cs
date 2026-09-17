@@ -165,6 +165,61 @@ public static class NotificationTexts
             "The riders chose you", "{origin} -> {destination} is yours — check your trips.",
             "اختارك الركاب", "رحلة {origin} إلى {destination} أصبحت لك — راجع رحلاتك."),
 
+        [NotificationTemplate.SeriesOfferRider] = new(
+            NotificationType.Series,
+            "{name} offers to drive your series", "{days}: {origin} -> {destination} at {price} a seat. Review the offer.",
+            "{name} يعرض قيادة رحلاتك المتكررة", "{daysAr}: من {origin} إلى {destination} بسعر {price} للمقعد. راجع العرض."),
+
+        [NotificationTemplate.SeriesAcceptedDriver] = new(
+            NotificationType.Series,
+            "The series is yours", "{origin} -> {destination} ({days}). {count} upcoming days are in your trips.",
+            "الرحلات المتكررة أصبحت لك", "من {origin} إلى {destination} ({daysAr}). أضيفت {count} أيام قادمة إلى رحلاتك."),
+
+        [NotificationTemplate.SeriesNotSelectedDriver] = new(
+            NotificationType.Series,
+            "Another driver took the series", "{origin} -> {destination} went to someone else.",
+            "سائق آخر أخذ الرحلات المتكررة", "رحلات {origin} إلى {destination} ذهبت لسائق آخر."),
+
+        [NotificationTemplate.SeriesStartedRider] = new(
+            NotificationType.Series,
+            "{name} will drive your series", "{days}: {count} upcoming days are confirmed.",
+            "{name} سيقود رحلاتك المتكررة", "{daysAr}: تم تأكيد {count} أيام قادمة."),
+
+        [NotificationTemplate.SeriesDayOpenRider] = new(
+            NotificationType.Series,
+            "{date} needs another driver", "Your series driver can't make {date}. It is on the board for other drivers.",
+            "{dateAr} يحتاج سائقاً آخر", "سائق رحلاتك لا يستطيع يوم {dateAr}. طرحناه لبقية السائقين."),
+
+        [NotificationTemplate.SeriesDayMissedDriver] = new(
+            NotificationType.Series,
+            "{date} was not added", "You already have a trip then, so {origin} -> {destination} on {date} went to the board.",
+            "لم يُضف يوم {dateAr}", "لديك رحلة في ذلك الوقت، لذا طُرحت رحلة {origin} إلى {destination} يوم {dateAr} لبقية السائقين."),
+
+        [NotificationTemplate.SeriesDaySkippedRider] = new(
+            NotificationType.Series,
+            "No ride on {date}", "{origin} -> {destination} on {date} is cancelled. The rest of your series stands.",
+            "لا رحلة يوم {dateAr}", "أُلغيت رحلة {origin} إلى {destination} يوم {dateAr}. بقية رحلاتك المتكررة قائمة."),
+
+        [NotificationTemplate.SeriesEnded] = new(
+            NotificationType.Series,
+            "{name} ended the series", "{origin} -> {destination} stops after {date}.",
+            "{name} أنهى الرحلات المتكررة", "تتوقف رحلات {origin} إلى {destination} بعد {dateAr}."),
+
+        [NotificationTemplate.SeriesWeeklySummary] = new(
+            NotificationType.Series,
+            "Your week ahead", "{count} rides on {origin} -> {destination} in the next 7 days.",
+            "أسبوعك القادم", "{count} رحلات من {origin} إلى {destination} خلال الأيام السبعة القادمة."),
+
+        [NotificationTemplate.SeriesRiderJoinedDriver] = new(
+            NotificationType.Series,
+            "{name} booked your series", "{seats} seat(s) on {count} upcoming days of {origin} -> {destination}.",
+            "{name} حجز رحلاتك المتكررة", "{seats} مقعد في {count} أيام قادمة من {origin} إلى {destination}."),
+
+        [NotificationTemplate.SeriesDayNotBookedRider] = new(
+            NotificationType.Series,
+            "{date} could not be booked", "{origin} -> {destination} on {date} is full or clashes with another ride.",
+            "تعذر حجز يوم {dateAr}", "رحلة {origin} إلى {destination} يوم {dateAr} ممتلئة أو تتعارض مع رحلة أخرى."),
+
         [NotificationTemplate.DriverVerified] = new(
             NotificationType.DriverVerified,
             "You are approved to drive",

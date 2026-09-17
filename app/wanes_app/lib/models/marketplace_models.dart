@@ -70,6 +70,7 @@ class DemandAlert {
     required this.minSeats,
     this.radiusMeters = 3000,
     this.rideRequestId,
+    this.recurringOnly = false,
     this.isActive = true,
     this.lastNotifiedAt,
     this.notifiedCount = 0,
@@ -81,6 +82,9 @@ class DemandAlert {
   final int radiusMeters;
   final int minSeats;
   final int? rideRequestId;
+
+  /// A route alert that fires for recurring requests only.
+  final bool recurringOnly;
   final bool isActive;
   final DateTime? lastNotifiedAt;
   final int notifiedCount;
@@ -94,6 +98,7 @@ class DemandAlert {
         radiusMeters: (j['radiusMeters'] as num?)?.toInt() ?? 3000,
         minSeats: (j['minSeats'] as num?)?.toInt() ?? 1,
         rideRequestId: (j['rideRequestId'] as num?)?.toInt(),
+        recurringOnly: j['recurringOnly'] as bool? ?? false,
         isActive: j['isActive'] as bool? ?? true,
         lastNotifiedAt: parseServerDate(j['lastNotifiedAt'] as String?),
         notifiedCount: (j['notifiedCount'] as num?)?.toInt() ?? 0,
@@ -121,7 +126,9 @@ enum ReliabilityKind {
   cancel(2, 'reliability.kindCancel'),
   lateCancel(3, 'reliability.kindLate'),
   riderLateCancel(4, 'reliability.kindRiderLate'),
-  riderNoShow(5, 'reliability.kindNoShow');
+  riderNoShow(5, 'reliability.kindNoShow'),
+  seriesSkip(6, 'reliability.kindSeriesSkip'),
+  seriesEnd(7, 'reliability.kindSeriesEnd');
 
   const ReliabilityKind(this.value, this.labelKey);
 

@@ -1,4 +1,5 @@
 using Wanes.Areas.Domain.Marketplace;
+using Wanes.Areas.Domain.Series;
 using Wanes.Areas.Domain.RideRequests;
 using Wanes.Areas.Domain.RiderTrips;
 using Wanes.Areas.Domain.Trips;
@@ -184,6 +185,13 @@ public class FakeAppConfigurationService : IAppConfigurationService
     public string EmergencyNumber { get; set; } = "911";
     public string? ShareBaseUrl { get; set; }
 
+    public bool SeriesCommitmentsEnabled { get; set; } = true;
+    public int SeriesDecisionHours { get; set; } = SeriesRules.DefaultDecisionHours;
+    public int SeriesSkipNoticeHours { get; set; } = SeriesRules.DefaultSkipNoticeHours;
+    public int SeriesFreeSkipsPerWindow { get; set; } = SeriesRules.DefaultFreeSkipsPerWindow;
+    public int SeriesEndNoticeDays { get; set; } = SeriesRules.DefaultEndNoticeDays;
+    public int SeriesSummaryDay { get; set; } = SeriesRules.DefaultSummaryDay;
+
     public Task<BaseResponse<AppConfigurationOutput>> Get() =>
         Task.FromResult(new BaseResponse<AppConfigurationOutput>(Output()));
 
@@ -220,6 +228,12 @@ public class FakeAppConfigurationService : IAppConfigurationService
         BoardingCodeRequired = BoardingCodeRequired,
         EmergencyNumber = EmergencyNumber,
         ShareBaseUrl = ShareBaseUrl,
+        SeriesCommitmentsEnabled = SeriesCommitmentsEnabled,
+        SeriesDecisionHours = SeriesDecisionHours,
+        SeriesSkipNoticeHours = SeriesSkipNoticeHours,
+        SeriesFreeSkipsPerWindow = SeriesFreeSkipsPerWindow,
+        SeriesEndNoticeDays = SeriesEndNoticeDays,
+        SeriesSummaryDay = SeriesSummaryDay,
     };
 }
 

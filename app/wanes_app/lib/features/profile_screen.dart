@@ -20,6 +20,7 @@ import 'contact_us_screen.dart';
 import 'faq_screen.dart';
 import 'feedback_screen.dart';
 import 'saved_places_screen.dart';
+import 'series/my_series_screen.dart';
 import '../widgets/wanes_motion.dart';
 
 /// Rider profile tab. Mirrors prototype screen 11 (Rider profile): identity
@@ -256,6 +257,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
         title: context.tr('places.savedPlaces'),
         subtitle: _savedPlacesSummary(),
         onTap: _openSavedPlaces,
+      ),
+      // The commutes this rider has committed to, and the drivers who have
+      // offered to take the whole of theirs.
+      GroupedRow(
+        icon: Icons.event_repeat_rounded,
+        title: context.tr('series.title'),
+        subtitle: context.tr('series.rowSubtitle'),
+        onTap: () => Navigator.push(
+            context, MaterialPageRoute(builder: (_) => const MySeriesScreen())),
       ),
       const LanguageRow(),
       GroupedRow(

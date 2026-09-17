@@ -3,6 +3,7 @@ using Wanes.Areas.Services.Marketplace.Models;
 using Wanes.Areas.Services.RideRequests;
 using Wanes.Areas.Services.RideRequests.Models;
 using Wanes.Areas.Services.Search;
+using Wanes.Areas.Services.Series;
 using Wanes.Areas.Services.Search.Models;
 using Wanes.Shareds.Attributes;
 using Wanes.Shareds.Models;
@@ -24,15 +25,18 @@ public class RideRequestsController : BaseApiController
     private readonly IRideRequestService rideRequestService;
     private readonly IDriverInterestService driverInterestService;
     private readonly IDemandSearchService demandSearchService;
+    private readonly ISeriesInfoService seriesInfo;
 
     public RideRequestsController(
         IRideRequestService rideRequestService,
         IDriverInterestService driverInterestService,
-        IDemandSearchService demandSearchService)
+        IDemandSearchService demandSearchService,
+        ISeriesInfoService seriesInfo)
     {
         this.rideRequestService = rideRequestService;
         this.driverInterestService = driverInterestService;
         this.demandSearchService = demandSearchService;
+        this.seriesInfo = seriesInfo;
     }
 
     /// <summary>Creates demand. The caller is its first participant.</summary>
@@ -43,11 +47,11 @@ public class RideRequestsController : BaseApiController
     /// <summary>Every request the caller is on.</summary>
     [HttpGet("mine")]
     public async Task<BaseResponse<List<RideRequestRow>>> Mine()
-        => await rideRequestService.GetMine();
+        => await seriesInfo.With(await rideRequestService.GetMine());
 
     [HttpGet("{id:int}")]
     public async Task<BaseResponse<RideRequestRow>> Get(int id)
-        => await rideRequestService.Get(id);
+        => await seriesInfo.With(await rideRequestService.Get(id));
 
     /// <summary>Joins somebody else's request rather than creating a duplicate.</summary>
     [HttpPost("{id:int}/join")]
@@ -69,13 +73,13 @@ public class RideRequestsController : BaseApiController
     /// </summary>
     [HttpPost("search")]
     public async Task<BaseResponse<DemandSearchResult>> Search([FromBody] DemandSearchInput input)
-        => await demandSearchService.Search(input);
+        => await seriesInfo.With(await demandSearchService.Search(input));
 
     /// <summary>The driver's board: requests near them they could actually serve.</summary>
     [HttpGet("nearby")]
     public async Task<BaseResponse<List<RideRequestRow>>> Nearby(
         [FromQuery] double lat, [FromQuery] double lng, [FromQuery] int radiusMeters = 5000)
-        => await rideRequestService.GetNearby(lat, lng, radiusMeters);
+        => await seriesInfo.With(await rideRequestService.GetNearby(lat, lng, radiusMeters));
 
     /// <summary>
     /// Offers to serve the request, in this car at this price.

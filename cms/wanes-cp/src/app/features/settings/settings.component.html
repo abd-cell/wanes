@@ -257,6 +257,48 @@
       </div>
       <p class="hint">{{ 'cfg_reliability_hint' | translate }}</p>
 
+      <h3>{{ 'cfg_series' | translate }}</h3>
+      <label class="check">
+        <input type="checkbox" [ngModel]="model().seriesCommitmentsEnabled"
+               (ngModelChange)="set('seriesCommitmentsEnabled', $event)" />
+        {{ 'cfg_series_enabled' | translate }}
+      </label>
+      <div class="pair">
+        <div class="form-row">
+          <label for="cfg-series-decision">{{ 'cfg_series_decision' | translate }}</label>
+          <input id="cfg-series-decision" class="field" type="number" min="0" max="168" step="1"
+                 [ngModel]="model().seriesDecisionHours"
+                 (ngModelChange)="set('seriesDecisionHours', +$event)" />
+        </div>
+        <div class="form-row">
+          <label for="cfg-series-skip">{{ 'cfg_series_skip' | translate }}</label>
+          <input id="cfg-series-skip" class="field" type="number" min="0" max="168" step="1"
+                 [ngModel]="model().seriesSkipNoticeHours"
+                 (ngModelChange)="set('seriesSkipNoticeHours', +$event)" />
+        </div>
+      </div>
+      <div class="pair">
+        <div class="form-row">
+          <label for="cfg-series-free-skips">{{ 'cfg_series_free_skips' | translate }}</label>
+          <input id="cfg-series-free-skips" class="field" type="number" min="0" max="50" step="1"
+                 [ngModel]="model().seriesFreeSkipsPerWindow"
+                 (ngModelChange)="set('seriesFreeSkipsPerWindow', +$event)" />
+        </div>
+        <div class="form-row">
+          <label for="cfg-series-end">{{ 'cfg_series_end_notice' | translate }}</label>
+          <input id="cfg-series-end" class="field" type="number" min="0" max="30" step="1"
+                 [ngModel]="model().seriesEndNoticeDays"
+                 (ngModelChange)="set('seriesEndNoticeDays', +$event)" />
+        </div>
+      </div>
+      <div class="form-row">
+        <label for="cfg-series-summary">{{ 'cfg_series_summary_day' | translate }}</label>
+        <input id="cfg-series-summary" class="field" type="number" min="0" max="6" step="1"
+               [ngModel]="model().seriesSummaryDay"
+               (ngModelChange)="set('seriesSummaryDay', +$event)" />
+      </div>
+      <p class="hint">{{ 'cfg_series_hint' | translate }}</p>
+
       <h3>{{ 'cfg_safety' | translate }}</h3>
       <div class="pair">
         <div class="form-row">

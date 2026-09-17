@@ -11,11 +11,11 @@ import '../models/models.dart';
 import '../services/services.dart';
 import '../widgets/conditions_card.dart';
 import '../widgets/place_picker.dart';
+import '../widgets/repeat_picker.dart';
 import '../widgets/safety_notes.dart';
 import '../widgets/wanes_alerts.dart';
 import '../widgets/wanes_ui.dart';
 import '../widgets/when_picker.dart';
-import 'schedule_form_screen.dart';
 import 'schedules_screen.dart';
 import 'searching_screen.dart';
 
@@ -75,6 +75,11 @@ class _PostRiderTripScreenState extends State<PostRiderTripScreen> {
   /// The rider has agreed this is a shared ride. Pre-ticked for a rider who has
   /// agreed before — the notice is still on screen — and required to post.
   bool _sharedAgreed = false;
+
+  /// Once, or every week. The first question on the form, because it decides
+  /// what posting this becomes: one request, or a standing one that writes a
+  /// request for each day.
+  RepeatChoice _repeat = const RepeatChoice();
 
   @override
   void initState() {
@@ -171,9 +176,18 @@ class _PostRiderTripScreenState extends State<PostRiderTripScreen> {
       WanesAlerts.warning(context, context.tr('shared.ackRequired'));
       return;
     }
+    if (!_repeat.isValid) {
+      WanesAlerts.warning(context, context.tr('schedule.pickDays'));
+      return;
+    }
     if (!await ensureSafetyAcknowledged(context, SafetyAudience.rider) || !mounted) return;
     await Acknowledgements.record(Acknowledgement.riderSharedRide);
     if (!mounted) return;
+
+    // A repeating commute is a schedule, not a posting: the server writes one
+    // request per day from it, and each of those is an ordinary request that
+    // drivers take one day — or all of — as they like.
+    if (_repeat.repeat) return _postRepeating(from, to);
 
     setState(() => _busy = true);
     final res = await _riderTrips.create(
@@ -219,6 +233,47 @@ class _PostRiderTripScreenState extends State<PostRiderTripScreen> {
     );
   }
 
+  /// The repeating version: one schedule, which writes the next fortnight of
+  /// requests straight away. The rider lands on their repeats, where the
+  /// drivers who offer for the whole series turn up.
+  Future<void> _postRepeating(Place from, Place to) async {
+    setState(() => _busy = true);
+    final res = await ScheduleService().save(
+      asDriver: false,
+      originLat: from.lat,
+      originLng: from.lng,
+      originAddress: from.name,
+      destLat: to.lat,
+      destLng: to.lng,
+      destAddress: to.name,
+      recurrence: _repeat.recurrence,
+      timeOfDay: TimeOfDayValue(_departAt.hour, _departAt.minute),
+      startDate: _departAt,
+      daysOfWeek: _repeat.effectiveDays,
+      dayOfMonth: _repeat.recurrence == Recurrence.monthly ? _departAt.day : null,
+      timeZoneId: deviceZoneId(),
+      endDate: _repeat.until,
+      seats: _seats,
+      genderPolicy: _driverPolicy,
+      coRiderGenderPolicy: _coRiderPolicy,
+      minAge: _minAge,
+      maxAge: _maxAge,
+    );
+    if (!mounted) return;
+    setState(() => _busy = false);
+
+    if (!res.success) {
+      WanesAlerts.failure(context, res, title: context.tr('schedule.saveFailed'));
+      return;
+    }
+    WanesAlerts.success(context, context.tr('repeat.posted'),
+        message: context.trPlural('repeat.postedBody', res.data?.generated ?? 0));
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => const SchedulesScreen()),
+    );
+  }
+
   String _timeLabel(DateTime value) {
     final local = value.toLocal();
     final today = DateTime.now();
@@ -251,6 +306,13 @@ class _PostRiderTripScreenState extends State<PostRiderTripScreen> {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
               children: [
+                RepeatPicker(
+                  value: _repeat,
+                  onChanged: (v) => setState(() => _repeat = v),
+                  firstDate: _departAt,
+                  onOpenMine: _openSchedules,
+                ),
+                const SizedBox(height: 12),
                 _routeCard(t),
                 const SizedBox(height: 12),
                 _whenAndSeats(t),
@@ -270,8 +332,6 @@ class _PostRiderTripScreenState extends State<PostRiderTripScreen> {
                     _maxAge = max;
                   }),
                 ),
-                const SizedBox(height: 12),
-                _repeatCard(t),
                 if (estimate != null) ...[
                   const SizedBox(height: 16),
                   _estimateNote(t, estimate),
@@ -293,72 +353,10 @@ class _PostRiderTripScreenState extends State<PostRiderTripScreen> {
     );
   }
 
-  /// "Every weekday?" — the same offer the driver's form makes, because a
-  /// rider's commute repeats for exactly the same reason a driver's does.
-  ///
-  /// It used to live on the profile page, two taps from anywhere and nowhere
-  /// near the thing it repeats. Here the route, the hour and the seats are
-  /// already on screen, so turning this posting into a standing one costs one
-  /// tap and no retyping.
-  Widget _repeatCard(WanesTokens t) => Container(
-        padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
-        decoration: BoxDecoration(
-          color: t.surface2,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: t.border),
-        ),
-        child: Row(children: [
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(context.tr('riderTrip.repeat'),
-                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: t.ink)),
-              const SizedBox(height: 1),
-              Text(context.tr('riderTrip.repeatBody'),
-                  style: TextStyle(fontSize: 12, color: t.ink2)),
-            ]),
-          ),
-          // Two verbs, because they are two different errands. "Add" seeds a
-          // schedule from what is on this form; "my repeats" is where the ones
-          // already running are paused or dropped — the only way to them now
-          // that they have left the profile page.
-          TextButton(
-            onPressed: _openSchedules,
-            child: Text(context.tr('schedule.mine'),
-                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5, color: t.ink2)),
-          ),
-          TextButton(
-            onPressed: _openSchedule,
-            child: Text(context.tr('schedule.add'),
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5, color: t.tealInk)),
-          ),
-        ]),
-      );
-
   Future<void> _openSchedules() async {
     await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const SchedulesScreen()),
-    );
-  }
-
-  /// Turns what is on this form into a standing posting. The route, the hour,
-  /// the seats and both conditions come across, so "every weekday" is one
-  /// screen rather than a second bout of typing.
-  Future<void> _openSchedule() async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ScheduleFormScreen(
-          from: _from,
-          to: _to,
-          seats: _seats,
-          timeOfDay: TimeOfDayValue(_departAt.hour, _departAt.minute),
-          genderPolicy: _driverPolicy,
-          coRiderGenderPolicy: _coRiderPolicy,
-          minAge: _minAge,
-          maxAge: _maxAge,
-        ),
-      ),
     );
   }
 
@@ -382,7 +380,7 @@ class _PostRiderTripScreenState extends State<PostRiderTripScreen> {
   Widget _whenAndSeats(WanesTokens t) => GroupedCard(children: [
         GroupedRow(
           icon: Icons.schedule_rounded,
-          title: context.tr('common.when'),
+          title: context.tr(_repeat.repeat ? 'schedule.starts' : 'common.when'),
           subtitle: _timeLabel(_departAt),
           onTap: _pickDeparture,
         ),
@@ -435,7 +433,7 @@ class _PostRiderTripScreenState extends State<PostRiderTripScreen> {
           border: Border(top: BorderSide(color: t.border)),
         ),
         child: PrimaryButton(
-          label: context.tr('riderTrip.postCta'),
+          label: context.tr(_repeat.repeat ? 'repeat.postCta' : 'riderTrip.postCta'),
           busy: _busy,
           // Left armed without the agreement, so the tap can say what is
           // missing instead of the button just not answering.

@@ -8,6 +8,7 @@ import '../features/driver/driver_home_screen.dart';
 import '../features/driver/driver_trip_details_screen.dart';
 import '../features/driver/marketplace_screen.dart';
 import '../features/driver/reliability_screen.dart';
+import '../features/series/my_series_screen.dart';
 import '../features/driver/requests_screen.dart';
 import '../features/feedback_screen.dart';
 import '../features/live_trip_screen.dart';
@@ -219,6 +220,12 @@ class NotificationRouter {
       // A route alert or a watched request filled up: to the marketplace.
       case NotificationKind.demandAlert:
         return (_) => const Scaffold(body: MarketplaceScreen(initialSegment: MarketSegment.scheduled));
+
+      // Anything about a series — an offer, an acceptance, a skipped day, the
+      // week ahead — is answered in the one place the commitments live.
+      case NotificationKind.series:
+        final scheduleId = n.scheduleId;
+        return (_) => MySeriesScreen(scheduleId: scheduleId);
 
       case NotificationKind.reliability:
         return (_) => const ReliabilityScreen();

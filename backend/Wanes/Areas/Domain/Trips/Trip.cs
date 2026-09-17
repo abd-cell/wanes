@@ -185,6 +185,13 @@ public class Trip : AuditableEntity
     public DateOnly? OccurrenceDate { get; set; }
 
     /// <summary>
+    /// The driver's series commitment this trip was formed under — a day of a
+    /// rider's recurring request the driver took with the whole series. Decides
+    /// the notice skipping it needs, and which trips ending the series cancels.
+    /// </summary>
+    public int? SeriesCommitmentId { get; set; }
+
+    /// <summary>
     /// Concurrency token. Two riders taking the last seat is a genuine race,
     /// and so is two drivers taking the same driverless trip — "first to take it
     /// wins" is not a claim if it is a read of <see cref="DriverId"/> followed by

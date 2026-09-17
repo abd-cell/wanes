@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/app_config.dart';
 import '../../core/l10n.dart';
 import '../../core/theme.dart';
 import '../../models/models.dart';
@@ -91,6 +92,7 @@ class _CancelTripSheetState extends State<_CancelTripSheet> {
   String _consequence(CancelPreview p) {
     return switch (p.kind) {
       ReliabilityKind.freeCancel => context.tr('cancel.free'),
+      ReliabilityKind.seriesSkip => context.tr('cancel.seriesSkipFree'),
       ReliabilityKind.lateCancel => context.trPlural('cancel.late', p.points),
       _ => context.trPlural('cancel.counted', p.points),
     };
@@ -113,7 +115,7 @@ class _CancelTripSheetState extends State<_CancelTripSheet> {
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 18),
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            Text(context.tr('cancel.title'),
+            Text(context.tr(widget.trip.isRecurring ? 'cancel.skipTitle' : 'cancel.title'),
                 style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: t.ink)),
             const SizedBox(height: 12),
             if (_loading)
@@ -156,6 +158,15 @@ class _CancelTripSheetState extends State<_CancelTripSheet> {
                       padding: const EdgeInsets.only(top: 4),
                       child: Text(context.tr('cancel.wouldSuspend'),
                           style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: t.alert)),
+                    ),
+                  if (widget.trip.isRecurring)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                          context.tr('cancel.seriesRule', {
+                            'hours': AppConfigController.value.seriesSkipNoticeHours,
+                          }),
+                          style: TextStyle(fontSize: 12.5, color: t.ink2)),
                     ),
                   if (p.ridersRequeued)
                     Padding(
@@ -215,7 +226,7 @@ class _CancelTripSheetState extends State<_CancelTripSheet> {
                   ),
                   child: _busy
                       ? WanesSpinner.mono(Colors.white, size: 18)
-                      : Text(context.tr('cancel.confirm')),
+                      : Text(context.tr(widget.trip.isRecurring ? 'cancel.skipConfirm' : 'cancel.confirm')),
                 ),
               ),
             ]),

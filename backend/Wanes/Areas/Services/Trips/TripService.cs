@@ -6,6 +6,7 @@ using Wanes.Areas.Domain.Users;
 using Wanes.Areas.Domain.Vehicles;
 using Wanes.Areas.Services.Audit;
 using Wanes.Areas.Domain.Marketplace;
+using Wanes.Areas.Domain.Series;
 using Wanes.Areas.Services.Configuration;
 using Wanes.Areas.Services.Marketplace;
 using Wanes.Areas.Services.Marketplace.Models;
@@ -323,10 +324,27 @@ public class TripService : ITripService
         // Everyone else who had a seat loses their ride — this is the one that
         // most needs to reach a backgrounded phone.
         var others = cancelled.Select(b => b.RiderId).Where(r => !requeued.Contains(r)).Distinct().ToList();
-        await notificationService.NotifyMany(others, NotificationTemplate.TripCancelledRider,
-            args: new { origin = trip.OriginAddress, destination = trip.DestinationAddress },
-            data:
-            new { tripId = trip.Id });
+        if (trip.SeriesCommitmentId != null || trip.ScheduleId != null)
+        {
+            // One day of a series: name the day, and say the rest stands.
+            var (dateEn, dateAr) = SeriesRules.DateLabel(trip.OccurrenceDate ?? DateOnly.FromDateTime(trip.DepartAt));
+            await notificationService.NotifyMany(others, NotificationTemplate.SeriesDaySkippedRider,
+                args: new
+                {
+                    origin = trip.OriginAddress,
+                    destination = trip.DestinationAddress,
+                    date = dateEn,
+                    dateAr,
+                },
+                data: new { tripId = trip.Id });
+        }
+        else
+        {
+            await notificationService.NotifyMany(others, NotificationTemplate.TripCancelledRider,
+                args: new { origin = trip.OriginAddress, destination = trip.DestinationAddress },
+                data:
+                new { tripId = trip.Id });
+        }
 
         return new BaseResponse();
     }

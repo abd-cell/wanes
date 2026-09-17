@@ -226,7 +226,7 @@ class _ScheduleFormScreenState extends State<ScheduleFormScreen> {
       dayOfMonth: _recurrence == Recurrence.monthly ? _dayOfMonth : null,
       // The device's own zone, so "the seven o'clock" stays the seven o'clock
       // wherever the server happens to run.
-      timeZoneId: DateTime.now().timeZoneName,
+      timeZoneId: deviceZoneId(),
       endDate: _endDate,
       seats: _seats,
       pricePerSeat: _asDriver ? _price : null,

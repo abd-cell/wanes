@@ -110,12 +110,16 @@ public class ScheduleTests
     public async Task A_drivers_schedule_produces_ordinary_trips()
     {
         var uow = Scene();
-        await Make.Schedules(uow, DriverId).Create(Daily(ActiveRole.Driver));
 
+        // Writing the schedule generates its first fortnight straight away;
+        // the worker's next pass finds nothing left to do.
+        var created = await Make.Schedules(uow, DriverId).Create(Daily(ActiveRole.Driver));
         var written = await Make.Schedules(uow, DriverId).MaterialiseDue();
 
-        Assert.True(written > 0);
+        Assert.True(created.Data!.Generated > 0);
+        Assert.Equal(0, written);
         var trips = uow.Store<Trip>();
+        Assert.Equal(created.Data.Generated, trips.Count);
         Assert.All(trips, t =>
         {
             Assert.Equal(DriverId, t.DriverId);
@@ -313,6 +317,21 @@ public class ScheduleTests
         var zone = Areas.Domain.Schedules.RecurrenceRules.ZoneFor("Mars/Olympus_Mons");
 
         Assert.Equal(TimeZoneInfo.Utc, zone);
+    }
+
+    [Theory]
+    [InlineData("+03")]
+    [InlineData("GMT+03:00")]
+    [InlineData("UTC+3")]
+    public void A_phones_offset_is_read_as_a_fixed_zone(string id)
+    {
+        // What a phone reports as its zone name. Read as UTC, a 07:30 commute
+        // would leave at 10:30.
+        var zone = Areas.Domain.Schedules.RecurrenceRules.ZoneFor(id);
+        var departs = Areas.Domain.Schedules.RecurrenceRules.ToUtc(
+            new DateOnly(2026, 9, 20), new TimeOnly(7, 30), zone);
+
+        Assert.Equal(new DateTime(2026, 9, 20, 4, 30, 0), departs);
     }
 
     [Fact]

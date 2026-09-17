@@ -2,7 +2,7 @@ import {
   ActiveRole, BookingStatus, CancelReason, DeviceType, DriverStatus, FaqCategory, FeedbackKind,
   FeedbackStatus, Gender, GenderPolicy, Language, NotificationAudience, NotificationType,
   RatingDirection, Recurrence, ReliabilityEventKind, RideRequestStatus, Roles, SafetyIncidentKind,
-  SafetyIncidentStatus, SavedPlaceLabel, TripStatus,
+  SafetyIncidentStatus, SavedPlaceLabel, SeriesSide, SeriesStatus, TripStatus,
 } from '../../core/api/models';
 
 export type FieldType =
@@ -89,6 +89,8 @@ export const RELIABILITY_KIND = opt(ReliabilityEventKind, 'reliabilitykind');
 export const CANCEL_REASON = opt(CancelReason, 'cancelreason');
 export const SAFETY_KIND = opt(SafetyIncidentKind, 'safetykind');
 export const SAFETY_STATUS = opt(SafetyIncidentStatus, 'safetystatus');
+export const SERIES_SIDE = opt(SeriesSide, 'seriesside');
+export const SERIES_STATUS = opt(SeriesStatus, 'seriesstatus');
 /** The reliability grid's review filter — the API takes 1 for "waiting on review". */
 export const NEEDS_REVIEW: EnumOption[] = [{ value: 1, labelKey: 'filter_needs_review' }];
 
@@ -416,6 +418,35 @@ export const RESOURCES: ResourceConfig[] = [
       { name: 'note', labelKey: 'col_message', type: 'readonly' },
       { name: 'waiveNote', labelKey: 'col_waive_note', type: 'textarea', required: true },
     ],
+  },
+  {
+    // Whole-series commitments: a driver driving a rider's commute, a rider
+    // holding a seat every day. Support reads them, and can end one — which
+    // drops its upcoming days at nobody's cost.
+    key: 'series', route: 'series', titleKey: 'res_series',
+    searchable: true, canCreate: false, canEdit: false, canDelete: true,
+    columns: [
+      { field: 'id', labelKey: 'col_id' },
+      { field: 'side', labelKey: 'col_side', type: 'enum', enum: SERIES_SIDE },
+      { field: 'status', labelKey: 'col_status', type: 'enum', enum: SERIES_STATUS },
+      { field: 'driverName', labelKey: 'col_driver' },
+      { field: 'riderName', labelKey: 'col_rider' },
+      { field: 'originAddress', labelKey: 'col_origin' },
+      { field: 'destinationAddress', labelKey: 'col_destination' },
+      { field: 'recurrence', labelKey: 'col_recurrence', type: 'enum', enum: RECURRENCE },
+      { field: 'timeOfDay', labelKey: 'col_time' },
+      { field: 'pricePerSeat', labelKey: 'col_price' },
+      { field: 'seats', labelKey: 'col_seats' },
+      { field: 'upcomingCount', labelKey: 'col_upcoming_days' },
+      { field: 'nextDeparture', labelKey: 'col_next_departure', type: 'datetime' },
+      { field: 'until', labelKey: 'col_until', type: 'datetime' },
+      { field: 'createdAt', labelKey: 'col_created', type: 'datetime' },
+    ],
+    filters: [
+      { name: 'status', labelKey: 'col_status', enum: SERIES_STATUS },
+      { name: 'side', labelKey: 'col_side', enum: SERIES_SIDE },
+    ],
+    fields: [],
   },
   {
     // Drivers' route alerts and request watches — read-only, for support.

@@ -72,12 +72,14 @@ public static class ReliabilityRules
         ReliabilityEventKind.LateCancel => LateCancelPoints,
         ReliabilityEventKind.RiderLateCancel => RiderLateCancelPoints,
         ReliabilityEventKind.RiderNoShow => RiderNoShowPoints,
+        ReliabilityEventKind.SeriesEndShortNotice => Series.SeriesRules.EndShortNoticePoints,
         _ => 0,
     };
 
     /// <summary>Whether the entry counts as a cancellation on the driver's completion rate.</summary>
     public static bool CountsAgainstCompletion(ReliabilityEventKind kind) =>
-        kind is ReliabilityEventKind.Cancel or ReliabilityEventKind.LateCancel;
+        kind is ReliabilityEventKind.Cancel or ReliabilityEventKind.LateCancel
+            or ReliabilityEventKind.SeriesEndShortNotice;
 
     /// <summary>
     /// Reasons that may well not be the driver's fault. Still recorded, still

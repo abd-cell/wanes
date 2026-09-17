@@ -107,4 +107,42 @@ public enum NotificationTemplate
 
     /// <summary>A rider picked this driver's offer.</summary>
     OfferChosenDriver = 30,
+
+    // ── Series (recurring commitments) ──
+    //
+    // Every day-level message names the day. "Your recurring trip" tells a
+    // rider nothing they can act on; "Tuesday 15 Sep" does.
+
+    /// <summary>A driver offered to drive the rider's whole series.</summary>
+    SeriesOfferRider = 31,
+
+    /// <summary>The driver's series offer was accepted — by the rider or by the clock.</summary>
+    SeriesAcceptedDriver = 32,
+
+    /// <summary>The rider went with another driver for the series.</summary>
+    SeriesNotSelectedDriver = 33,
+
+    /// <summary>The rider's series has a driver now.</summary>
+    SeriesStartedRider = 34,
+
+    /// <summary>The series driver could not be given one day; it is on the board for anyone.</summary>
+    SeriesDayOpenRider = 35,
+
+    /// <summary>One day was not added to the driver's series — they are busy then.</summary>
+    SeriesDayMissedDriver = 36,
+
+    /// <summary>The driver skipped one day of the series.</summary>
+    SeriesDaySkippedRider = 37,
+
+    /// <summary>The other side ended the series.</summary>
+    SeriesEnded = 38,
+
+    /// <summary>The week ahead on a series.</summary>
+    SeriesWeeklySummary = 39,
+
+    /// <summary>A rider booked every day of the driver's recurring trip.</summary>
+    SeriesRiderJoinedDriver = 40,
+
+    /// <summary>A day of a rider's series booking could not be booked (full, or they are busy).</summary>
+    SeriesDayNotBookedRider = 41,
 }

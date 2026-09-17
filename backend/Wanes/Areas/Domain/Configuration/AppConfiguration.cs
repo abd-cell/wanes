@@ -126,6 +126,26 @@ public class AppConfiguration : AuditableEntity
     public int ReliabilityWindowDays { get; set; } = Marketplace.ReliabilityRules.DefaultWindowDays;
     public int SuspensionDays { get; set; } = Marketplace.ReliabilityRules.DefaultSuspensionDays;
 
+    // ── Series (whole recurring schedules) — see SeriesRules ──
+
+    /// <summary>Drivers may take, and riders may book, a whole recurring series at once.</summary>
+    public bool SeriesCommitmentsEnabled { get; set; } = true;
+
+    /// <summary>Hours a rider has to answer a driver's series offer before the best one is taken.</summary>
+    public int SeriesDecisionHours { get; set; } = Series.SeriesRules.DefaultDecisionHours;
+
+    /// <summary>Notice needed to skip one day of a series for free.</summary>
+    public int SeriesSkipNoticeHours { get; set; } = Series.SeriesRules.DefaultSkipNoticeHours;
+
+    /// <summary>Free skips a driver gets in the reliability window; after that a skip counts.</summary>
+    public int SeriesFreeSkipsPerWindow { get; set; } = Series.SeriesRules.DefaultFreeSkipsPerWindow;
+
+    /// <summary>Days of notice for ending a series for free.</summary>
+    public int SeriesEndNoticeDays { get; set; } = Series.SeriesRules.DefaultEndNoticeDays;
+
+    /// <summary>Day of the week (0 = Sunday) the week-ahead summary goes out.</summary>
+    public int SeriesSummaryDay { get; set; } = Series.SeriesRules.DefaultSummaryDay;
+
     // ── Safety ──
 
     /// <summary>The driver must enter the rider's boarding code to mark them aboard.</summary>

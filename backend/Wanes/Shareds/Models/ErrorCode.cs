@@ -183,6 +183,24 @@ public enum ErrorCode
     /// <summary>The recurrence describes no dates — no weekday chosen, or the window is empty.</summary>
     ScheduleHasNoOccurrences = 551,
 
+    // Series commitments
+    SeriesNotFound = 560,
+
+    /// <summary>The ride is not part of a recurring schedule, or the schedule has stopped.</summary>
+    NotRecurring = 561,
+
+    /// <summary>Another driver already drives this series.</summary>
+    SeriesAlreadyTaken = 562,
+
+    /// <summary>The caller already has a live commitment or proposal on this series.</summary>
+    SeriesAlreadyCommitted = 563,
+
+    /// <summary>The commitment is not in a state that allows this (no longer proposed, already ended).</summary>
+    SeriesNotAllowed = 564,
+
+    /// <summary>Series commitments are switched off in the settings.</summary>
+    SeriesDisabled = 565,
+
     // Ratings
     RatingNotAllowed = 600,
     AlreadyRated = 601,

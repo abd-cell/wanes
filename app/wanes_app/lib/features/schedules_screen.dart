@@ -9,6 +9,7 @@ import '../widgets/wanes_alerts.dart';
 import '../widgets/wanes_motion.dart';
 import '../widgets/wanes_ui.dart';
 import 'schedule_form_screen.dart';
+import 'series/my_series_screen.dart';
 
 /// The user's repeating trips — the commute they make every week, stated once.
 ///
@@ -30,7 +31,13 @@ class SchedulesScreen extends StatefulWidget {
 class _SchedulesScreenState extends State<SchedulesScreen> {
   final _schedules = ScheduleService();
 
+  final _series = SeriesApi();
+
   List<TripSchedule> _list = [];
+
+  /// Live commitments on these schedules, by schedule id: the driver who has
+  /// taken a rider's commute, or the offers still waiting on an answer.
+  Map<int, List<SeriesCommitment>> _commitments = const {};
   bool _loading = true;
   String? _error;
 
@@ -49,6 +56,25 @@ class _SchedulesScreenState extends State<SchedulesScreen> {
       _list = res.data ?? _list;
       _error = res.success ? null : res.errorMessage;
     });
+    await _loadCommitments();
+  }
+
+  Future<void> _loadCommitments() async {
+    final res = await _series.mine();
+    if (!mounted || !res.success) return;
+    final map = <int, List<SeriesCommitment>>{};
+    for (final c in res.data ?? const <SeriesCommitment>[]) {
+      if (c.isProposed || c.isActive) map.putIfAbsent(c.scheduleId, () => []).add(c);
+    }
+    setState(() => _commitments = map);
+  }
+
+  Future<void> _openSeries(TripSchedule schedule) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => MySeriesScreen(scheduleId: schedule.id)),
+    );
+    if (mounted) await _load();
   }
 
   Future<void> _open([TripSchedule? schedule]) async {
@@ -182,6 +208,24 @@ class _SchedulesScreenState extends State<SchedulesScreen> {
             MetaChip(Fare.format(schedule.pricePerSeat!)),
           ],
         ]),
+        // Who has committed to the whole of it. On a rider's schedule this is
+        // the difference between "a driver every morning" and "fourteen
+        // separate requests", so it belongs on the row rather than a tap away.
+        if (_seriesLine(schedule) case final line?) ...[
+          const SizedBox(height: 10),
+          InkWell(
+            onTap: () => _openSeries(schedule),
+            child: Row(children: [
+              Icon(Icons.repeat_rounded, size: 14, color: t.tealInk),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(line,
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: t.tealInk)),
+              ),
+              Icon(Icons.chevron_right_rounded, size: 16, color: t.ink2),
+            ]),
+          ),
+        ],
         // The next departure it will actually produce, which is the only proof
         // a schedule is doing anything. A paused one, or one whose recurrence
         // never comes round, shows nothing here — and that is the tell.
@@ -207,6 +251,23 @@ class _SchedulesScreenState extends State<SchedulesScreen> {
         ],
       ]),
     );
+  }
+
+  /// "Omar drives this series" / "2 drivers offered for the series", or null
+  /// when nobody has committed to it.
+  String? _seriesLine(TripSchedule schedule) {
+    final rows = _commitments[schedule.id] ?? const <SeriesCommitment>[];
+    if (rows.isEmpty) return null;
+
+    final driving = rows.where((c) => c.isActive && c.side == SeriesSide.driverServes).firstOrNull;
+    if (driving != null) {
+      return context.tr('series.hasDriver', {'name': driving.driverName ?? ''});
+    }
+    final waiting = rows.where((c) => c.isProposed).length;
+    if (waiting > 0) return context.trPlural('series.offersWaiting', waiting);
+
+    final riders = rows.where((c) => c.isActive && c.side == SeriesSide.riderJoins).length;
+    return riders > 0 ? context.trPlural('series.ridersBooked', riders) : null;
   }
 
   Widget _empty(WanesTokens t) => Padding(

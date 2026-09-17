@@ -10,6 +10,7 @@ import '../../widgets/wanes_alerts.dart';
 import '../notifications_screen.dart';
 import '../../widgets/wanes_ui.dart';
 import '../schedules_screen.dart';
+import '../series/my_series_screen.dart';
 import '../contact_us_screen.dart';
 import '../edit_profile_screen.dart';
 import '../login_screen.dart';
@@ -305,6 +306,15 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
         subtitle: context.tr('schedule.subtitleDriver'),
         onTap: () => Navigator.push(context,
             MaterialPageRoute(builder: (_) => const SchedulesScreen(asDriver: true))),
+      ),
+      // The series a driver has taken on: a rider's commute they drive every
+      // week, and the offers they are waiting on an answer for.
+      GroupedRow(
+        icon: Icons.event_repeat_rounded,
+        title: context.tr('series.title'),
+        subtitle: context.tr('series.rowSubtitle'),
+        onTap: () => Navigator.push(
+            context, MaterialPageRoute(builder: (_) => const MySeriesScreen())),
       ),
       GroupedRow(
         icon: Icons.person_outline_rounded,
